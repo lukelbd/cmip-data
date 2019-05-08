@@ -8,82 +8,35 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
 set shortmess=aoO
-badd +6 download.sh
-badd +0 climate.sh
-badd +0 wget.sh
+badd +0 README.md
+badd +0 wget-filter.
 badd +0 wget-filter.sh
-badd +0 wget-verify.sh
-badd +0 wgets/wget-abrupt4xCO2-6hr.sh
-badd +0 wgets/wget-piControl-6hr.sh
-badd +0 ncmeans.sh
-badd +0 merge.sh
-args download.sh climate.sh wget.sh wget-filter.sh
-edit climate.sh
+badd +0 clean.sh
+args README.md
+edit README.md
 set splitbelow splitright
 wincmd t
 set winheight=1 winwidth=1
 argglobal
-2argu
 setlocal fdm=expr
-setlocal fde=0
+setlocal fde=Foldexpr_markdown(v:lnum)
 setlocal fmr={{{,}}}
 setlocal fdi=#
 setlocal fdl=99
 setlocal fml=1
 setlocal fdn=10
 setlocal fen
-let s:l = 19 - ((18 * winheight(0) + 16) / 32)
+let s:l = 5 - ((4 * winheight(0) + 16) / 32)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-19
-normal! 05|
-tabedit merge.sh
-set splitbelow splitright
-wincmd t
-set winheight=1 winwidth=1
-argglobal
-edit merge.sh
-setlocal fdm=expr
-setlocal fde=0
-setlocal fmr={{{,}}}
-setlocal fdi=#
-setlocal fdl=99
-setlocal fml=1
-setlocal fdn=10
-setlocal fen
-let s:l = 11 - ((9 * winheight(0) + 16) / 32)
-if s:l < 1 | let s:l = 1 | endif
-exe s:l
-normal! zt
-11
-normal! 013|
-tabedit wget.sh
-set splitbelow splitright
-wincmd t
-set winheight=1 winwidth=1
-argglobal
-3argu
-setlocal fdm=expr
-setlocal fde=0
-setlocal fmr={{{,}}}
-setlocal fdi=#
-setlocal fdl=99
-setlocal fml=1
-setlocal fdn=10
-setlocal fen
-let s:l = 48 - ((22 * winheight(0) + 18) / 36)
-if s:l < 1 | let s:l = 1 | endif
-exe s:l
-normal! zt
-48
-normal! 027|
+5
+normal! 0155|
 tabedit wget-filter.sh
 set splitbelow splitright
 wincmd t
 set winheight=1 winwidth=1
 argglobal
-4argu
 setlocal fdm=expr
 setlocal fde=0
 setlocal fmr={{{,}}}
@@ -92,18 +45,17 @@ setlocal fdl=99
 setlocal fml=1
 setlocal fdn=10
 setlocal fen
-let s:l = 1 - ((0 * winheight(0) + 18) / 36)
+let s:l = 44 - ((3 * winheight(0) + 16) / 32)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-1
-normal! 013|
-tabedit wget-verify.sh
+44
+normal! 0
+tabedit clean.sh
 set splitbelow splitright
 wincmd t
 set winheight=1 winwidth=1
 argglobal
-edit wget-verify.sh
 setlocal fdm=expr
 setlocal fde=0
 setlocal fmr={{{,}}}
@@ -112,54 +64,12 @@ setlocal fdl=99
 setlocal fml=1
 setlocal fdn=10
 setlocal fen
-let s:l = 7 - ((6 * winheight(0) + 18) / 36)
+let s:l = 16 - ((15 * winheight(0) + 16) / 32)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-7
-normal! 025|
-tabedit wgets/wget-abrupt4xCO2-6hr.sh
-set splitbelow splitright
-wincmd t
-set winheight=1 winwidth=1
-argglobal
-edit wgets/wget-abrupt4xCO2-6hr.sh
-setlocal fdm=manual
-setlocal fde=0
-setlocal fmr={{{,}}}
-setlocal fdi=#
-setlocal fdl=99
-setlocal fml=1
-setlocal fdn=10
-setlocal fen
-silent! normal! zE
-let s:l = 750 - ((16 * winheight(0) + 18) / 36)
-if s:l < 1 | let s:l = 1 | endif
-exe s:l
-normal! zt
-750
-normal! 012|
-tabedit wgets/wget-piControl-6hr.sh
-set splitbelow splitright
-wincmd t
-set winheight=1 winwidth=1
-argglobal
-edit wgets/wget-piControl-6hr.sh
-setlocal fdm=manual
-setlocal fde=0
-setlocal fmr={{{,}}}
-setlocal fdi=#
-setlocal fdl=99
-setlocal fml=1
-setlocal fdn=10
-setlocal fen
-silent! normal! zE
-let s:l = 2902 - ((16 * winheight(0) + 18) / 36)
-if s:l < 1 | let s:l = 1 | endif
-exe s:l
-normal! zt
-2902
-normal! 013|
+16
+normal! 019|
 tabnext 1
 if exists('s:wipebuf')
   silent exe 'bwipe ' . s:wipebuf
