@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #------------------------------------------------------------------------------#
-# Merge all climate files
+# Merge variables from climate files into one file
+# WARNING: No longer do this! Just do it with xarray! Really not much point!
 #------------------------------------------------------------------------------#
 # NOTE: For now we keep separate variable files and *combined* climate files
 shopt -s nullglob

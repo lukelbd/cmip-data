@@ -6,20 +6,21 @@
 shopt -s nullglob
 nyears=30
 root=/mdata2/ldavis/cmip5
+data=$HOME/data/cmip5
 exps=(abrupt4xCO2 piControl)
 freqs=(mon)
 vars=(ta ua va) # try ua and va too
 # Awk script
 # See: https://unix.stackexchange.com/a/13779/112647
 min='
-  BEGIN { c = 0; }
-  $1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1; }
-  END { print a[0]; }
+  BEGIN { c = 0 }
+  $1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1 }
+  END { print a[0] }
 '
 max='
-  BEGIN { c = 0; }
-  $1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1; }
-  END { print a[c-1]; }
+  BEGIN { c = 0 }
+  $1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1 }
+  END { print a[c-1] }
 '
 # Loops
 echo
@@ -50,19 +51,10 @@ for var in "${vars[@]}"; do
         parent=$(ncdump -h ${files[0]} | grep 'parent_experiment_id' | cut -d'=' -f2 | tr -dc '[a-zA-Z]')
         message+="$model: $imin-$imax (${#files[@]} files, $((imax-imin+1)) years), parent $parent"
 
-        # Verify files are readable
-        # for file in "${files[@]}"; do
-        #   ncdump -h "$file" &>/dev/null
-        #   if [ $? -ne 0 ]; then
-        #     echo "Warning: File $file is corrupt."
-        #     mv "$file" $root/corrupt
-        #   fi
-        # done
-
         # Test if climate already gotten
-        tmp="$root/climate/tmp.nc"
-        out="$root/climate/${var}_${exp}-${model}-${freq}.nc"
-        ! [ -d $root/climate ] && mkdir $root/climate
+        tmp="$data/tmp.nc"
+        out="$data/${var}_${exp}-${model}-${freq}.nc"
+        ! [ -d $data ] && mkdir $data
         get=true
         if [ -r $out ]; then
           dump="$(ncdump -h $out)" # double quotes to keep newlines
