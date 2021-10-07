@@ -12,6 +12,7 @@
 from glob import glob
 import os
 import re
+update = True # update data already on disk? or re-download?
 root = '/mdata2/ldavis/cmip5'
 # Parsing files
 delim = 'EOF--dataset.file.url.chksum_type.chksum'
@@ -52,7 +53,7 @@ def file_output(table='Amon', exp='piControl', filter=None):
     # Iterate by *model*, filter to date range for which *all* variables
     # are available! So far just issue for GISS-E2-R runs but important to
     # make this explicit!
-    for model in filter:
+    for model in sorted(filter):
         mlines = [line for line in input if f'_{model}_' in line]
         # Find minimimum date range for which all variables are available
         years = []
@@ -72,10 +73,10 @@ def file_output(table='Amon', exp='piControl', filter=None):
             # intersection of date ranges. Important for cfDay IPSL data.
             iyears = line_years(line)
             if iyears[1]<years[0] or iyears[0]>years[1]:
-                print(f'Skipping {model} {line_var(line)} years {iyears}.')
+                # print(f'Skipping {model} {line_var(line)} years {iyears}.')
                 continue
             # Consider skipping existing files
-            if os.path.exists(f'{root}/{exp}-{table}/{nc}'):
+            if update and os.path.exists(f'{root}/{exp}-{table}/{nc}'):
                 # print(f'Skipping {nc} (file exists).')
                 continue
             ilines.append(line)

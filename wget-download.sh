@@ -51,17 +51,19 @@ build() {
 #------------------------------------------------------------------------------#
 # Average data, for climate sensitivity and isentropic slope, mean circulation stuff
 exps=(abrupt4xCO2 piControl)
-vars=(ta ua va rlut rsut rsdt) # fluxes, radiation longwave upwelling surface, etc.
+vars=(ps ta ua va tas rlut rsut rsdt) # fluxes, radiation longwave upwelling surface, etc.
 tables=(Amon) # also try 6hrPlev
 
 # Daily data for correlation thing
+# NOTE: Surface pressure not available, only sea-level pressure, which is useless
+# for taking vertical mass-weighted averages.
 # NOTE: Shortwave surface budget available, but TOA shortwave budget and
 # clear-sky components not available. Need cfDay for that!
 # Radiation longwave upwelling surface == rlus, et cetera
 # vars=(ta hfls hfss rlds rlus rlut rsut) # fluxes, radiation longwave upwelling surface, etc.
-# exps=(piControl)
-# vars=(ta hfls hfss rlds rlus rlut) # fluxes, radiation longwave upwelling surface, etc.
-# tables=(day)
+exps=(piControl)
+vars=(ta ua va hfls hfss rlds rlus rlut) # fluxes, radiation longwave upwelling surface, etc.
+tables=(day)
 
 #------------------------------------------------------------------------------#
 # CFMIP (cloud feedback model intercomparison project)
@@ -78,8 +80,10 @@ tables=(Amon) # also try 6hrPlev
 # but probably much bigger and anyway cloud generation rate probably larger than
 # the amount precipitated out)
 # NOTE: 3D data is on model levels, so need surface pressure
+# NOTE: There is no 'clear sky' rlus (just surface emission, no longwave reflection) or rsdt (just solar radiation)
+# WARNING: Sea-level pressure only available for single model, so forget it.
 exps=(piControl)
-vars=(ps ta va hfls hfss rlds rlus rlut rsds rsus rsdt rsut rlutcs rsutcs) # fluxes, radiation longwave upwelling surface, etc.
+vars=(ps ta ua va hfls hfss rlds rlus rlut rsds rsus rsut rsdt rldscs rlutcs rsdscs rsuscs rsutcs) # fluxes, radiation longwave upwelling surface, etc.
 tables=(cfDay) # WARNING: cf3hr data all unavailable
 
 # Diabatic heating itself only available cfMIP for 1 model
