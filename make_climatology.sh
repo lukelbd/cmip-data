@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #------------------------------------------------------------------------------#
-# This script does two things:
-# 1. Prints available years as function of model for each variable; iterates
-#    through files on disk or optionally the files inside a wget script
-# 2. If the former, also computes climatological averages from 'nclimate' final
-#    years of the CMIP run
+# This script can do two things:
+# 1. Prints available years as function of model for each variable (iterating
+#    through files on disk or optionally the files inside a wget script).
+# 2. Compute climatological averages from the 'nclimate' initial or final years
+#    of the CMIP run. Default is 50 years.
 # WARNING: Tempting to combine all variables into one file, but that adds an
 # extra unnecessary step when you can just make your load script merge the
 # DataArrays into a Dataset, and gets confusing when want to add new variables.
@@ -12,16 +12,19 @@
 # Settings
 shopt -s nullglob
 dryrun=true
-nclimate=50 # first 50 years
-nresponse=100 # first 100 years
+nclimate=50  # first 50 years
+nresponse=100  # first 100 years
 nchunks=10 # for response blockwise averages
-# Folders
-root=/mdata2/ldavis/cmip5
-data=$HOME/data/cmip5
-[ -d $data ] || mkdir $data
+
 # Loop
 exps=(piControl abrupt4xCO2)
-tables=(Amon cfDay day)
+tables=(Amon cfDay day)  # for 'cfDay' and 'day' just show tables (see below)
+
+# Folders
+root=/mdata5/ldavis/cmip5
+data=$HOME/data/cmip5
+[ -d $data ] || mkdir $data
+
 # Awk scripts
 # See: https://unix.stackexchange.com/a/13779/112647
 # WARNING: Dates must be sorted!
@@ -73,18 +76,18 @@ driver() {
         ymin=$(echo "${dates[@]%-*}" | tr ' ' $'\n' | cut -c-4 | awk "$min" | bc -l)
         ymax=$(echo "${dates[@]#*-}" | tr ' ' $'\n' | cut -c-4 | awk "$max" | bc -l)
         # Parent experiment
-        parent=$(ncdump -h ${files[0]} 2>/dev/null | grep 'parent_experiment_id' | cut -d'=' -f2 | tr -dc '[a-zA-Z]')
+        parent=$(ncdump -h ${files[0]} 2>/dev/null | grep 'parent_experiment_id' | cut -d'=' -f2 | tr -dc a-zA-Z)
         [ -z "$parent" ] && parent="NA"
         # Print message
         echo "$(printf "%-8s" "$var:") $ymin-$ymax (${#files[@]} files, $((ymax-ymin+1)) years), parent $parent"
         $dryrun && continue
         # Test if climate already gotten
-        tmp="$data/tmp.nc"
-        out="$data/${var}_${exp}-${model}-${table}.nc"
+        tmp=$data/tmp.nc
+        out=$data/${var}_${exp}-${model}-${table}.nc
         exists=false
         if [ -r $out ]; then
-          header="$(ncdump -h $out 2>/dev/null)" # double quotes to keep newlines
-          [ $? -eq 0 ] && [ "$(echo "$header" | grep 'UNLIMITED' | tr -dc '[0-9]')" -gt 0 ] && exists=true
+          header=$(ncdump -h $out 2>/dev/null) # double quotes to keep newlines
+          [ $? -eq 0 ] && [ "$(echo "$header" | grep 'UNLIMITED' | tr -dc 0-9)" -gt 0 ] && exists=true
         fi
         $exists && continue
 
@@ -105,28 +108,28 @@ driver() {
           [ $yr -le $((ymin + ny - 1)) ] && climo+=("${files[i-1]}")
         done
         # First just merge files
-        echo "Getting summary ${out##*/} with files ${climo[@]##*_}..."
-        cmds="${climo[@]/#/-zonmean -selname,$var }"
+        echo "Getting summary ${out##*/} with files ${climo[*]##*_}..."
+        cmds=${climo[*]/#/-zonmean -selname,$var }
         [ ${#climo[@]} -gt 1 ] && cmds="-mergetime $cmds"
-        cdo -s -O $cmds $tmp
-        [ $? -ne 0 ] && echo "Error: Merge failed." && exit 1
+        cdo -s -O $cmds $tmp || { echo "Error: Merge failed."; exit 1; }
 
         # Chunks
-        # TODO: No averaging of response at all? Just lob off a standard number
-        # of years of response and do all processing later on?
+        # TODO: No averaging of response at all? Just lob off a standard
+        # number of years of response and do all processing later on?
         unset cmd
-        nty=$((ny*12))
+        nty=$((ny * 12))
         nt=$(cdo -s ntime $tmp)
         if $chunks; then
           for iy in $(seq 0 nchunks $((nresponse - nchunks))); do
-            ti=$((iy*12+1))
-            tf=$(((iy+nchunks)*12))
+            ti=$((iy * 12 + 1))
+            tf=$(((iy + nchunks) * 12))
             cmd="$cmd -ymonmean -seltimestep,$ti/$tf $tmp"
           done
           cdo -s -O -mergetime $cmd $out
         # Climatological averages
         else
-          [ $nt -ge $nty ] && cmd="-seltimestep,1/$nty" # "$((nt-12*ny+1))/$nt" # final years
+          [ $nt -ge $nty ] && cmd="-seltimestep,1/$nty" # "$((nt - 12 * ny + 1))/$nt"  # final years
+          [ $nt -ge $nty ] && cmd="-seltimestep,$((nt - 12 * ny + 1))/$nt"  # final years
           cdo -s -O -ymonmean $cmd $tmp $out
         fi
       done
@@ -137,8 +140,8 @@ driver() {
 
 # Call big function
 if $dryrun; then
-  [ -r climate.log ] && rm climate.log
-  driver | tee climate.log
+  [ -r make_climatology.log ] && rm make_climatology.log
+  driver | tee make_climatology.log
 else
   driver
 fi
