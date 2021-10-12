@@ -2,3 +2,15 @@
 .vimsession
 .vimtags
 .*.sw[a-z]
+
+# Storage and Python
+__pycache__/
+.ipynb_checkpoints/
+*.ipynb
+*.pyc
+
+# OS generated files
+.DS_Store
+.DS_Store?
+.Trashes
+._*
