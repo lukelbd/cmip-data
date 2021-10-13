@@ -1,15 +1,13 @@
-Summary
--------
+Emergent constraints
+--------------------
 
-The `wget_download.sh` script is used to download ESGF wget scripts for downloading
-CMIP5 data. The `wget_filter.py` module is used to generated filtered scripts
-that only download model data for which both "forced" runs and "control" runs are
-available. It also filters given model experiments to download all variables within the
-same time period -- for example, if we have 500 years of 2-D radiative fluxes, but only
-100 years of air temperature, we just download the first 100 years of fluxes. The
-`wget-call.sh` script downloads data using these filtered wget scripts, and organizes
-the NetCDF files into appropriate subfolders. The `climate.sh` script is used to
-generate climatologies from the downloaded files. It can also be used to just generate
-tables of the available time periods for each variable and each model run, using files
-downloaded to the scratch folder or just be inspecting a wget script directly.
-<!-- The `clean.sh` script is used to delete accidentally downloaded NetCDF files. -->
+`wget_download.sh` downloads ESGF wget scripts for retrieving CMIP5 data.
+`wget_filter.py` filters the ESGF wget scripts to model data for which both "forced"
+runs and "control" runs are available. It also filters given model experiments to
+download all variables within the same time period -- for example, if we have 500 years
+of 2-D radiative fluxes, but only 100 years of air temperature, we just download the
+first 100 years of fluxes. `wget-call.sh` downloads data using the filtered wget scripts
+and organizes the NetCDF files into appropriate subfolders. `climate.sh` generates
+climatologies from the downloaded files. It can also print tables of the available time
+periods for each variable and each model run in dry-run mode, by inspecting downloaded
+files or inspecting wget scripts directly.
