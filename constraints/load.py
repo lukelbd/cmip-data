@@ -65,7 +65,6 @@ def load_netcdf(
     """
     path = pathlib.Path(path)
     path = path.expanduser()
-    print(path.glob('*.nc'))
     files = [
         file for file in path.glob('*.nc')
         if file.name.startswith('_'.join((name, forcing)))
@@ -81,15 +80,22 @@ def load_netcdf(
         else:
             warnings.warn(f'Ignoring model {model!r}. Invalid time data.')
             continue
-        ds.coords['model'] = model
         # Standardize vertical coordinates
         ds = ds.rename(plev='lev')
+        if ds.lev[1] < ds.lev[0]:
+            ds = ds.isel(lev=slice(None, None, -1))  # always ascending
+            if 'bnds' in ds.dims:
+                ds = ds.isel(bnds=slice(None, None, -1))
         if ds.lev.climo.units == ureg.Pa:
             ds = ds.climo.replace_coords(lev=ds.lev / 100)
             ds['lev'].attrs['units'] = 'hPa'
         if 'plev_bnds' in ds:
             ds = ds.rename(plev_bnds='lev_bnds')
             ds['lev'].attrs['bounds'] = 'lev_bnds'
+            ds['lev_bnds'] = ds['lev_bnds'].isel(season=0)
+        # Add attributes
+        ds = ds.climo.add_scalar_coords(verbose=True)
+        ds = ds.climo.add_cell_measures(verbose=True)
         datasets[model] = ds
     print(f'Variable {name!r} forcing {forcing!r}: ' + ', '.join(datasets))
     print(f'Number of datasets: {len(datasets)}.')
