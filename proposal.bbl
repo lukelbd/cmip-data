@@ -1,0 +1,103 @@
+\begin{thebibliography}{8}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Zelinka et~al.(2020)Zelinka, Myers, McCoy, Po-Chedley, Caldwell,
+  Ceppi, Klein, and Taylor]{zelinka_causes_2020}
+Mark~D. Zelinka, Timothy~A. Myers, Daniel~T. McCoy, Stephen Po-Chedley,
+  Peter~M. Caldwell, Paulo Ceppi, Stephen~A. Klein, and Karl~E. Taylor.
+\newblock Causes of {{Higher Climate Sensitivity}} in {{CMIP6 Models}}.
+\newblock \emph{Geophysical Research Letters}, 47\penalty0 (1):\penalty0
+  e2019GL085782, 2020.
+\newblock ISSN 1944-8007.
+\newblock \doi{10.1029/2019GL085782}.
+
+\bibitem[Davis et~al.(in review)Davis, Thompson, and
+  Birner]{davis_relationships_nodate}
+Luke L.~B. Davis, David W.~J. Thompson, and Thomas Birner.
+\newblock On the relationships between climate sensitivity and the large-scale
+  extratropical circulation.
+\newblock \emph{Journal of Climate}, in review.
+
+\bibitem[Schneider(2004)]{schneider_tropopause_2004}
+Tapio Schneider.
+\newblock The {{Tropopause}} and the {{Thermal Stratification}} in the
+  {{Extratropics}} of a {{Dry Atmosphere}}.
+\newblock \emph{Journal of the Atmospheric Sciences}, 61\penalty0
+  (12):\penalty0 1317--1340, June 2004.
+\newblock ISSN 0022-4928.
+\newblock \doi{10.1175/1520-0469(2004)061<1317:TTATTS>2.0.CO;2}.
+
+\bibitem[{Zurita-Gotor}(2008)]{zurita-gotor_sensitivity_2008}
+Pablo {Zurita-Gotor}.
+\newblock The {{Sensitivity}} of the {{Isentropic Slope}} in a {{Primitive
+  Equation Dry Model}}.
+\newblock \emph{Journal of the Atmospheric Sciences}, 65\penalty0 (1):\penalty0
+  43--65, January 2008.
+\newblock ISSN 0022-4928.
+\newblock \doi{10.1175/2007JAS2284.1}.
+
+\bibitem[Bretherton and Caldwell(2020)]{bretherton_combining_2020}
+Christopher~S. Bretherton and Peter~M. Caldwell.
+\newblock Combining {{Emergent Constraints}} for {{Climate Sensitivity}}.
+\newblock \emph{Journal of Climate}, 33\penalty0 (17):\penalty0 7413--7430,
+  September 2020.
+\newblock ISSN 0894-8755.
+\newblock \doi{10.1175/JCLI-D-19-0911.1}.
+
+\bibitem[Gregory et~al.(2004)Gregory, Ingram, Palmer, Jones, Stott, Thorpe,
+  Lowe, Johns, and Williams]{gregory_new_2004}
+J.~M. Gregory, W.~J. Ingram, M.~A. Palmer, G.~S. Jones, P.~A. Stott, R.~B.
+  Thorpe, J.~A. Lowe, T.~C. Johns, and K.~D. Williams.
+\newblock A new method for diagnosing radiative forcing and climate
+  sensitivity.
+\newblock \emph{Geophysical Research Letters}, 31\penalty0 (3), February 2004.
+\newblock ISSN 1944-8007.
+\newblock \doi{10.1029/2003GL018747}.
+
+\bibitem[Gelaro et~al.(2017)Gelaro, McCarty, Su{\'a}rez, Todling, Molod,
+  Takacs, Randles, Darmenov, Bosilovich, Reichle, Wargan, Coy, Cullather,
+  Draper, Akella, Buchard, Conaty, {da Silva}, Gu, Kim, Koster, Lucchesi,
+  Merkova, Nielsen, Partyka, Pawson, Putman, Rienecker, Schubert, Sienkiewicz,
+  and Zhao]{gelaro_modern-era_2017}
+Ronald Gelaro, Will McCarty, Max~J. Su{\'a}rez, Ricardo Todling, Andrea Molod,
+  Lawrence Takacs, Cynthia~A. Randles, Anton Darmenov, Michael~G. Bosilovich,
+  Rolf Reichle, Krzysztof Wargan, Lawrence Coy, Richard Cullather, Clara
+  Draper, Santha Akella, Virginie Buchard, Austin Conaty, Arlindo~M. {da
+  Silva}, Wei Gu, Gi-Kong Kim, Randal Koster, Robert Lucchesi, Dagmar Merkova,
+  Jon~Eric Nielsen, Gary Partyka, Steven Pawson, William Putman, Michele
+  Rienecker, Siegfried~D. Schubert, Meta Sienkiewicz, and Bin Zhao.
+\newblock The {{Modern}}-{{Era Retrospective Analysis}} for {{Research}} and
+  {{Applications}}, {{Version}} 2 ({{MERRA}}-2).
+\newblock \emph{Journal of Climate}, 30\penalty0 (14):\penalty0 5419--5454,
+  July 2017.
+\newblock ISSN 0894-8755.
+\newblock \doi{10.1175/JCLI-D-16-0758.1}.
+
+\bibitem[Hersbach et~al.(2020)Hersbach, Bell, Berrisford, Hirahara,
+  Hor{\'a}nyi, Mu{\~n}oz-Sabater, Nicolas, Peubey, Radu, Schepers, Simmons,
+  Soci, Abdalla, Abellan, Balsamo, Bechtold, Biavati, Bidlot, Bonavita, Chiara,
+  Dahlgren, Dee, Diamantakis, Dragani, Flemming, Forbes, Fuentes, Geer,
+  Haimberger, Healy, Hogan, H{\'o}lm, Janiskov{\'a}, Keeley, Laloyaux, Lopez,
+  Lupu, Radnoti, de~Rosnay, Rozum, Vamborg, Villaume, and
+  Th{\'e}paut]{hersbach_era5_2020}
+Hans Hersbach, Bill Bell, Paul Berrisford, Shoji Hirahara, Andr{\'a}s
+  Hor{\'a}nyi, Joaqu{\'i}n Mu{\~n}oz-Sabater, Julien Nicolas, Carole Peubey,
+  Raluca Radu, Dinand Schepers, Adrian Simmons, Cornel Soci, Saleh Abdalla,
+  Xavier Abellan, Gianpaolo Balsamo, Peter Bechtold, Gionata Biavati, Jean
+  Bidlot, Massimo Bonavita, Giovanna~De Chiara, Per Dahlgren, Dick Dee, Michail
+  Diamantakis, Rossana Dragani, Johannes Flemming, Richard Forbes, Manuel
+  Fuentes, Alan Geer, Leo Haimberger, Sean Healy, Robin~J. Hogan, El{\'i}as
+  H{\'o}lm, Marta Janiskov{\'a}, Sarah Keeley, Patrick Laloyaux, Philippe
+  Lopez, Cristina Lupu, Gabor Radnoti, Patricia de~Rosnay, Iryna Rozum, Freja
+  Vamborg, Sebastien Villaume, and Jean-No{\"e}l Th{\'e}paut.
+\newblock The {{ERA5}} global reanalysis.
+\newblock \emph{Quarterly Journal of the Royal Meteorological Society},
+  146\penalty0 (730):\penalty0 1999--2049, 2020.
+\newblock ISSN 1477-870X.
+\newblock \doi{10.1002/qj.3803}.
+
+\end{thebibliography}

@@ -1,0 +1,333 @@
+\documentclass[12pt]{article}
+\usepackage[margin=0.8in,top=0in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}  % for most basic math
+% \usepackage{amssymnb}  % for additional symbols
+\usepackage{authblk}  % for author-affiliation stuff
+\usepackage{booktabs}  % nice tables
+\usepackage{caption}  % adds \captionof
+\usepackage{enumitem}  % more options, better style
+\usepackage{epstopdf}  % optional conversion
+\usepackage{graphicx}
+\usepackage{lmodern}  % better font (inconsolata makes larger sizes e.g. title look strange)
+% \usepackage{linenomods}  % line numbering
+\usepackage{natbibmods}  % bibliography mods
+\usepackage{parskip}  % \setlength{\parindent}{0pt} \setlength{\parskip}{\baselineskip} with less brute force
+\usepackage{pdflscape}  % necessary for PDF page to rotate in document
+\usepackage{setspace}  % for stretch
+% \setstretch{1.2}
+\setlist[itemize]{noitemsep, topsep=0pt}  % compact lists
+\setlist[description]{style=nextline}
+\graphicspath{{./figures/}}
+\bibliographystyle{unsrtnat}  % sort in order of appearance
+% \bibliographystyle{plainnat}  % basic and widely used bibliography style
+
+% References
+\usepackage{hyperref}
+\hypersetup{linktoc=all, colorlinks=true, linkcolor=black, urlcolor=blue, citecolor=blue}
+\urlstyle{same}
+\usepackage[capitalise,noabbrev]{cleveref}  % for pandoc
+\creflabelformat{equation}{#2\textup{#1}#3}  % for style
+\newcommand{\crefrangeconjunction}{--}
+
+% Head
+\title{%
+  % ATS 781 proposal:\\
+  \Large
+  ATS 781 Proposal\\
+  \Large
+  A potential emergent constraint
+  on climate sensitivity
+  \vspace{-0.5em}
+  % Emergent constraints
+}
+\author{%
+  Luke Davis
+  \vspace{-0.5em}
+  \vspace{-0.5em}
+  \vspace{-0.5em}
+}
+\date{}
+% \date{%
+%   October 18, 2021
+%   \vspace{-0.5em}
+% }
+
+% Body
+\begin{document}
+
+  \maketitle
+  
+  %%% Background and motivation
+  % Climate sensitivity is persistently uncertain.
+  % So-called ``emergent constraints''
+  % help reduce that uncertainty.
+  % Emergent constraints based on
+  % physical reasoning are important for evaluating
+  % the accuracy of model-derived estimates in climate sensitivity.
+  % In general,
+  % emergent constraints imply
+  % % estimates of climate sensitivity
+
+
+  %%% Objectives and hypotheses
+  % ``emergent''
+  % are persistently uncertina.
+  % model simulations within
+  Coupled climate model estimates of
+  % Estimates of
+  equilibrium climate sensitivity (ECS)
+  % derived from coupled climate models
+  % simulations
+  % the Coupled Model Intercomparison Project (CMIP)
+  are subject to persistent, considerable uncertainty
+  \citep[e.g.,][]{zelinka_causes_2020}.
+  So-called \textit{emergent constraints}, defined as statistically significant
+  relationships between model ECS and the unforced model climate,
+  are critical for reducing this uncertainty.
+  % the accuracy of model-derived estimates of ECS.
+  % equilibrium climate sensitivity (ECS).
+  Recently,
+  \citet{davis_relationships_nodate}
+  used the dynamical core model to identify
+  % potential candidates
+  % proposed the dynamical core model
+  % as a suitable idealized framework for identifying
+  % --
+  links between ECS and the circulation
+  --
+  % climate sensitivity and the large-scale circulation,
+  including possible ``candidates'' for emergent constraints.
+
+
+  In the dynamical core model,
+  all sources of diabatic heating $Q$ are replaced with
+  the linear damping term $Q \equiv -(T - T^{\mathrm{e}}) / \tau$,
+  where $T^{\mathrm{e}}$ is the \textit{equilibrium temperature}
+  and $\tau$ is the \textit{thermal damping timescale}.
+  Since heating is explicitly linearized about temperature,
+  % % by construction,
+  % \citet{davis_relationships_nodate}
+  % demonstrate
+  % % argue
+  % that
+  $\tau^{-1}$
+  % turns out to be
+  is analogous to the
+  \textit{climate feedback parameter} --
+  % \textit{radiative feedback kernel} --
+  in other words,
+  the climate feedbacks
+  % in the dynamical core model
+  are explicitly prescribed,
+  and thus ECS
+  % and thus equilibrium climate sensitivity (ECS)
+  is known \textit{a priori}
+  \citep{davis_relationships_nodate}.
+  By systematically varying $\tau^{-1}$,
+  % Leveraging this fact,
+  \citet{davis_relationships_nodate} identify
+  two unique relationships between ECS and the
+  unforced extratropical circulation
+  of the dynamical core model:
+  % extratropical circulation:
+  % extratropical circulation
+  % of the unperturbed dynamical core model:
+  % % two unique relationships between ECS and the
+  % % unforced dynamical core
+  % % in the idealized dynamical core framework:
+  % % in the context of the dynamical core model:
+  % % large-scale circulation
+  % % this idealized framework:
+  %
+  \begin{enumerate}
+    \item
+      ECS and \textit{isentropic slope} (defined as the meridional slope
+      of constant potential temperature surfaces -- units m$\,$/$\,$km).
+    \item
+      ECS and \textit{thermal diffusivity} (defined as the ratio of the
+      meridional eddy heat transport to the meridional temperature gradient --
+      units m$^{2}\,$/$\,$s).
+  \end{enumerate}
+
+  % Importantly, both of these terms are independent of equilibrium temperature
+  % -- implying that in the ``real world,'' they are independent
+  % from radiative-convective
+  % (e.g., the CMIP5 and CMIP6 ensembles),
+  If these relationships hold in more complex
+  general circulation models (GCMs),
+  % model frameworks,
+  % combined with historical observations of the extratropical atmosphere
+  then they might be used
+  to construct \textit{emergent constraints} on climate sensitivity.
+  % However, it remains to be seen whether these relationships
+  % hold in these complex settings.
+  % % are valid for more complex general circulation models (GCMs).
+  % % % (e.g., the general circulation models (GCM))
+  % % % apply to much more complex atmosphere-ocean
+  % % % % fully-coupled
+  % % % general circulation models (GCMs).
+  % On the one hand, were shown to be
+  % the outlook is somewhat encouraging.
+  % the above ``candidates'' against phases
+  % doing so 5 and 6 of the Coupled Model Intercomparison Project (CMIP5 and CMIP6)
+  % In this proposal, I propose doing so
+  % on the basis of the following observations.
+  % The following observations
+  Compared to existing candidates,
+  % these
+  % isentropic slope and thermal diffusivity
+  the above candidates have
+  a number of advantages.
+  First, their physical basis
+  % behind these constraints
+  is
+  rooted in well-established theories of baroclinic dynamics
+  % well-understood -- constraints are rooted
+  % dynamical core framework
+  \citep{schneider_tropopause_2004,zurita-gotor_sensitivity_2008}.
+  % \citep[e.g.,][]{schneider_tropopause_2004,zurita-gotor_sensitivity_2008}.
+  % -- thus, their utility in the real world is promising.
+  Second,
+  they
+  % these constraints
+  are independent
+  of dynamical core equilibrium temperature
+  \citep{davis_relationships_nodate},
+  % these constraints
+  % they
+  % are likely to be resistant to
+  % inter-model biases
+  suggesting resistance to inter-model biases
+  in absolute temperature and radiative-convective equilibria.
+  % these constraints are independent of equilibrium
+  % temperature in the dynamical core model
+  % demonstrated that the
+  % above relationships
+  % % isentropic slope and thermal diffusivity
+  % are independent of equilibrium temperature
+  % -- suggesting independence from inter-model biases in
+  % absolute temperatures or radiative-convective equilibria.
+  % % the real-world equivalent of equilibrium temperature
+  % % (perhaps \textit{radiative-convective equilibrium}).
+  Third,
+  % despite the fact that
+  while
+  previous constraints largely focused
+  on the tropical climate \citet[e.g.,][]{bretherton_combining_2020},
+  recent work has highlighted extratropical
+  cloud feedbacks as a critical
+  source of uncertainty in ECS estimates
+  % model-derived estimates of ECS
+  \citet[e.g.,][]{zelinka_causes_2020}
+  % which is more likely to manifest in an extratropical constraint --
+  -- and constraints derived from the extratropical climate
+  are more likely to pick up on this uncertainty.
+  % source of uncertainty.
+
+
+  % % By adapting conventional definitions of radiative feedbacks
+  % % for generalized \textit{in situ} diabatic heating,
+  % % \citet{davis_relationships_nodate} argue that
+  % % $\tau^{-1}$ also represents.
+  % % (analogous to radiative-convective equilibrium in the ``real world'')
+  % % By considering the steady-state
+  % The linearity of this term makes it amenable to the
+  % conventional forcing-feedback framework used to study
+  % climate sensitivity.
+  % In particular, \cref{}
+  % % By replacing top-of-atmosphere radiation and surface temperature
+  % % with \textit{in situ} diabatic heating $Q$ and atmospheric temperature $T$,
+  % % % the damping coefficient can be viewed as
+  % % % (analogous to the radiative feedback kernel in the ``real world'').
+  % % % The linearity of this definition
+  % % % permits
+  % % % this framework is amenable to a
+  % % % traditional definition
+  % % % all sources of diabatic heating
+  % % % climate sensitivity.
+
+  %%% Proposed work plan
+  I propose testing the above
+  constraint
+  % emergent constraint
+  ``candidates'' using
+  phases 5 and 6 of the Coupled Model Intercomparison Project
+  (CMIP5 and CMIP6).
+  I will first compile climatologies
+  % of extratropical isentropic slope and thermal diffusivity
+  of the CMIP
+  ``pre-industrial control'' simulations,
+  computing hemisphere-wide metrics of
+  isentropic slope and thermal diffusivity.
+  % after experimenting with different averaging conventions.
+  % computing scalar measures representing hemisphere-average of
+  % hemisphere-wide metrics
+  % experimenting with different averaging conventions for
+  % computing the constraint parameters.
+  % % determining constraint parameters.
+  I will then compare these metrics against estimates of the ECS
+  obtained by regressing the atmospheric energy imbalance against
+  1) surface temperature and 2) column-average temperature
+  on both a global and per-hemisphere basis \citep{gregory_new_2004}.
+  If robust statistical relationships are identified,
+  I will compute the same metrics from ``observational'' data
+  using the ERA-5 and MERRA-2 reanalysis products
+  \citep{gelaro_modern-era_2017,hersbach_era5_2020}
+  and use these metrics to establish restricted
+  error bounds on ECS for the CMIP5 and CMIP6 ensembles.
+  % % ``observations'' metrics in the
+  % % to establish error bounds on ECS
+  % % implied by the metrics.
+  % % % between the constraint metrics
+  % % % on both A) a per-hemisphere basis and B) a global basis
+  % % I will first
+  % % dynamical core ``candidates''
+  % % A notable advantage
+  % An advantage here is that the constraint
+  % is simpler than constraints that rely on
+  % internal variability.
+  % does not require
+  % a variability analysis -- it can
+  % be computed with time-averaged
+  % as long as the climatological record allows.
+  % % temporal analysis of spatial data.
+  % % A further advantage is that
+  % % the constraint does not require
+  % However,
+  % \citep[e.g.,][]{bretherton_combining_2020}
+  % % temperature climatologies amongst
+  % Further, unlike emergent constraints derived from internal variability
+  % (e.g.,)
+  % However,
+  % for emergent constraints
+  % Further, ``real-world'' feedbacks are expected to change
+  % as the climate changes, as a result of factors beyond
+  % pattern effects.
+  % % uncertainty in
+  % % model-derived estimates of climate sensitivity.
+  % % % are useful for the future.
+  % % % based around sound physical reasoning.
+
+
+  % Broader impact
+  This work has the potential to reduce uncertainty in model-derived
+  estimates of equilibrium climate sensitivity.
+  It would also
+  % This work would
+  test the utility of the dynamical core framework
+  for instructing us on real-world relationships
+  between the circulation and climate sensitivity.
+  % In doing so, it
+  % and represents a test of the
+  % the sensitivity of the real-world climate.
+  % provided by the dynamical core model
+  % climate feedbacks and climate swensitivity
+
+  
+  \newpage
+  ~\vspace{3em}
+  \bibliography{refs.bib}
+
+\end{document}
