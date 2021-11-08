@@ -16,7 +16,7 @@ for subdir in $root/*; do
     # count=$(wc -c < $file) # slow because reads whole file; redirect is so filename not printed
     count=$(ls -nl $file | awk '{print $5}')  # faster
     if [ $count -eq 0 ]; then
-      echo "File ${file##*/} empty!"
+      echo "Removing empty file '${file##*/}'"
       rm $file
     fi
   done

@@ -36,10 +36,10 @@ build() {
   # Input data
   exp=$1
   table=$2 # the cmor table
-  vars="${@:3}" # can be single string or several strings
+  vars=("${@:3}") # can be single string or several strings
   # Build URL
   url="$base&experiment=$exp&ensemble=r1i1p1&cmor_table=$table" # will then filter files ourselves, e.g. only download 100 days!
-  for var in $vars; do
+  for var in "${vars[@]}"; do
     url="$url&variable=$var"
   done
   url="$url&limit=10000" # constants
@@ -69,16 +69,22 @@ tables=(day)
 # CFMIP (cloud feedback model intercomparison project)
 # WARNING: Hoped had more data, but turns out only one model
 #------------------------------------------------------------------------------#
-# Average data, for climate sensitivity and isentropic slope, mean circulation stuff
+# Average wind, temperature, radiation
+# This is for climate sensitivity and isentropic slope, mean circulation stuff
 # exps=(abrupt4xCO2 piControl)
 # vars=(ta ua va rlut rsut rsdt) # fluxes, radiation longwave upwelling surface, etc.
-# tables=(cfMon) # also try 6hrPlev
+# tables=(cfMon)  # also try 6hrPlev
+
+# Average diabatic heating
+# This is only available cfMip for 1 model
+# vars=(ta ua va tntmp)
+# tables=(cfMon)  # also try 6hrPlev
 
 # Daily data
 # Get latent heating from liquid water path change from centered finite difference
-# plus the amount precipitated out (WARNING: only convective available, not stratiform,
-# but probably much bigger and anyway cloud generation rate probably larger than
-# the amount precipitated out)
+# plus the amount precipitated out (WARNING: only convective available,
+# not stratiform, but probably much bigger and anyway cloud generation
+# rate probably larger than the amount precipitated out)
 # NOTE: 3D data is on model levels, so need surface pressure
 # NOTE: There is no 'clear sky' rlus (just surface emission, no longwave reflection) or rsdt (just solar radiation)
 # WARNING: Sea-level pressure only available for single model, so forget it.
@@ -86,17 +92,15 @@ exps=(piControl)
 vars=(ps ta ua va hfls hfss rlds rlus rlut rsds rsus rsut rsdt rldscs rlutcs rsdscs rsuscs rsutcs) # fluxes, radiation longwave upwelling surface, etc.
 tables=(cfDay) # WARNING: cf3hr data all unavailable
 
-# Diabatic heating itself only available cfMIP for 1 model
-# vars=(ta ua va tntmp)
-# tables=(cfMon) # also try 6hrPlev
 
 #------------------------------------------------------------------------------#
 # Get wget script(s)
 #------------------------------------------------------------------------------#
+# Loop through time tables, experiments, and variables
 for table in ${tables[@]}; do
   for exp in ${exps[@]}; do
     for var in ${vars[@]}; do
-      url="$(build $exp $table $var)"
+      url=$(build $exp $table $var)
       echo "Download url: $url"
       file=wgets/${exp}-${table}-${var}.sh
       wget -O - "$url" | grep -P "^(?!'(?!${var}_)|'.*\.nc4)" 1>$file

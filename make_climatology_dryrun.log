@@ -1,0 +1,952 @@
+
+Table Amon, exp piControl: 29 models found
+
+Dir: piControl-Amon, Model: ACCESS1-0
+ps:      300-799 (2 files, 500 years), parent NA
+rlut:    300-799 (2 files, 500 years), parent NA
+rsdt:    300-799 (2 files, 500 years), parent NA
+rsut:    300-799 (2 files, 500 years), parent NA
+ta:      300-799 (10 files, 500 years), parent NA
+tas:     300-799 (2 files, 500 years), parent NA
+ua:      300-799 (10 files, 500 years), parent NA
+va:      300-799 (10 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: ACCESS1-3
+ps:      250-749 (2 files, 500 years), parent NA
+rlut:    250-749 (2 files, 500 years), parent NA
+rsdt:    250-749 (2 files, 500 years), parent NA
+rsut:    250-749 (2 files, 500 years), parent NA
+ta:      250-749 (10 files, 500 years), parent NA
+tas:     250-749 (2 files, 500 years), parent NA
+ua:      250-749 (10 files, 500 years), parent NA
+va:      250-749 (10 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: bcc-csm1-1
+ps:      1-500 (1 files, 500 years), parent NA
+rlut:    1-500 (1 files, 500 years), parent NA
+rsdt:    1-500 (1 files, 500 years), parent NA
+rsut:    1-500 (1 files, 500 years), parent NA
+ta:      1-500 (2 files, 500 years), parent NA
+tas:     1-500 (1 files, 500 years), parent NA
+ua:      1-500 (2 files, 500 years), parent NA
+va:      1-500 (2 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: bcc-csm1-1-m
+ps:      1-400 (1 files, 400 years), parent NA
+rlut:    1-400 (1 files, 400 years), parent NA
+rsdt:    1-400 (1 files, 400 years), parent NA
+rsut:    1-400 (1 files, 400 years), parent NA
+ta:      1-400 (16 files, 400 years), parent NA
+tas:     1-400 (1 files, 400 years), parent NA
+ua:      1-400 (16 files, 400 years), parent NA
+va:      1-400 (16 files, 400 years), parent NA
+
+Dir: piControl-Amon, Model: BNU-ESM
+ps:      1450-2008 (1 files, 559 years), parent NA
+rlut:    1450-2008 (1 files, 559 years), parent NA
+rsdt:    1450-2008 (1 files, 559 years), parent NA
+rsut:    1450-2008 (1 files, 559 years), parent NA
+ta:      1450-2008 (1 files, 559 years), parent NA
+tas:     1450-2008 (1 files, 559 years), parent NA
+ua:      1450-2008 (1 files, 559 years), parent NA
+va:      1450-2008 (1 files, 559 years), parent NA
+
+Dir: piControl-Amon, Model: CanESM2
+ps:      2015-3010 (8 files, 996 years), parent NA
+rlut:    2015-3010 (8 files, 996 years), parent NA
+rsdt:    2015-3010 (8 files, 996 years), parent NA
+rsut:    2015-3010 (8 files, 996 years), parent NA
+ta:      2015-3010 (8 files, 996 years), parent NA
+tas:     2015-3010 (8 files, 996 years), parent NA
+ua:      2015-3010 (8 files, 996 years), parent NA
+va:      2015-3010 (8 files, 996 years), parent NA
+
+Dir: piControl-Amon, Model: CCSM4
+ps:      250-1300 (3 files, 1051 years), parent NA
+rlut:    250-1300 (3 files, 1051 years), parent NA
+rsdt:    250-1300 (3 files, 1051 years), parent NA
+rsut:    250-1300 (3 files, 1051 years), parent NA
+ta:      250-1300 (21 files, 1051 years), parent NA
+tas:     250-1300 (3 files, 1051 years), parent NA
+ua:      250-1300 (21 files, 1051 years), parent NA
+va:      250-1300 (21 files, 1051 years), parent NA
+
+Dir: piControl-Amon, Model: CNRM-CM5
+ps:      1850-2699 (17 files, 850 years), parent NA
+rlut:    1850-2699 (17 files, 850 years), parent NA
+rsdt:    1850-2699 (17 files, 850 years), parent NA
+rsut:    1850-2699 (17 files, 850 years), parent NA
+ta:      1850-2699 (17 files, 850 years), parent NA
+tas:     1850-2699 (17 files, 850 years), parent NA
+ua:      1850-2699 (17 files, 850 years), parent NA
+va:      1850-2699 (17 files, 850 years), parent NA
+
+Dir: piControl-Amon, Model: CNRM-CM5-2
+ps:      1850-2208 (8 files, 359 years), parent NA
+rlut:    1850-2208 (8 files, 359 years), parent NA
+rsdt:    1850-2208 (8 files, 359 years), parent NA
+rsut:    1850-2208 (8 files, 359 years), parent NA
+ta:      1850-2208 (8 files, 359 years), parent NA
+tas:     1850-2208 (8 files, 359 years), parent NA
+ua:      1850-2208 (8 files, 359 years), parent NA
+va:      1850-2208 (8 files, 359 years), parent NA
+
+Dir: piControl-Amon, Model: CSIRO-Mk3-6-0
+ps:      1-500 (1 files, 500 years), parent NA
+rlut:    1-500 (1 files, 500 years), parent NA
+rsdt:    1-500 (1 files, 500 years), parent NA
+rsut:    1-500 (1 files, 500 years), parent NA
+ta:      1-500 (25 files, 500 years), parent NA
+tas:     1-500 (1 files, 500 years), parent NA
+ua:      1-500 (25 files, 500 years), parent NA
+va:      1-500 (25 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: FGOALS-g2
+ps:      201-900 (70 files, 700 years), parent NA
+rlut:    201-900 (70 files, 700 years), parent NA
+rsdt:    201-900 (70 files, 700 years), parent NA
+rsut:    201-900 (70 files, 700 years), parent NA
+ta:      201-900 (70 files, 700 years), parent NA
+tas:     201-900 (70 files, 700 years), parent NA
+ua:      201-900 (70 files, 700 years), parent NA
+va:      201-900 (70 files, 700 years), parent NA
+
+Dir: piControl-Amon, Model: FGOALS-s2
+ps:      1850-2350 (1 files, 501 years), parent NA
+rlut:    1850-2350 (1 files, 501 years), parent NA
+rsdt:    1850-2350 (1 files, 501 years), parent NA
+rsut:    1850-2350 (1 files, 501 years), parent NA
+ta:      1850-2350 (1 files, 501 years), parent NA
+tas:     1850-2350 (1 files, 501 years), parent NA
+ua:      1850-2350 (1 files, 501 years), parent NA
+va:      1850-2350 (1 files, 501 years), parent NA
+
+Dir: piControl-Amon, Model: GFDL-CM3
+ps:      1-500 (100 files, 500 years), parent NA
+rlut:    1-500 (100 files, 500 years), parent NA
+rsdt:    1-500 (100 files, 500 years), parent NA
+rsut:    1-500 (100 files, 500 years), parent NA
+ta:      1-500 (100 files, 500 years), parent NA
+tas:     1-500 (100 files, 500 years), parent NA
+ua:      1-500 (100 files, 500 years), parent NA
+va:      1-500 (100 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: GFDL-ESM2G
+ps:      1-500 (100 files, 500 years), parent NA
+rlut:    1-500 (100 files, 500 years), parent NA
+rsdt:    1-500 (100 files, 500 years), parent NA
+rsut:    1-500 (100 files, 500 years), parent NA
+ta:      1-500 (100 files, 500 years), parent NA
+tas:     1-500 (100 files, 500 years), parent NA
+ua:      1-500 (100 files, 500 years), parent NA
+va:      1-500 (100 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: GFDL-ESM2M
+ps:      1-500 (100 files, 500 years), parent NA
+rlut:    1-500 (100 files, 500 years), parent NA
+rsdt:    1-500 (100 files, 500 years), parent NA
+rsut:    1-500 (100 files, 500 years), parent NA
+ta:      1-500 (100 files, 500 years), parent NA
+tas:     1-500 (100 files, 500 years), parent NA
+ua:      1-500 (100 files, 500 years), parent NA
+va:      1-500 (100 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: GISS-E2-H
+ps:      1180-2949 (16 files, 1770 years), parent NA
+rlut:    1180-2949 (16 files, 1770 years), parent NA
+rsdt:    1180-2949 (16 files, 1770 years), parent NA
+rsut:    1180-2949 (16 files, 1770 years), parent NA
+ta:      1180-2949 (16 files, 1770 years), parent NA
+tas:     1180-2949 (16 files, 1770 years), parent NA
+ua:      1180-2949 (16 files, 1770 years), parent NA
+va:      1180-2949 (16 files, 1770 years), parent NA
+
+Dir: piControl-Amon, Model: GISS-E2-R
+ps:      3331-4530 (34 files, 1200 years), parent NA
+rlut:    3331-4530 (34 files, 1200 years), parent NA
+rsdt:    3331-4530 (34 files, 1200 years), parent NA
+rsut:    3331-4530 (34 files, 1200 years), parent NA
+ta:      3331-4530 (34 files, 1200 years), parent NA
+tas:     3331-4530 (34 files, 1200 years), parent NA
+ua:      3331-4530 (34 files, 1200 years), parent NA
+va:      3331-4530 (34 files, 1200 years), parent NA
+
+Dir: piControl-Amon, Model: HadGEM2-ES
+ps:      1859-2435 (25 files, 577 years), parent NA
+rlut:    1859-2435 (25 files, 577 years), parent NA
+rsdt:    1859-2435 (25 files, 577 years), parent NA
+rsut:    1859-2435 (25 files, 577 years), parent NA
+ta:      1859-2435 (24 files, 577 years), parent NA
+tas:     1859-2435 (25 files, 577 years), parent NA
+ua:      1859-2435 (25 files, 577 years), parent NA
+va:      1859-2435 (25 files, 577 years), parent NA
+
+Dir: piControl-Amon, Model: inmcm4
+ps:      1850-2349 (1 files, 500 years), parent NA
+rlut:    1850-2349 (1 files, 500 years), parent NA
+rsdt:    1850-2349 (1 files, 500 years), parent NA
+rsut:    1850-2349 (1 files, 500 years), parent NA
+ta:      1850-2349 (50 files, 500 years), parent NA
+tas:     1850-2349 (1 files, 500 years), parent NA
+ua:      1850-2349 (50 files, 500 years), parent NA
+va:      1850-2349 (50 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: IPSL-CM5A-LR
+ps:      1800-2799 (1 files, 1000 years), parent NA
+rlut:    1800-2799 (1 files, 1000 years), parent NA
+rsdt:    1800-2799 (1 files, 1000 years), parent NA
+rsut:    1800-2799 (1 files, 1000 years), parent NA
+ta:      1800-2799 (10 files, 1000 years), parent NA
+tas:     1800-2799 (1 files, 1000 years), parent NA
+ua:      1800-2799 (10 files, 1000 years), parent NA
+va:      1800-2799 (10 files, 1000 years), parent NA
+
+Dir: piControl-Amon, Model: IPSL-CM5A-MR
+ps:      1800-2099 (1 files, 300 years), parent NA
+rlut:    1800-2099 (1 files, 300 years), parent NA
+rsdt:    1800-2099 (1 files, 300 years), parent NA
+rsut:    1800-2099 (1 files, 300 years), parent NA
+ta:      1800-2099 (3 files, 300 years), parent NA
+tas:     1800-2099 (1 files, 300 years), parent NA
+ua:      1800-2099 (3 files, 300 years), parent NA
+va:      1800-2099 (3 files, 300 years), parent NA
+
+Dir: piControl-Amon, Model: IPSL-CM5B-LR
+ps:      1830-2129 (1 files, 300 years), parent NA
+rlut:    1830-2129 (1 files, 300 years), parent NA
+rsdt:    1830-2129 (1 files, 300 years), parent NA
+rsut:    1830-2129 (1 files, 300 years), parent NA
+ta:      1830-2129 (3 files, 300 years), parent NA
+tas:     1830-2129 (1 files, 300 years), parent NA
+ua:      1830-2129 (3 files, 300 years), parent NA
+va:      1830-2129 (3 files, 300 years), parent NA
+
+Dir: piControl-Amon, Model: MIROC5
+ps:      2000-2869 (10 files, 870 years), parent NA
+rlut:    2000-2869 (10 files, 870 years), parent NA
+rsdt:    2000-2869 (10 files, 870 years), parent NA
+rsut:    2000-2869 (10 files, 870 years), parent NA
+ta:      2000-2869 (87 files, 870 years), parent NA
+tas:     2000-2869 (10 files, 870 years), parent NA
+ua:      2000-2869 (87 files, 870 years), parent NA
+va:      2000-2869 (87 files, 870 years), parent NA
+
+Dir: piControl-Amon, Model: MIROC-ESM
+ps:      1800-2429 (2 files, 630 years), parent NA
+rlut:    1800-2429 (2 files, 630 years), parent NA
+rsdt:    1800-2429 (2 files, 630 years), parent NA
+rsut:    1800-2429 (2 files, 630 years), parent NA
+ta:      1800-2429 (5 files, 630 years), parent NA
+tas:     1800-2429 (2 files, 630 years), parent NA
+ua:      1800-2429 (5 files, 630 years), parent NA
+va:      1800-2429 (5 files, 630 years), parent NA
+
+Dir: piControl-Amon, Model: MPI-ESM-LR
+ps:      1850-2849 (7 files, 1000 years), parent NA
+rlut:    1850-2849 (7 files, 1000 years), parent NA
+rsdt:    1850-2849 (7 files, 1000 years), parent NA
+rsut:    1850-2849 (7 files, 1000 years), parent NA
+ta:      1850-2849 (101 files, 1000 years), parent NA
+tas:     1850-2849 (7 files, 1000 years), parent NA
+ua:      1850-2849 (101 files, 1000 years), parent NA
+va:      1850-2849 (101 files, 1000 years), parent NA
+
+Dir: piControl-Amon, Model: MPI-ESM-MR
+ps:      1850-2849 (5 files, 1000 years), parent NA
+rlut:    1850-2849 (5 files, 1000 years), parent NA
+rsdt:    1850-2849 (5 files, 1000 years), parent NA
+rsut:    1850-2849 (5 files, 1000 years), parent NA
+ta:      1850-2849 (99 files, 1000 years), parent NA
+tas:     1850-2849 (5 files, 1000 years), parent NA
+ua:      1850-2849 (99 files, 1000 years), parent NA
+va:      1850-2849 (99 files, 1000 years), parent NA
+
+Dir: piControl-Amon, Model: MPI-ESM-P
+ps:      1850-3005 (6 files, 1156 years), parent NA
+rlut:    1850-3005 (6 files, 1156 years), parent NA
+rsdt:    1850-3005 (6 files, 1156 years), parent NA
+rsut:    1850-3005 (6 files, 1156 years), parent NA
+ta:      1850-3005 (116 files, 1156 years), parent NA
+tas:     1850-3005 (6 files, 1156 years), parent NA
+ua:      1850-3005 (116 files, 1156 years), parent NA
+va:      1850-3005 (116 files, 1156 years), parent NA
+
+Dir: piControl-Amon, Model: MRI-CGCM3
+ps:      1851-2350 (1 files, 500 years), parent NA
+rlut:    1851-2350 (1 files, 500 years), parent NA
+rsdt:    1851-2350 (1 files, 500 years), parent NA
+rsut:    1851-2350 (1 files, 500 years), parent NA
+ta:      1851-2350 (50 files, 500 years), parent NA
+tas:     1851-2350 (1 files, 500 years), parent NA
+ua:      1851-2350 (50 files, 500 years), parent NA
+va:      1851-2350 (50 files, 500 years), parent NA
+
+Dir: piControl-Amon, Model: NorESM1-M
+ps:      700-1200 (2 files, 501 years), parent NA
+rlut:    700-1200 (2 files, 501 years), parent NA
+rsdt:    700-1200 (2 files, 501 years), parent NA
+rsut:    700-1200 (2 files, 501 years), parent NA
+ta:      700-1200 (6 files, 501 years), parent NA
+tas:     700-1200 (2 files, 501 years), parent NA
+ua:      700-1200 (6 files, 501 years), parent NA
+va:      700-1200 (6 files, 501 years), parent NA
+
+Table Amon, exp abrupt4xCO2: 29 models found
+
+Dir: abrupt4xCO2-Amon, Model: ACCESS1-0
+ps:      300-449 (1 files, 150 years), parent NA
+rlut:    300-449 (1 files, 150 years), parent NA
+rsdt:    300-449 (1 files, 150 years), parent NA
+rsut:    300-449 (1 files, 150 years), parent NA
+ta:      300-449 (3 files, 150 years), parent NA
+tas:     300-449 (1 files, 150 years), parent NA
+ua:      300-449 (3 files, 150 years), parent NA
+va:      300-449 (3 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: ACCESS1-3
+ps:      250-400 (1 files, 151 years), parent NA
+rlut:    250-400 (1 files, 151 years), parent NA
+rsdt:    250-400 (1 files, 151 years), parent NA
+rsut:    250-400 (1 files, 151 years), parent NA
+ta:      250-400 (4 files, 151 years), parent NA
+tas:     250-400 (1 files, 151 years), parent NA
+ua:      250-400 (4 files, 151 years), parent NA
+va:      250-400 (4 files, 151 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: bcc-csm1-1
+ps:      160-309 (1 files, 150 years), parent NA
+rlut:    160-309 (1 files, 150 years), parent NA
+rsdt:    160-309 (1 files, 150 years), parent NA
+rsut:    160-309 (1 files, 150 years), parent NA
+ta:      160-309 (1 files, 150 years), parent NA
+tas:     160-309 (1 files, 150 years), parent NA
+ua:      160-309 (1 files, 150 years), parent NA
+va:      160-309 (1 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: bcc-csm1-1-m
+ps:      240-389 (1 files, 150 years), parent NA
+rlut:    240-389 (1 files, 150 years), parent NA
+rsdt:    240-389 (1 files, 150 years), parent NA
+rsut:    240-389 (1 files, 150 years), parent NA
+ta:      240-389 (6 files, 150 years), parent NA
+tas:     240-389 (1 files, 150 years), parent NA
+ua:      240-389 (6 files, 150 years), parent NA
+va:      240-389 (6 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: BNU-ESM
+ps:      1850-1999 (1 files, 150 years), parent NA
+rlut:    1850-1999 (1 files, 150 years), parent NA
+rsdt:    1850-1999 (1 files, 150 years), parent NA
+rsut:    1850-1999 (1 files, 150 years), parent NA
+ta:      1850-1999 (1 files, 150 years), parent NA
+tas:     1850-1999 (1 files, 150 years), parent NA
+ua:      1850-1999 (1 files, 150 years), parent NA
+va:      1850-1999 (1 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: CanESM2
+ps:      1850-1999 (1 files, 150 years), parent NA
+rlut:    1850-1999 (1 files, 150 years), parent NA
+rsdt:    1850-1999 (1 files, 150 years), parent NA
+rsut:    1850-1999 (1 files, 150 years), parent NA
+ta:      1850-1999 (1 files, 150 years), parent NA
+tas:     1850-1999 (1 files, 150 years), parent NA
+ua:      1850-1999 (1 files, 150 years), parent NA
+va:      1850-1999 (1 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: CCSM4
+ps:      1850-2000 (1 files, 151 years), parent NA
+rlut:    1850-2000 (1 files, 151 years), parent NA
+rsdt:    1850-2000 (1 files, 151 years), parent NA
+rsut:    1850-2000 (1 files, 151 years), parent NA
+ta:      1850-2000 (3 files, 151 years), parent NA
+tas:     1850-2000 (1 files, 151 years), parent NA
+ua:      1850-2000 (3 files, 151 years), parent NA
+va:      1850-2000 (3 files, 151 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: CNRM-CM5
+ps:      1850-1999 (3 files, 150 years), parent NA
+rlut:    1850-1999 (3 files, 150 years), parent NA
+rsdt:    1850-1999 (3 files, 150 years), parent NA
+rsut:    1850-1999 (3 files, 150 years), parent NA
+ta:      1850-1999 (3 files, 150 years), parent NA
+tas:     1850-1999 (3 files, 150 years), parent NA
+ua:      1850-1999 (3 files, 150 years), parent NA
+va:      1850-1999 (3 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: CNRM-CM5-2
+ps:      1850-1989 (3 files, 140 years), parent NA
+rlut:    1850-1989 (3 files, 140 years), parent NA
+rsdt:    1850-1989 (3 files, 140 years), parent NA
+rsut:    1850-1989 (3 files, 140 years), parent NA
+ta:      1850-1989 (3 files, 140 years), parent NA
+tas:     1850-1989 (3 files, 140 years), parent NA
+ua:      1850-1989 (3 files, 140 years), parent NA
+va:      1850-1989 (3 files, 140 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: CSIRO-Mk3-6-0
+ps:      1-150 (1 files, 150 years), parent NA
+rlut:    1-150 (1 files, 150 years), parent NA
+rsdt:    1-150 (1 files, 150 years), parent NA
+rsut:    1-150 (1 files, 150 years), parent NA
+ta:      1-150 (8 files, 150 years), parent NA
+tas:     1-150 (1 files, 150 years), parent NA
+ua:      1-150 (8 files, 150 years), parent NA
+va:      1-150 (8 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: FGOALS-g2
+ps:      490-747 (26 files, 258 years), parent NA
+rlut:    490-747 (26 files, 258 years), parent NA
+rsdt:    490-747 (26 files, 258 years), parent NA
+rsut:    490-747 (26 files, 258 years), parent NA
+ta:      490-747 (26 files, 258 years), parent NA
+tas:     490-747 (26 files, 258 years), parent NA
+ua:      490-747 (26 files, 258 years), parent NA
+va:      490-747 (26 files, 258 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: FGOALS-s2
+ps:      1850-1999 (1 files, 150 years), parent NA
+rlut:    1850-1999 (1 files, 150 years), parent NA
+rsdt:    1850-1999 (1 files, 150 years), parent NA
+rsut:    1850-1999 (1 files, 150 years), parent NA
+ta:      1850-1999 (1 files, 150 years), parent NA
+tas:     1850-1999 (1 files, 150 years), parent NA
+ua:      1850-1999 (1 files, 150 years), parent NA
+va:      1850-1999 (1 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: GFDL-CM3
+ps:      1-150 (30 files, 150 years), parent NA
+rlut:    1-150 (30 files, 150 years), parent NA
+rsdt:    1-150 (30 files, 150 years), parent NA
+rsut:    1-150 (30 files, 150 years), parent NA
+ta:      1-150 (30 files, 150 years), parent NA
+tas:     1-150 (30 files, 150 years), parent NA
+ua:      1-150 (30 files, 150 years), parent NA
+va:      1-150 (30 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: GFDL-ESM2G
+ps:      1-300 (60 files, 300 years), parent NA
+rlut:    1-300 (60 files, 300 years), parent NA
+rsdt:    1-300 (60 files, 300 years), parent NA
+rsut:    1-300 (60 files, 300 years), parent NA
+ta:      1-300 (60 files, 300 years), parent NA
+tas:     1-300 (60 files, 300 years), parent NA
+ua:      1-300 (60 files, 300 years), parent NA
+va:      1-300 (60 files, 300 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: GFDL-ESM2M
+ps:      1-300 (60 files, 300 years), parent NA
+rlut:    1-300 (60 files, 300 years), parent NA
+rsdt:    1-300 (60 files, 300 years), parent NA
+rsut:    1-300 (60 files, 300 years), parent NA
+ta:      1-300 (60 files, 300 years), parent NA
+tas:     1-300 (60 files, 300 years), parent NA
+ua:      1-300 (60 files, 300 years), parent NA
+va:      1-300 (60 files, 300 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: GISS-E2-H
+ps:      1850-2000 (3 files, 151 years), parent NA
+rlut:    1850-2000 (3 files, 151 years), parent NA
+rsdt:    1850-2000 (3 files, 151 years), parent NA
+rsut:    1850-2000 (3 files, 151 years), parent NA
+ta:      1850-2000 (3 files, 151 years), parent NA
+tas:     1850-2000 (3 files, 151 years), parent NA
+ua:      1850-2000 (3 files, 151 years), parent NA
+va:      1850-2000 (3 files, 151 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: GISS-E2-R
+ps:      1850-2000 (6 files, 151 years), parent NA
+rlut:    1850-2000 (6 files, 151 years), parent NA
+rsdt:    1850-2000 (6 files, 151 years), parent NA
+rsut:    1850-2000 (6 files, 151 years), parent NA
+ta:      1850-2000 (6 files, 151 years), parent NA
+tas:     1850-2000 (6 files, 151 years), parent NA
+ua:      1850-2000 (6 files, 151 years), parent NA
+va:      1850-2000 (6 files, 151 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: HadGEM2-ES
+ps:      1859-2010 (7 files, 152 years), parent NA
+rlut:    1859-2010 (8 files, 152 years), parent NA
+rsdt:    1859-2010 (8 files, 152 years), parent NA
+rsut:    1859-2010 (8 files, 152 years), parent NA
+ta:      1859-2010 (8 files, 152 years), parent NA
+tas:     1859-2010 (8 files, 152 years), parent NA
+ua:      1859-2010 (8 files, 152 years), parent NA
+va:      1859-2010 (8 files, 152 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: inmcm4
+ps:      2090-2239 (1 files, 150 years), parent NA
+rlut:    2090-2239 (1 files, 150 years), parent NA
+rsdt:    2090-2239 (1 files, 150 years), parent NA
+rsut:    2090-2239 (1 files, 150 years), parent NA
+ta:      2090-2239 (15 files, 150 years), parent NA
+tas:     2090-2239 (1 files, 150 years), parent NA
+ua:      2090-2239 (15 files, 150 years), parent NA
+va:      2090-2239 (15 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: IPSL-CM5A-LR
+ps:      1850-2109 (2 files, 260 years), parent NA
+rlut:    1850-2109 (2 files, 260 years), parent NA
+rsdt:    1850-2109 (2 files, 260 years), parent NA
+rsut:    1850-2109 (2 files, 260 years), parent NA
+ta:      1850-2109 (4 files, 260 years), parent NA
+tas:     1850-2109 (2 files, 260 years), parent NA
+ua:      1850-2109 (4 files, 260 years), parent NA
+va:      1850-2109 (4 files, 260 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: IPSL-CM5A-MR
+ps:      1850-1989 (1 files, 140 years), parent NA
+rlut:    1850-1989 (1 files, 140 years), parent NA
+rsdt:    1850-1989 (1 files, 140 years), parent NA
+rsut:    1850-1989 (1 files, 140 years), parent NA
+ta:      1850-1989 (2 files, 140 years), parent NA
+tas:     1850-1989 (1 files, 140 years), parent NA
+ua:      1850-1989 (2 files, 140 years), parent NA
+va:      1850-1989 (2 files, 140 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: IPSL-CM5B-LR
+ps:      1850-2009 (1 files, 160 years), parent NA
+rlut:    1850-2009 (1 files, 160 years), parent NA
+rsdt:    1850-2009 (1 files, 160 years), parent NA
+rsut:    1850-2009 (1 files, 160 years), parent NA
+ta:      1850-2009 (2 files, 160 years), parent NA
+tas:     1850-2009 (1 files, 160 years), parent NA
+ua:      1850-2009 (2 files, 160 years), parent NA
+va:      1850-2009 (2 files, 160 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: MIROC5
+ps:      2100-2250 (1 files, 151 years), parent NA
+rlut:    2100-2250 (1 files, 151 years), parent NA
+rsdt:    2100-2250 (1 files, 151 years), parent NA
+rsut:    2100-2250 (1 files, 151 years), parent NA
+ta:      2100-2250 (16 files, 151 years), parent NA
+tas:     2100-2250 (1 files, 151 years), parent NA
+ua:      2100-2250 (16 files, 151 years), parent NA
+va:      2100-2250 (16 files, 151 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: MIROC-ESM
+ps:      1-150 (1 files, 150 years), parent NA
+rlut:    1-150 (1 files, 150 years), parent NA
+rsdt:    1-150 (1 files, 150 years), parent NA
+rsut:    1-150 (1 files, 150 years), parent NA
+ta:      1-150 (2 files, 150 years), parent NA
+tas:     1-150 (1 files, 150 years), parent NA
+ua:      1-150 (2 files, 150 years), parent NA
+va:      1-150 (2 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: MPI-ESM-LR
+ps:      1850-1999 (1 files, 150 years), parent NA
+rlut:    1850-1999 (1 files, 150 years), parent NA
+rsdt:    1850-1999 (1 files, 150 years), parent NA
+rsut:    1850-1999 (1 files, 150 years), parent NA
+ta:      1850-1999 (15 files, 150 years), parent NA
+tas:     1850-1999 (1 files, 150 years), parent NA
+ua:      1850-1999 (15 files, 150 years), parent NA
+va:      1850-1999 (15 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: MPI-ESM-MR
+ps:      1850-1999 (1 files, 150 years), parent NA
+rlut:    1850-1999 (1 files, 150 years), parent NA
+rsdt:    1850-1999 (1 files, 150 years), parent NA
+rsut:    1850-1999 (1 files, 150 years), parent NA
+ta:      1850-1999 (15 files, 150 years), parent NA
+tas:     1850-1999 (1 files, 150 years), parent NA
+ua:      1850-1999 (15 files, 150 years), parent NA
+va:      1850-1999 (15 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: MPI-ESM-P
+ps:      1850-1999 (1 files, 150 years), parent NA
+rlut:    1850-1999 (1 files, 150 years), parent NA
+rsdt:    1850-1999 (1 files, 150 years), parent NA
+rsut:    1850-1999 (1 files, 150 years), parent NA
+ta:      1850-1999 (15 files, 150 years), parent NA
+tas:     1850-1999 (1 files, 150 years), parent NA
+ua:      1850-1999 (15 files, 150 years), parent NA
+va:      1850-1999 (15 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: MRI-CGCM3
+ps:      1851-2000 (1 files, 150 years), parent NA
+rlut:    1851-2000 (1 files, 150 years), parent NA
+rsdt:    1851-2000 (1 files, 150 years), parent NA
+rsut:    1851-2000 (1 files, 150 years), parent NA
+ta:      1851-2000 (15 files, 150 years), parent NA
+tas:     1851-2000 (1 files, 150 years), parent NA
+ua:      1851-2000 (15 files, 150 years), parent NA
+va:      1851-2000 (15 files, 150 years), parent NA
+
+Dir: abrupt4xCO2-Amon, Model: NorESM1-M
+ps:      1-150 (1 files, 150 years), parent NA
+rlut:    1-150 (1 files, 150 years), parent NA
+rsdt:    1-150 (1 files, 150 years), parent NA
+rsut:    1-150 (1 files, 150 years), parent NA
+ta:      1-150 (2 files, 150 years), parent NA
+tas:     1-150 (1 files, 150 years), parent NA
+ua:      1-150 (2 files, 150 years), parent NA
+va:      1-150 (2 files, 150 years), parent NA
+
+Table cfDay, exp piControl: 7 models found
+
+Dir: piControl-cfDay, Model: CanESM2
+hfls:    2441-2460 (1 files, 20 years), parent NA
+hfss:    2441-2460 (1 files, 20 years), parent NA
+ps:      2441-2460 (1 files, 20 years), parent NA
+rlds:    2441-2460 (1 files, 20 years), parent NA
+rldscs:  2441-2460 (1 files, 20 years), parent NA
+rlus:    2441-2460 (1 files, 20 years), parent NA
+rlut:    2441-2460 (1 files, 20 years), parent NA
+rlutcs:  2441-2460 (1 files, 20 years), parent NA
+rsds:    2441-2460 (1 files, 20 years), parent NA
+rsdscs:  2441-2460 (1 files, 20 years), parent NA
+rsdt:    2441-2460 (1 files, 20 years), parent NA
+rsus:    2441-2460 (1 files, 20 years), parent NA
+rsuscs:  2441-2460 (1 files, 20 years), parent NA
+rsut:    2441-2460 (1 files, 20 years), parent NA
+rsutcs:  2441-2460 (1 files, 20 years), parent NA
+ta:      2441-2460 (2 files, 20 years), parent NA
+ua:      2441-2460 (2 files, 20 years), parent NA
+va:      2441-2460 (2 files, 20 years), parent NA
+
+Dir: piControl-cfDay, Model: HadGEM2-ES
+hfls:    1859-1879 (21 files, 21 years), parent NA
+hfss:    1859-1879 (21 files, 21 years), parent NA
+ps:      1859-1879 (21 files, 21 years), parent NA
+rlds:    1859-1879 (21 files, 21 years), parent NA
+rldscs:  1859-1879 (21 files, 21 years), parent NA
+rlus:    1859-1879 (21 files, 21 years), parent NA
+rlut:    1859-1879 (21 files, 21 years), parent NA
+rlutcs:  1859-1879 (21 files, 21 years), parent NA
+rsds:    1859-1879 (21 files, 21 years), parent NA
+rsdscs:  1859-1879 (21 files, 21 years), parent NA
+rsdt:    1859-1879 (21 files, 21 years), parent NA
+rsus:    1859-1879 (21 files, 21 years), parent NA
+rsuscs:  1859-1879 (21 files, 21 years), parent NA
+rsut:    1859-1879 (21 files, 21 years), parent NA
+rsutcs:  1859-1879 (21 files, 21 years), parent NA
+ta:      1859-1879 (21 files, 21 years), parent NA
+ua:      1859-1879 (21 files, 21 years), parent NA
+va:      1859-1879 (21 files, 21 years), parent NA
+
+Dir: piControl-cfDay, Model: IPSL-CM5A-LR
+hfls:    1800-1999 (1 files, 200 years), parent NA
+hfss:    1800-1999 (1 files, 200 years), parent NA
+ps:      1800-1999 (1 files, 200 years), parent NA
+rlds:    1850-1999 (2 files, 150 years), parent NA
+rldscs:  1850-1999 (2 files, 150 years), parent NA
+rlus:    1850-1999 (2 files, 150 years), parent NA
+rlut:    1800-1999 (1 files, 200 years), parent NA
+rlutcs:  1850-1999 (2 files, 150 years), parent NA
+rsds:    1800-1999 (1 files, 200 years), parent NA
+rsdscs:  1850-1999 (2 files, 150 years), parent NA
+rsdt:    1850-1999 (2 files, 150 years), parent NA
+rsus:    1850-1999 (2 files, 150 years), parent NA
+rsuscs:  1850-1999 (2 files, 150 years), parent NA
+rsut:    1850-1999 (2 files, 150 years), parent NA
+rsutcs:  1850-1999 (2 files, 150 years), parent NA
+ta:      1850-1999 (6 files, 150 years), parent NA
+ua:      1850-1999 (6 files, 150 years), parent NA
+va:      1850-1999 (6 files, 150 years), parent NA
+
+Dir: piControl-cfDay, Model: MIROC5
+hfls:    2220-2339 (40 files, 120 years), parent NA
+hfss:    2220-2339 (40 files, 120 years), parent NA
+ps:      2220-2339 (40 files, 120 years), parent NA
+rlds:    2220-2339 (40 files, 120 years), parent NA
+rldscs:  2220-2339 (40 files, 120 years), parent NA
+rlus:    2220-2339 (40 files, 120 years), parent NA
+rlut:    2220-2339 (40 files, 120 years), parent NA
+rlutcs:  2220-2339 (40 files, 120 years), parent NA
+rsds:    2220-2339 (40 files, 120 years), parent NA
+rsdscs:  2220-2339 (40 files, 120 years), parent NA
+rsdt:    2220-2339 (40 files, 120 years), parent NA
+rsus:    2220-2339 (40 files, 120 years), parent NA
+rsuscs:  2220-2339 (40 files, 120 years), parent NA
+rsut:    2220-2339 (40 files, 120 years), parent NA
+rsutcs:  2220-2339 (40 files, 120 years), parent NA
+ta:      2220-2339 (480 files, 120 years), parent NA
+ua:      2220-2339 (480 files, 120 years), parent NA
+va:      2220-2339 (480 files, 120 years), parent NA
+
+Dir: piControl-cfDay, Model: MIROC-ESM
+hfls:    2311-2330 (1 files, 20 years), parent NA
+hfss:    2311-2330 (1 files, 20 years), parent NA
+ps:      2311-2330 (1 files, 20 years), parent NA
+rlds:    2311-2330 (1 files, 20 years), parent NA
+rldscs:  2311-2330 (1 files, 20 years), parent NA
+rlus:    2311-2330 (1 files, 20 years), parent NA
+rlut:    2311-2330 (1 files, 20 years), parent NA
+rlutcs:  2311-2330 (1 files, 20 years), parent NA
+rsds:    2311-2330 (1 files, 20 years), parent NA
+rsdscs:  2311-2330 (1 files, 20 years), parent NA
+rsdt:    2311-2330 (1 files, 20 years), parent NA
+rsus:    2311-2330 (1 files, 20 years), parent NA
+rsuscs:  2311-2330 (1 files, 20 years), parent NA
+rsut:    2311-2330 (1 files, 20 years), parent NA
+rsutcs:  2311-2330 (1 files, 20 years), parent NA
+ta:      2311-2330 (10 files, 20 years), parent NA
+ua:      2311-2330 (10 files, 20 years), parent NA
+va:      2311-2330 (10 files, 20 years), parent NA
+
+Dir: piControl-cfDay, Model: MPI-ESM-LR
+hfls:    2000-2019 (1 files, 20 years), parent NA
+hfss:    2000-2019 (1 files, 20 years), parent NA
+ps:      2000-2019 (1 files, 20 years), parent NA
+rlds:    2000-2019 (1 files, 20 years), parent NA
+rldscs:  2000-2019 (1 files, 20 years), parent NA
+rlus:    2000-2019 (1 files, 20 years), parent NA
+rlut:    2000-2019 (1 files, 20 years), parent NA
+rlutcs:  2000-2019 (1 files, 20 years), parent NA
+rsds:    2000-2019 (1 files, 20 years), parent NA
+rsdscs:  2000-2019 (1 files, 20 years), parent NA
+rsdt:    2000-2019 (1 files, 20 years), parent NA
+rsus:    2000-2019 (1 files, 20 years), parent NA
+rsuscs:  2000-2019 (1 files, 20 years), parent NA
+rsut:    2000-2019 (1 files, 20 years), parent NA
+rsutcs:  2000-2019 (1 files, 20 years), parent NA
+ta:      2000-2019 (20 files, 20 years), parent NA
+ua:      2000-2019 (20 files, 20 years), parent NA
+va:      2000-2019 (20 files, 20 years), parent NA
+
+Dir: piControl-cfDay, Model: MRI-CGCM3
+hfls:    2011-2030 (2 files, 20 years), parent NA
+hfss:    2011-2030 (2 files, 20 years), parent NA
+ps:      2011-2030 (2 files, 20 years), parent NA
+rlds:    2011-2030 (2 files, 20 years), parent NA
+rldscs:  2011-2030 (2 files, 20 years), parent NA
+rlus:    2011-2030 (2 files, 20 years), parent NA
+rlut:    2011-2030 (2 files, 20 years), parent NA
+rlutcs:  2011-2030 (2 files, 20 years), parent NA
+rsds:    2011-2030 (2 files, 20 years), parent NA
+rsdscs:  2011-2030 (2 files, 20 years), parent NA
+rsdt:    2011-2030 (2 files, 20 years), parent NA
+rsus:    2011-2030 (2 files, 20 years), parent NA
+rsuscs:  2011-2030 (2 files, 20 years), parent NA
+rsut:    2011-2030 (2 files, 20 years), parent NA
+rsutcs:  2011-2030 (2 files, 20 years), parent NA
+ta:      2011-2030 (240 files, 20 years), parent NA
+ua:      2011-2030 (240 files, 20 years), parent NA
+va:      2011-2030 (240 files, 20 years), parent NA
+
+Warning: File wgets/abrupt4xCO2-cfDay.sh not found.
+
+Table day, exp piControl: 22 models found
+
+Dir: piControl-day, Model: ACCESS1-0
+hfls:    436-455 (1 files, 20 years), parent NA
+hfss:    436-455 (1 files, 20 years), parent NA
+rlds:    436-455 (1 files, 20 years), parent NA
+rlus:    436-455 (1 files, 20 years), parent NA
+rlut:    436-455 (1 files, 20 years), parent NA
+ta:      436-455 (4 files, 20 years), parent NA
+ua:      436-455 (4 files, 20 years), parent NA
+va:      436-455 (4 files, 20 years), parent NA
+
+Dir: piControl-day, Model: ACCESS1-3
+hfls:    386-405 (1 files, 20 years), parent NA
+hfss:    386-405 (1 files, 20 years), parent NA
+rlds:    386-405 (1 files, 20 years), parent NA
+rlus:    386-405 (1 files, 20 years), parent NA
+rlut:    386-405 (1 files, 20 years), parent NA
+ta:      386-405 (4 files, 20 years), parent NA
+ua:      386-405 (4 files, 20 years), parent NA
+va:      386-405 (4 files, 20 years), parent NA
+
+Dir: piControl-day, Model: bcc-csm1-1
+hfls:    471-500 (1 files, 30 years), parent NA
+hfss:    471-500 (1 files, 30 years), parent NA
+rlds:    471-500 (1 files, 30 years), parent NA
+rlus:    471-500 (1 files, 30 years), parent NA
+rlut:    471-500 (1 files, 30 years), parent NA
+ta:      471-500 (2 files, 30 years), parent NA
+ua:      471-500 (2 files, 30 years), parent NA
+va:      471-500 (2 files, 30 years), parent NA
+
+Dir: piControl-day, Model: BNU-ESM
+hfls:    1979-2008 (1 files, 30 years), parent NA
+hfss:    1979-2008 (1 files, 30 years), parent NA
+rlds:    1979-2008 (1 files, 30 years), parent NA
+rlus:    1979-2008 (1 files, 30 years), parent NA
+rlut:    1979-2008 (1 files, 30 years), parent NA
+ta:      1979-2008 (1 files, 30 years), parent NA
+ua:      1979-2008 (1 files, 30 years), parent NA
+va:      1979-2008 (1 files, 30 years), parent NA
+
+Dir: piControl-day, Model: CanESM2
+hfls:    2411-2510 (1 files, 100 years), parent NA
+hfss:    2411-2510 (1 files, 100 years), parent NA
+rlds:    2411-2510 (1 files, 100 years), parent NA
+rlus:    2411-2510 (1 files, 100 years), parent NA
+rlut:    2411-2510 (1 files, 100 years), parent NA
+ta:      2441-2480 (1 files, 40 years), parent NA
+ua:      2441-2480 (1 files, 40 years), parent NA
+va:      2441-2480 (1 files, 40 years), parent NA
+
+Dir: piControl-day, Model: CNRM-CM5
+hfls:    2385-2409 (5 files, 25 years), parent NA
+hfss:    2385-2409 (5 files, 25 years), parent NA
+rlds:    2385-2409 (5 files, 25 years), parent NA
+rlus:    2385-2409 (5 files, 25 years), parent NA
+rlut:    2385-2409 (5 files, 25 years), parent NA
+ta:      2385-2409 (5 files, 25 years), parent NA
+ua:      2385-2409 (5 files, 25 years), parent NA
+va:      2385-2409 (5 files, 25 years), parent NA
+
+Dir: piControl-day, Model: CSIRO-Mk3-6-0
+hfls:    201-260 (5 files, 60 years), parent NA
+hfss:    201-260 (5 files, 60 years), parent NA
+rlds:    201-260 (5 files, 60 years), parent NA
+rlus:    201-260 (5 files, 60 years), parent NA
+rlut:    201-260 (5 files, 60 years), parent NA
+ta:      217-243 (6 files, 27 years), parent NA
+ua:      217-243 (6 files, 27 years), parent NA
+va:      217-243 (6 files, 27 years), parent NA
+
+Dir: piControl-day, Model: FGOALS-g2
+hfls:    560-641 (82 files, 82 years), parent NA
+hfss:    560-641 (82 files, 82 years), parent NA
+rlds:    560-641 (82 files, 82 years), parent NA
+rlus:    560-641 (82 files, 82 years), parent NA
+rlut:    560-641 (82 files, 82 years), parent NA
+ta:      560-641 (82 files, 82 years), parent NA
+ua:      560-641 (82 files, 82 years), parent NA
+va:      560-641 (82 files, 82 years), parent NA
+
+Dir: piControl-day, Model: GFDL-CM3
+hfls:    1-800 (160 files, 800 years), parent NA
+hfss:    1-800 (160 files, 800 years), parent NA
+rlds:    1-800 (160 files, 800 years), parent NA
+rlus:    1-800 (160 files, 800 years), parent NA
+rlut:    1-800 (160 files, 800 years), parent NA
+ta:      1-800 (160 files, 800 years), parent NA
+ua:      1-800 (160 files, 800 years), parent NA
+va:      1-800 (160 files, 800 years), parent NA
+
+Dir: piControl-day, Model: GFDL-ESM2G
+hfls:    1-500 (100 files, 500 years), parent NA
+hfss:    1-500 (100 files, 500 years), parent NA
+rlds:    1-500 (100 files, 500 years), parent NA
+rlus:    1-500 (100 files, 500 years), parent NA
+rlut:    1-500 (100 files, 500 years), parent NA
+ta:      1-500 (100 files, 500 years), parent NA
+ua:      1-500 (100 files, 500 years), parent NA
+va:      1-500 (100 files, 500 years), parent NA
+
+Dir: piControl-day, Model: GFDL-ESM2M
+hfls:    1-500 (100 files, 500 years), parent NA
+hfss:    1-500 (100 files, 500 years), parent NA
+rlds:    1-500 (100 files, 500 years), parent NA
+rlus:    1-500 (100 files, 500 years), parent NA
+rlut:    1-500 (100 files, 500 years), parent NA
+ta:      1-500 (100 files, 500 years), parent NA
+ua:      1-500 (100 files, 500 years), parent NA
+va:      1-500 (100 files, 500 years), parent NA
+
+Dir: piControl-day, Model: HadGEM2-ES
+hfls:    1979-2009 (3 files, 31 years), parent NA
+hfss:    1979-2009 (3 files, 31 years), parent NA
+rlds:    1979-2009 (3 files, 31 years), parent NA
+rlus:    1979-2009 (3 files, 31 years), parent NA
+rlut:    1979-2009 (3 files, 31 years), parent NA
+ta:      1979-2009 (6 files, 31 years), parent NA
+ua:      1979-2009 (6 files, 31 years), parent NA
+va:      1979-2009 (6 files, 31 years), parent NA
+
+Dir: piControl-day, Model: inmcm4
+hfls:    2090-2109 (1 files, 20 years), parent NA
+hfss:    2090-2109 (1 files, 20 years), parent NA
+rlds:    2090-2109 (1 files, 20 years), parent NA
+rlus:    2090-2109 (1 files, 20 years), parent NA
+rlut:    2090-2109 (1 files, 20 years), parent NA
+ta:      2090-2109 (4 files, 20 years), parent NA
+ua:      2090-2109 (4 files, 20 years), parent NA
+va:      2090-2109 (4 files, 20 years), parent NA
+
+Dir: piControl-day, Model: IPSL-CM5A-LR
+hfls:    1800-1999 (1 files, 200 years), parent NA
+hfss:    1800-1999 (1 files, 200 years), parent NA
+rlds:    1850-1999 (2 files, 150 years), parent NA
+rlus:    1850-1999 (2 files, 150 years), parent NA
+rlut:    1800-1999 (1 files, 200 years), parent NA
+ta:      1850-1999 (15 files, 150 years), parent NA
+ua:      1850-1999 (15 files, 150 years), parent NA
+va:      1850-1999 (15 files, 150 years), parent NA
+
+Dir: piControl-day, Model: IPSL-CM5A-MR
+hfls:    1800-2099 (15 files, 300 years), parent NA
+hfss:    1800-2099 (15 files, 300 years), parent NA
+rlds:    1800-2099 (15 files, 300 years), parent NA
+rlus:    1800-2099 (15 files, 300 years), parent NA
+rlut:    1800-2099 (15 files, 300 years), parent NA
+ta:      1800-2099 (30 files, 300 years), parent NA
+ua:      1800-2099 (30 files, 300 years), parent NA
+va:      1800-2099 (30 files, 300 years), parent NA
+
+Dir: piControl-day, Model: MIROC5
+hfls:    2000-2869 (87 files, 870 years), parent NA
+hfss:    2000-2869 (87 files, 870 years), parent NA
+rlds:    2000-2869 (87 files, 870 years), parent NA
+rlus:    2000-2869 (87 files, 870 years), parent NA
+rlut:    2000-2869 (87 files, 870 years), parent NA
+ta:      2000-2869 (267 files, 870 years), parent NA
+ua:      2000-2869 (267 files, 870 years), parent NA
+va:      2000-2869 (267 files, 870 years), parent NA
+
+Dir: piControl-day, Model: MIROC-ESM
+hfls:    2311-2330 (1 files, 20 years), parent NA
+hfss:    2311-2330 (1 files, 20 years), parent NA
+rlds:    2311-2330 (1 files, 20 years), parent NA
+rlus:    2311-2330 (1 files, 20 years), parent NA
+rlut:    2311-2330 (1 files, 20 years), parent NA
+ta:      2311-2330 (1 files, 20 years), parent NA
+ua:      2311-2330 (1 files, 20 years), parent NA
+va:      2311-2330 (1 files, 20 years), parent NA
+
+Dir: piControl-day, Model: MPI-ESM-LR
+hfls:    2016-2035 (1 files, 20 years), parent NA
+hfss:    2016-2035 (1 files, 20 years), parent NA
+rlds:    2016-2035 (1 files, 20 years), parent NA
+rlus:    2016-2035 (1 files, 20 years), parent NA
+rlut:    2016-2035 (1 files, 20 years), parent NA
+ta:      2016-2035 (20 files, 20 years), parent NA
+ua:      2016-2035 (20 files, 20 years), parent NA
+va:      2016-2035 (20 files, 20 years), parent NA
+
+Dir: piControl-day, Model: MPI-ESM-MR
+hfls:    1986-2005 (1 files, 20 years), parent NA
+hfss:    1986-2005 (1 files, 20 years), parent NA
+rlds:    1986-2005 (1 files, 20 years), parent NA
+rlus:    1986-2005 (1 files, 20 years), parent NA
+rlut:    1986-2005 (1 files, 20 years), parent NA
+ta:      1986-2005 (20 files, 20 years), parent NA
+ua:      1986-2005 (20 files, 20 years), parent NA
+va:      1986-2005 (20 files, 20 years), parent NA
+
+Dir: piControl-day, Model: MPI-ESM-P
+hfls:    2986-3005 (1 files, 20 years), parent NA
+hfss:    2986-3005 (1 files, 20 years), parent NA
+rlds:    2986-3005 (1 files, 20 years), parent NA
+rlus:    2986-3005 (1 files, 20 years), parent NA
+rlut:    2986-3005 (1 files, 20 years), parent NA
+ta:      2986-3005 (20 files, 20 years), parent NA
+ua:      2986-3005 (20 files, 20 years), parent NA
+va:      2986-3005 (20 files, 20 years), parent NA
+
+Dir: piControl-day, Model: MRI-CGCM3
+hfls:    2086-2105 (2 files, 20 years), parent NA
+hfss:    2086-2105 (2 files, 20 years), parent NA
+rlds:    2086-2105 (2 files, 20 years), parent NA
+rlus:    2086-2105 (2 files, 20 years), parent NA
+rlut:    2086-2105 (2 files, 20 years), parent NA
+ta:      2086-2105 (20 files, 20 years), parent NA
+ua:      2086-2105 (20 files, 20 years), parent NA
+va:      2086-2105 (20 files, 20 years), parent NA
+
+Dir: piControl-day, Model: NorESM1-M
+hfls:    800-858 (2 files, 59 years), parent NA
+hfss:    800-858 (2 files, 59 years), parent NA
+rlds:    800-858 (2 files, 59 years), parent NA
+rlus:    800-858 (2 files, 59 years), parent NA
+rlut:    800-858 (2 files, 59 years), parent NA
+ta:      830-858 (3 files, 29 years), parent NA
+ua:      830-858 (3 files, 29 years), parent NA
+va:      830-858 (3 files, 29 years), parent NA
+
+Warning: File wgets/abrupt4xCO2-day.sh not found.
