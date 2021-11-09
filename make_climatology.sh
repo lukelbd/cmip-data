@@ -21,8 +21,9 @@ exps=(piControl abrupt4xCO2)
 tables=(Amon cfDay day)  # for 'cfDay' and 'day' just show tables (see below)
 
 # Folders
+# root=/mdata5/ldavis/cmip6
 root=/mdata5/ldavis/cmip5
-data=$HOME/data/cmip5
+data=$HOME/data/cmip_Amon
 [ -d $data ] || mkdir $data
 
 # Awk scripts

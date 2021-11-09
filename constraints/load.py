@@ -14,51 +14,52 @@ import xarray as xr
 from climopy import ureg
 
 
-# Global constants
-ZELINKA_FEEDBACKS = [
-    'ECS',
-    'ERF2x',
-    'PL',
-    'PL*',  # constant relative humidity
-    'LR',
-    'LR*',  # constant relative humidity
-    'WV',
-    'RH',
-    'ALB',
-    'CLD',
-    'SWCLD',
-    'LWCLD',
-    'NET',  # kernel total
-    'ERR',  # kernel residual
-]
-
-
-def load_feedbacks_sensitivity(
-    version=5,
-    path='~/data/cmip56_forcing_feedback_ecs/cmip56_forcing_feedback_ecs.json',
-    # name='ECS',
-    # experiment='r1i1p1',
-):
+def load_cmip_tables(dir='~/data/cmip_tables/'):
     """
     Load a dataframe of model sensitivities.
     """
-    path = pathlib.Path(path)
-    path = path.expanduser()
-    with open(path, 'r') as f:
-        src = json.load(f)
-        src = src[f'CMIP{version}']
-    data = pd.DataFrame(index=tuple(src), columns=ZELINKA_FEEDBACKS)
-    for model, experiments in src.items():
-        # print(f'{model} options: ' + ', '.join(experiments))
-        experiment = tuple(experiments)[0]  # always use the first one?
-        for key, value in experiments[experiment].items():
-            data.loc[model, key] = value
-    print('Sensitivity and feedbacks: ' + ', '.join(data.index))
-    print(f'Number of datasets: {len(data)}')  # number of columns
-    return data
+    dir = pathlib.Path(dir)
+    dir = dir.expanduser()
+    paths = [path for ext in ('.txt', '.json') for path in dir.glob('cmip*' + ext)]
+    tables = {}
+    for path in paths:
+        if path.suffix == '.txt':
+            if 'zelinka' in path.stem:
+                pass
+            else:
+                df = pd.read_table(
+                    path,
+                    header=1,
+                    skiprows=[2],
+                    index_col=0,
+                    delimiter=r'\s{2,}',
+                    engine='python'
+                )
+                df.index = pd.MultiIndex.from_product(
+                    (df.index, ('r1i1p1',)), names=('model', 'variant')
+                )
+                tables[path.stem] = df
+        elif path.suffix == '.json':
+            with open(path, 'r') as f:
+                src = json.load(f)
+            for version in '56':  # versions 5 and 6
+                index = pd.MultiIndex.from_tuples([], names=('model', 'variant'))
+                df = pd.DataFrame(index=index)
+                for model, variants in src['CMIP' + version].items():
+                    for variant, data in variants.items():
+                        for name, value in data.items():
+                            df.loc[(model, variant), name] = value
+                tables[path.stem.replace('cmip', 'cmip' + version)] = df
+        else:
+            raise RuntimeError(f'Unexpected path {path}.')
+    for path, table in tables.items():
+        print('Table: ' + path)
+        print('Sensitivity and feedbacks: ' + ', '.join(table.columns))
+        print('Number of datasets: ' + str(len(table.index)))  # number of columns
+    return tables
 
 
-def load_cross_sections(
+def load_cmip_xsections(
     name='ta', forcing='piControl', path='~/data/cmip5_Amon'
 ):
     """
