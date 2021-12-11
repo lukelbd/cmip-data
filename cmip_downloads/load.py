@@ -7,24 +7,35 @@ import pathlib
 import warnings
 
 import numpy as np
-import climopy as climo  # noqa: F401  # add accessor
 import pandas as pd
 import xarray as xr
+from icecream import ic  # noqa: F401
 
+import climopy as climo  # noqa: F401  # add accessor
 from climopy import ureg
 
 
-def load_cmip_tables(dir='~/data/cmip_tables/'):
+def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
     """
-    Load a dataframe of model sensitivities.
+    Load forcing-feedback data from each source. Return a dictionary of dataframes.
     """
     dir = pathlib.Path(dir)
     dir = dir.expanduser()
     paths = [path for ext in ('.txt', '.json') for path in dir.glob('cmip*' + ext)]
     tables = {}
     for path in paths:
-        if path.suffix == '.txt':
-            if 'zelinka' in path.stem:
+        if path.suffix == '.json':
+            with open(path, 'r') as f:
+                src = json.load(f)
+            index = pd.MultiIndex.from_tuples([], names=('model', 'variant'))
+            df = pd.DataFrame(index=index)
+            for model, variants in src['CMIP' + str(version)].items():
+                for variant, data in variants.items():
+                    for name, value in data.items():
+                        df.loc[(model, variant), name] = value
+            tables[path.stem.split('_')[-1]] = df
+        elif path.suffix == '.txt':
+            if '5' != str(version) or 'zelinka' in path.stem:
                 pass
             else:
                 df = pd.read_table(
@@ -38,32 +49,21 @@ def load_cmip_tables(dir='~/data/cmip_tables/'):
                 df.index = pd.MultiIndex.from_product(
                     (df.index, ('r1i1p1',)), names=('model', 'variant')
                 )
-                tables[path.stem] = df
-        elif path.suffix == '.json':
-            with open(path, 'r') as f:
-                src = json.load(f)
-            for version in '56':  # versions 5 and 6
-                index = pd.MultiIndex.from_tuples([], names=('model', 'variant'))
-                df = pd.DataFrame(index=index)
-                for model, variants in src['CMIP' + version].items():
-                    for variant, data in variants.items():
-                        for name, value in data.items():
-                            df.loc[(model, variant), name] = value
-                tables[path.stem.replace('cmip', 'cmip' + version)] = df
+                tables[path.stem.split('_')[-1]] = df
         else:
             raise RuntimeError(f'Unexpected path {path}.')
     for path, table in tables.items():
         print('Table: ' + path)
         print('Sensitivity and feedbacks: ' + ', '.join(table.columns))
-        print('Number of datasets: ' + str(len(table.index)))  # number of columns
+        print('Number of models: ' + str(len(table.index)))  # number of columns
     return tables
 
 
 def load_cmip_xsections(
-    name='ta', forcing='piControl', path='~/data/cmip5_Amon'
+    name='ta', forcing='piControl', path='~/data/cmip_Amon'
 ):
     """
-    Load a single CMIP variable.
+    Load CMIP variables for each model. Return a dictionary of datasets.
     """
     path = pathlib.Path(path)
     path = path.expanduser()
@@ -105,15 +105,16 @@ def load_cmip_xsections(
         seasonal[model] = sds
         annual[model] = ads
     print(f'Variable {name!r} forcing {forcing!r}: ' + ', '.join(monthly))
-    print(f'Number of datasets: {len(monthly)}.')
+    print(f'Number of models: {len(monthly)}.')
     return monthly, seasonal, annual
 
 
-def concat_datasets(table, datasets, lat=10, lev=50):
+def concat_datasets(tables, datasets, lat=10, lev=50):
     """
-    Interpolate and concatenate dictionaries of datasets.
+    Interpolate and concatenate dictionaries of datasets. Input is dictionary of
+    tables from different sources and dictionary of datasets from each model.
     """
-    if not isinstance(table, pd.DataFrame):
+    if not isinstance(tables, dict) or any(not isinstance(_, pd.DataFrame) for _ in tables.values()):  # noqa: E501
         raise ValueError('Invalid input. Must be dataframe.')
     if not isinstance(datasets, dict) or any(not isinstance(_, xr.Dataset) for _ in datasets.values()):  # noqa: E501
         raise ValueError('Invalid input. Must be dictionary of datasets.')
@@ -152,14 +153,20 @@ def concat_datasets(table, datasets, lat=10, lev=50):
     )
     concat = concat.climo.add_cell_measures(verbose=True)
     print('Adding feedbacks and sensitivity...')
-    models = [model for model in table.index if model in concat.coords['model']]
-    missing = set(table.index) - set(models)
-    print('Found models: ' + ', '.join(map(repr, sorted(models))))
-    if missing:
-        print('Missing models: ' + ', '.join(map(repr, sorted(missing))))
-    table = table.loc[models, :]
-    for name, series in table.items():
-        data = np.full(concat.sizes['model'], np.nan)
-        concat[name] = ('model', data)
-        concat[name].loc[series.index] = series.values
+    for src, table in tables.items():
+        if isinstance(table.index, pd.MultiIndex):
+            table = table.xs('r1i1p1', level='variant')
+        table = table.drop(m for m in table.index if ' ' in m)
+        models = [m for m in table.index if m in concat.coords['model']]
+        missing = set(table.index) - set(models)
+        if True:
+            print(f'{src.title()} models ({len(models)}): ' + ', '.join(map(repr, sorted(models))))  # noqa: E501
+        if missing:
+            print(f'{src.title()} missing ({len(missing)}): ' + ', '.join(map(repr, sorted(missing))))  # noqa: E501
+        table = table.loc[models, :]
+        for name, series in table.items():
+            data = np.full(concat.sizes['model'], np.nan)
+            name = '_'.join((src, name.lower()))
+            concat[name] = ('model', data)
+            concat[name].loc[series.index] = series.values
     return concat
