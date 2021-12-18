@@ -15,6 +15,37 @@ import climopy as climo  # noqa: F401  # add accessor
 from climopy import ureg
 
 
+# Results of get_facet_options() called on SearchContext(project='CMIP5')
+# and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
+# for the SearchConnection URL. Conventions changed between projects so
+# e.g. 'experiment' in CMIP5 must be changed to 'experiment_id' in CMIP6.
+# Synonyms: 'member_id' and 'variant_label', 'variable' and 'variable_id'
+# URL https://esgf-node.llnl.gov/esg-search:     11900116 hits for CMIP6 (use this one!)
+# URL https://esgf-data.dkrz.de/esg-search:      01009809 hits for CMIP6
+# URL https://esgf-node.ipsl.upmc.fr/esg-search: 01452125 hits for CMIP6
+CMIP5_FACETS = [
+    'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
+    'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
+    'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
+    'variable', 'variable_long_name', 'version'
+]
+CMIP6_FACETS = [
+    'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
+    'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
+    'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
+    'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
+    'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
+    'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
+]
+
+
+def download_cmip_files(**kwargs):  # noqa: U100
+    """
+    Generate and wget script for the input query.
+    """
+    pass
+
+
 def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
     """
     Load forcing-feedback data from each source. Return a dictionary of dataframes.
