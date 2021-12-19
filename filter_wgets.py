@@ -25,6 +25,7 @@ input_dir = root / 'wgets'
 output_dir = root / 'cmip'
 delim = 'EOF--dataset.file.url.chksum_type.chksum'
 maxyears = 50  # retain only first N years of each simulation?
+line_url = lambda line: line.split("'")[3].strip()
 line_file = lambda line: line.split("'")[1].strip()
 line_model = lambda line: line.split('_')[2]  # model id from netcdf line
 line_years = lambda line: tuple(int(date[:4]) for date in line.split('.')[0].split('_')[-1].split('-')[:2])  # noqa: E501
@@ -74,7 +75,7 @@ def wget_files(project='cmip6', experiment='piControl', table='Amon'):
 
 def wget_filter(
     models=None, variables=None, maxyears=None,
-    duplicates=False, update=True, **kwargs
+    skipnode=None, duplicate=False, overwrite=False, **kwargs
 ):
     """
     Construct the summary wget file (optionally for only the input models).
@@ -134,12 +135,16 @@ def wget_filter(
             years = line_years(line)
             if years[1] < year_range[0] or years[0] > year_range[1]:
                 continue
+            url = line_url(line)
+            if skipnode and skipnode in url:
+                continue
             file = line_file(line)
-            if not duplicates and file in files:
+            if not duplicate and file in files:
                 continue
             dest = output.parent / file
-            if update and dest.exists():
-                print(f'Skipping {dest.name} (netcdf file exists).')
+            if dest.exists() and dest.stat().st_size == 0:
+                os.remove(dest)  # remove empty files caused by download errors
+            if not overwrite and dest.exists():
                 continue
             files.add(file)
             lines.append(line)
@@ -239,8 +244,8 @@ def wget_models(models=None, **kwargs):
         print()
         print(f'{exp}:')
         for var in vars:
-            imissing = exps_missing[var]
-            print(f'Missing {var} ({len(imissing)}): {", ".join(sorted(imissing))}')
+            missing = exps_missing[var]
+            print(f'Missing {var} ({len(missing)}): {", ".join(sorted(missing))}')
     print()
     return models_download
 
@@ -260,8 +265,9 @@ if __name__ == '__main__':
     for project in ('cmip5',):
         file, models = wget_filter(
             project=project,
-            duplicates=True,
-            # duplicates=False,
+            skipnode='ceda.ac.uk',  # WARNING: temporary issues only?
+            duplicate=False,
+            # duplicate=False,
             variables='ta',
             experiment='piControl',
             table=table_monthly
