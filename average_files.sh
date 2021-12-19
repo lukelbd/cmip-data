@@ -9,147 +9,145 @@
 # extra unnecessary step when you can just make your load script merge the
 # DataArrays into a Dataset, and gets confusing when want to add new variables.
 #------------------------------------------------------------------------------#
-# Settings
+# Constants
 shopt -s nullglob
-dryrun=true
+dryrun=false
 nclimate=50  # first 50 years
 nresponse=100  # first 100 years
 nchunks=10 # for response blockwise averages
+data=$HOME/data
+[[ "$OSTYPE" =~ darwin* ]] && root=$data || root=/mdata5/ldavis
 
-# Loop
-exps=(piControl abrupt4xCO2)
-tables=(Amon cfDay day)  # for 'cfDay' and 'day' just show tables (see below)
-
-# Folders
-# root=/mdata5/ldavis/cmip6
-root=/mdata5/ldavis/cmip5
-data=$HOME/data/cmip_Amon
-[ -d $data ] || mkdir $data
-
-# Awk scripts
+# Helper functions
 # See: https://unix.stackexchange.com/a/13779/112647
-# WARNING: Dates must be sorted!
-min='$1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1 }; END { print a[0] }'
-max='$1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1 }; END { print a[c-1] }'
+# WARNING: Dates sent to awk scripts must be sorted!
+year1() {
+  local date=${1%-*}
+  echo ${date::4}
+}
+year2() {
+  local date=${1#*-}
+  echo ${date::4}
+}
+minyear() {
+  local min='$1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1 }; END { print a[0] }'
+  echo "$@" | tr ' ' $'\n' | cut -c-4 | awk "$min" | bc -l
+}
+maxyear() {
+  local max='$1 ~ /^[0-9]*(\.[0-9]*)?$/ { a[c++] = $1 }; END { print a[c-1] }'
+  echo "$@" | tr ' ' $'\n' | cut -c-4 | awk "$max" | bc -l
+}
 
-# Main function
-date1() {
-  date=${1%-*}
-  echo ${date::4}
-}
-date2() {
-  date=${1#*-}
-  echo ${date::4}
-}
+# Driver function
 driver() {
-  for table in "${tables[@]}"; do
-    for exp in "${exps[@]}"; do
-      # Find available models and variables
-      # TODO: Enable wget=false or wget=true not automatically
-      dir=$root/$exp-$table
-      # wget=true
-      [[ "$table" =~ "mon" ]] && wget=false || wget=true  # show climate summaries from wget scripts?
-      if $wget; then
-        # Search files listed in wget script!
-        eof=EOF--dataset.file.url.chksum_type.chksum
-        wget=$HOME/wgets/${exp}-${table}.sh
-        ! [ -r $wget ] && echo && echo "Warning: File $wget not found." && continue
-        allfiles="$(cat $wget | sed -n "/$eof/,/$eof/p" | grep -v "$eof" | cut -d"'" -f2)"
+  # Find available models and variables
+  # TODO: Enable wget=false or wget=true not automatically
+  [ $# -eq 3 ] || { echo && echo "Error: 3 arguments required." && return 1; }
+  project=$1
+  experiment=$2
+  table=$3
+  string=${project}-${experiment}-${table}
+  [[ "$table" =~ "mon" ]] && wget=false || wget=true  # show climate summaries from wget scripts?
+  if $wget; then  # search files in wget script
+    eof=EOF--dataset.file.url.chksum_type.chksum
+    input=$root/wgets/wget_${string}.sh
+    [ -r "$input" ] || { echo && echo "Error: File $input not found." && return 1; }
+    allfiles=$(cat $input | sed -n "/$eof/,/$eof/p" | grep -v "$eof" | cut -d"'" -f2)
+  else  # search files on disk
+    input=${root}/${string}
+    [ -d "$input" ] || { echo && echo "Error: Path $input not found." && return 1; }
+    output=${data}/${string}-avg
+    [ -r "$output" ] || mkdir "$output" || { echo && echo "Error: Failed to make $output." && return 1; }
+    allfiles=$(find $input -name "*.nc" -printf "%f\n")
+  fi
+
+  # Iterate through models then variables
+  # NOTE: The quotes around files are important! contains newlines!
+  vars=($(echo "$allfiles" | cut -d'_' -f1 | sort | uniq))
+  models=($(echo "$allfiles" | cut -d'_' -f3 | sort | uniq))
+  echo
+  echo "Table $table, experiment $experiment: ${#models[@]} models found"
+  for model in ${models[@]}; do
+    # [ "$model" != "CCSM4" ] && continue  # for testing
+    echo
+    echo "Input: ${input##*/}, Model: $model"
+    for var in "${vars[@]}"; do
+      # List files and get file info
+      # NOTE: Some files have extra field but date is always last so use rev.
+      # TODO: Add year suffix? Then need to auto-remove files with different range.
+      tmp=${output}/tmp.nc
+      out=${output}/${var}_${table}_${model}_${experiment}_${project}.nc
+      exists=false
+      [ -r $out ] && [ "$(ncdump -h "$out" 2>/dev/null | grep 'UNLIMITED' | tr -dc 0-9)" -gt 0 ] && exists=true
+      files=($(echo "$allfiles" | grep "${var}_${table}_${model}_"))
+      dates=($(echo "${files[@]}" | tr ' ' $'\n' | rev | cut -d'_' -f1 | rev | sed 's/\.nc//g' | sort))
+      if [ ${#files[@]} -eq 0 ]; then
+        echo "$(printf "%-8s" "$var:") not found"
+        continue
       else
-        # Search actual files on disk!
-        ! [ -d $dir ] && echo && echo "Warning: Directory $dir not found." && continue
-        allfiles="$(find $dir -name "*.nc" -printf "%f\n")"
+        ymin=$(minyear "${dates[@]%-*}")
+        ymax=$(maxyear "${dates[@]#*-}")
+        parent=$(ncdump -h ${files[0]} 2>/dev/null | grep 'parent_experiment_id' | cut -d'=' -f2 | tr -dc a-zA-Z)
+        echo "$(printf "%-8s" "$var:") $ymin-$ymax (${#files[@]} files, parent ${parent:-NA}"
       fi
-      # Iterate through *models* first, then variables
-      vars=($(echo "$allfiles" | cut -d'_' -f1 | sort | uniq)) # quotes around files important! contains newlines!
-      models=($(echo "$allfiles" | cut -d'_' -f3 | sort | uniq))
-      echo
-      echo "Table $table, exp $exp: ${#models[@]} models found"
-      for model in ${models[@]}; do
-        # [ "$model" != "CCSM4" ] && continue # for testing
-        echo
-        echo "Dir: ${dir##*/}, Model: $model"
-        for var in "${vars[@]}"; do
-          # List of files
-          files=($(echo "$allfiles" | grep "${var}_${table}_${model}_"))
-          [ ${#files[@]} -eq 0 ] && echo "$(printf "%-8s" "$var:") not found" && continue
 
-          # Date range
-          dates=($(echo "${files[@]}" | tr ' ' $'\n' | cut -d'_' -f6 | sed 's/\.nc//g' | sort))
-          ymin=$(echo "${dates[@]%-*}" | tr ' ' $'\n' | cut -c-4 | awk "$min" | bc -l)
-          ymax=$(echo "${dates[@]#*-}" | tr ' ' $'\n' | cut -c-4 | awk "$max" | bc -l)
-
-          # Parent experiment
-          parent=$(ncdump -h ${files[0]} 2>/dev/null | grep 'parent_experiment_id' | cut -d'=' -f2 | tr -dc a-zA-Z)
-          [ -z "$parent" ] && parent="NA"
-
-          # Print message
-          echo "$(printf "%-8s" "$var:") $ymin-$ymax (${#files[@]} files, $((ymax - ymin + 1)) years), parent $parent"
-          $dryrun && continue
-
-          # Test if climate already gotten
-          tmp=$data/tmp.nc
-          out=$data/${var}_${exp}-${model}-${table}.nc
-          exists=false
-          if [ -r $out ]; then
-            header=$(ncdump -h "$out" 2>/dev/null) \
-              && [ "$(echo "$header" | grep 'UNLIMITED' | tr -dc 0-9)" -gt 0 ] \
-              && exists=true
-          fi
-          $exists && continue
-
-          # Calculate climatological means
-          # TODO: Allow multiple times in input files, then let
-          # plotting functions select seasons or time periods!
-          # NOTE: Conventions for years, and spinup times, are all different!
-          # We just take the final 30 years for each experiment.
-          # Test if maximum year exceeds (simulation end year minus nclimate)
-          unset climo
-          [[ $exp =~ "CO2" ]] && ny=$nresponse chunks=true || ny=$nclimate chunks=false
-          for i in $(seq 1 "${#files[@]}"); do
-            # Final n years
-            yr=$(date2 ${dates[i - 1]}) # end date!
-            [ $yr -ge $((ymax - ny + 1)) ] && climo+=("${files[i - 1]}")
-            # First n years
-            # NOTE: Simulations are already spun up. And maybe
-            # averaging first few years minimized model drift?
-            yr=$(date1 ${dates[i - 1]})  # start date!
-            [ $yr -le $((ymin + ny - 1)) ] && climo+=("${files[i-1]}")
-          done
-
-          # Merge zonal means
-          echo "Getting summary ${out##*/} with files ${climo[*]##*_}..."
-          cmds=${climo[*]/#/-zonmean -selname,$var }
-          [ ${#climo[@]} -gt 1 ] && cmds="-mergetime $cmds"
-          cdo -s -O $cmds $tmp || { echo "Error: Merge failed."; exit 1; }
-
-          # Merge times
-          # NOTE: We use chunks to avoid memory issues? End result is still
-          # the same. Default is to use chunks in response only.
-          # TODO: No averaging of response at all? Just lob off a standard
-          # number of years of response and do all processing later on?
-          unset cmd
-          nty=$((ny * 12))
-          nt=$(cdo -s ntime $tmp)
-          if $chunks; then
-            for iy in $(seq 0 nchunks $((nresponse - nchunks))); do
-              ti=$((iy * 12 + 1))
-              tf=$(((iy + nchunks) * 12))
-              cmd="$cmd -ymonmean -seltimestep,$ti/$tf $tmp"
-            done
-            cdo -s -O -mergetime $cmd $out
-          else
-            [ $nt -ge $nty ] && cmd="-seltimestep,1/$nty" # "$((nt - 12 * ny + 1))/$nt"  # final years
-            [ $nt -ge $nty ] && cmd="-seltimestep,$((nt - 12 * ny + 1))/$nt"  # final years
-            cdo -s -O -ymonmean $cmd $tmp $out
-          fi
-        done
+      # Select files for averaging
+      # NOTE: Use at least this many years from start of simulation (models are
+      # already spun up, and this could help remove drift during control runs).
+      unset files_climo dates_climo
+      [[ $experiment =~ CO2 ]] && ny=$nresponse chunks=true || ny=$nclimate chunks=false
+      for i in $(seq 1 "${#files[@]}"); do
+        file=${files[i - 1]}
+        date=${dates[i - 1]}
+        if [ "$(year1 $date)" -le $((ymin + ny - 1)) ]; then
+          files_climo+=("$file")
+          dates_climo+=("$date")
+        fi
       done
+      ymin=$(minyear "${dates_climo[@]%-*}")
+      ymax=$(maxyear "${dates_climo[@]#*-}")
+      echo "$(printf "%-8s" "$var:") $ymin-$ymax (${#files_climo[@]} files, parent ${parent:-NA})"
+      echo "Output: ${output##*/}/${out##*/}"
+      $wget && echo 'Skipping (wget only)...' && continue
+      $exists && echo 'Skipping (file exists)...' && continue
+      $dryrun && echo 'Skipping (dry run)...' && continue
+
+      # Take zonal and time averages
+      # NOTE: Use the initial years from the files rather than trailing years.
+      unset cmd
+      cmds=${files_climo[*]/#/-zonmean -selname,$var $input/}
+      [ ${#files_climo[@]} -gt 1 ] && cmds="-mergetime $cmds"
+      cdo -s -O $cmds $tmp || { echo 'Warning: Merge failed.' && continue; }
+      nt1=$(cdo -s ntime $tmp)  # file time steps
+      nt2=$((ny * 12))  # final time steps
+      if $chunks; then
+        for iy in $(seq 0 nchunks $((ny - nchunks))); do
+          ti=$((iy * 12 + 1))
+          tf=$(((iy + nchunks) * 12))
+          cmd="$cmd -ymonmean -seltimestep,$ti/$tf $tmp"
+        done
+        cdo -s -O -mergetime $cmd $out
+      else
+        [ $nt1 -ge $nt2 ] && cmd="-seltimestep,1/$nt2" # "$((nt1 - nt2 + 1))/$nt1"  # final years
+        cdo -s -O -ymonmean $cmd $tmp $out
+      fi
     done
   done
 }
 
 # Call main function
-$dryrun && log=average_files_dryrun.log || log=average_files.log
-[ -r $log ] && rm $log
-driver | tee $log
+projects=(cmip5 cmip6)
+# experiments=(piControl abrupt4xCO2)
+experiments=(piControl)
+# tables=(Amon cfDay day)  # for 'cfDay' and 'day' just show tables (see below)
+tables=(Amon)
+for project in ${projects[@]}; do
+  for experiment in ${experiments[@]}; do
+    for table in ${tables[@]}; do
+      string=$project-$experiment-$table
+      $dryrun && log=average_${string}.log || log=average-dryrun_${string}.log
+      [ -r $log ] && rm $log
+      driver $project $experiment $table | tee $log
+    done
+  done
+done
