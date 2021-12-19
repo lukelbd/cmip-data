@@ -182,13 +182,8 @@ def load_cmip_xsections(
     path = DATA / f'{project}-{experiment}-{table}'
     if not path.is_dir():
         raise RuntimeError(f'Path {path!s} not found.')
-    name = f'{name}_{project}-{experiment}-{table}'
-    files = [
-        file for file in path.glob('*.nc')
-        if file.name.startswith('-'.join((name, project, experiment)))
-    ]
     monthly, seasonal, annual = {}, {}, {}
-    for file in files:
+    for file in path.glob(f'{name}_{table}_*_{experiment}_{project}.nc'):
         # Load data
         ds = xr.open_dataset(file, use_cftime=True).squeeze(drop=True)
         _, model = file.name.split('-', maxsplit=1)

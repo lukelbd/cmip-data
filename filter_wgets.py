@@ -75,7 +75,7 @@ def wget_files(project='cmip6', experiment='piControl', table='Amon'):
 
 def wget_filter(
     models=None, variables=None, maxyears=None,
-    skipnode=None, duplicate=False, overwrite=False, **kwargs
+    badnodes=None, duplicate=False, overwrite=False, **kwargs
 ):
     """
     Construct the summary wget file (optionally for only the input models).
@@ -98,6 +98,8 @@ def wget_filter(
     # So far just issue for GISS-E2-R runs but important to make this explicit!
     if models is None:
         models = wget_models(**kwargs)
+    if isinstance(badnodes, str):
+        badnodes = (badnodes,)
     if isinstance(models, str):
         models = (models,)
     if isinstance(variables, str):
@@ -141,7 +143,7 @@ def wget_filter(
             if years[1] < year_range[0] or years[0] > year_range[1]:
                 continue
             url = get_url(line)
-            if skipnode and skipnode in url:
+            if badnodes and any(node in url for node in badnodes):
                 continue
             file = get_file(line)
             if not duplicate and file in files:
@@ -267,12 +269,14 @@ if __name__ == '__main__':
     # Get monthly data without response
     # for project in ('cmip6', 'cmip5'):
     # for project in ('cmip6',):
-    for project in ('cmip5', 'cmip6'):
+    for project in ('cmip5',):
         file, models = wget_filter(
             project=project,
-            skipnode='ceda.ac.uk',  # WARNING: temporary issues only?
+            badnodes=('ceda.ac.uk', 'nird.sigma2.no'),
             overwrite=False,
             duplicate=False,
+            # maxyears=30,
+            # maxyears=50,
             # duplicate=False,
             variables='ta',
             experiment='piControl',
