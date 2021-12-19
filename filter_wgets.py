@@ -14,23 +14,22 @@ import os
 import sys
 from pathlib import Path
 
-# Constants and utilities
-# NOTE: Some files have a '-clim' suffix at the end of the date range.
-# Try to account for that when filtering dashes below.
+# Constants for path management
+DELIM = 'EOF--dataset.file.url.chksum_type.chksum'
+OPENID = 'https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd'
+MAXYEARS = 50  # retain only first N years of each simulation?
 if sys.platform == 'darwin':
-    root = Path.home() / 'data'
+    ROOT = Path.home() / 'data'
 else:  # TODO: add conditionals?
-    root = Path('/mdata5') / 'ldavis'
-openid = 'https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd'
-input_dir = root / 'wgets'
-output_dir = root
-delim = 'EOF--dataset.file.url.chksum_type.chksum'
-maxyears = 50  # retain only first N years of each simulation?
-line_url = lambda line: line.split("'")[3].strip()
-line_file = lambda line: line.split("'")[1].strip()
-line_model = lambda line: line.split('_')[2]  # model id from netcdf line
-line_years = lambda line: tuple(int(date[:4]) for date in line.split('.')[0].split('_')[-1].split('-')[:2])  # noqa: E501
-line_var = lambda line: line.split('_')[0][1:]  # variable from netcdf line
+    ROOT = Path('/mdata5') / 'ldavis'
+
+# Helper functions for reading lines of wget files
+# NOTE: Some files have a '-clim' suffix at the end of the date range.
+get_url = lambda line: line.split("'")[3].strip()
+get_file = lambda line: line.split("'")[1].strip()
+get_model = lambda line: line.split('_')[2]  # model id from netcdf line
+get_years = lambda line: tuple(int(date[:4]) for date in line.split('.')[0].split('_')[-1].split('-')[:2])  # noqa: E501
+get_var = lambda line: line.split('_')[0][1:]  # variable from netcdf line
 
 
 def wget_lines(filename, complement=False):
@@ -38,7 +37,7 @@ def wget_lines(filename, complement=False):
     Return the download lines or the lines on either side.
     """
     lines = open(filename, 'r').readlines()  # list of lines
-    idxs = [i for i, line in enumerate(lines) if delim in line]
+    idxs = [i for i, line in enumerate(lines) if DELIM in line]
     if not idxs:
         return []
     elif len(idxs) != 2:
@@ -61,13 +60,13 @@ def wget_files(project='cmip6', experiment='piControl', table='Amon'):
     )
     input = [
         file for part in itertools.product(*parts)
-        for file in sorted(input_dir.glob('wget_' + '-'.join(part) + '-*.sh'))
+        for file in sorted((ROOT / 'wgets').glob('wget_' + '-'.join(part) + '-*.sh'))
     ]
     if not input:
         pattern = 'wget_' + '-'.join(part[0] for part in parts) + '-*.sh'
         raise ValueError(f'No wget files found for input pattern(s): {pattern!r}')
     string = '-'.join(part[0] for part in parts)
-    path = output_dir / string
+    path = ROOT / string
     if not path.is_dir():
         os.mkdir(path)
     output = path / f'wget_{string}.sh'
@@ -87,7 +86,7 @@ def wget_filter(
     prefix, suffix = wget_lines(input[0], complement=True)
     for i, line in enumerate(prefix):
         if line == 'openId=\n':
-            prefix[i] = 'openId=' + openid + '\n'
+            prefix[i] = 'openId=' + OPENID + '\n'
             break
 
     # Collect all download lines for files
@@ -104,7 +103,7 @@ def wget_filter(
     if isinstance(variables, str):
         variables = (variables,)
     if maxyears is None:
-        maxyears = 50
+        maxyears = MAXYEARS
     for model in sorted(models):
         # Find minimimum date range for which all variables are available
         # NOTE: Use maxyears - 1 or else e.g. 50 years with 190001-194912 will not
@@ -113,15 +112,15 @@ def wget_filter(
         # matching period. Data availability or table differences could cause bugs.
         year_ranges = []
         lines_model = [line for line in lines_input if f'_{model}_' in line]
-        for var in set(map(line_var, lines_model)):
+        for var in set(map(get_var, lines_model)):
             if variables and var not in variables:
                 continue
             try:
-                years = [line_years(line) for line in lines_model if f'{var}_' in line]
+                years = [get_years(line) for line in lines_model if f'{var}_' in line]
             except ValueError:  # helpful message
                 for line in lines_model:
                     print(line)
-                    line_years(line)
+                    get_years(line)
             year_ranges.append((min(p[0] for p in years), max(p[1] for p in years)))
         if not year_ranges:
             continue
@@ -135,16 +134,16 @@ def wget_filter(
         # WARNING: Only exclude files that are *wholly* outside range. Allow
         # intersection of date ranges. Important for cfDay IPSL data.
         for line in lines_model:
-            var = line_var(line)
+            var = get_var(line)
             if variables and var not in variables:
                 continue
-            years = line_years(line)
+            years = get_years(line)
             if years[1] < year_range[0] or years[0] > year_range[1]:
                 continue
-            url = line_url(line)
+            url = get_url(line)
             if skipnode and skipnode in url:
                 continue
-            file = line_file(line)
+            file = get_file(line)
             if not duplicate and file in files:
                 continue
             dest = output.parent / file
@@ -180,7 +179,7 @@ def wget_models(models=None, **kwargs):
     models_all = {*()}  # all models
     models_grouped = {}  # models by variable
     for file in input:
-        models_file = {line_model(line) for line in wget_lines(file) if line}
+        models_file = {get_model(line) for line in wget_lines(file) if line}
         models_all.update(models_file)
         if (experiment, frequency) in models_grouped:
             models_grouped[(experiment, frequency)].update(models_file)
