@@ -21,6 +21,7 @@ if sys.platform == 'darwin':
     root = Path.home() / 'data'
 else:  # TODO: add conditionals?
     root = Path('/mdata5') / 'ldavis'
+openid = 'https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd'
 input_dir = root / 'wgets'
 output_dir = root / 'cmip'
 delim = 'EOF--dataset.file.url.chksum_type.chksum'
@@ -81,8 +82,13 @@ def wget_filter(
     Construct the summary wget file (optionally for only the input models).
     """
     # Get all lines for download
+    # Also manually replace the open ID
     input, output = wget_files(**kwargs)
     prefix, suffix = wget_lines(input[0], complement=True)
+    for i, line in enumerate(prefix):
+        if line == 'openId=\n':
+            prefix[i] = 'openId=' + openid + '\n'
+            break
 
     # Collect all download lines for files
     files = set()  # unique file tracking (ignore same file from multiple nodes)
