@@ -15,6 +15,12 @@ from icecream import ic  # noqa: F401
 import climopy as climo  # noqa: F401  # add accessor
 from climopy import ureg
 
+# Constants and utilities
+DATA = Path.home() / 'data'
+if sys.platform == 'darwin':
+    ROOT = Path.home() / 'data'
+else:  # TODO: add conditionals?
+    ROOT = Path('/mdata5') / 'ldavis'
 
 # Results of get_facet_options() called on SearchContext(project='CMIP5')
 # and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
@@ -26,10 +32,6 @@ from climopy import ureg
 # URL https://esgf-node.llnl.gov/esg-search:     11900116 hits for CMIP6 (use this one!)
 # URL https://esgf-data.dkrz.de/esg-search:      01009809 hits for CMIP6
 # URL https://esgf-node.ipsl.upmc.fr/esg-search: 01452125 hits for CMIP6
-if sys.platform == 'darwin':
-    ROOT = Path.home() / 'data'
-else:  # TODO: add conditionals?
-    ROOT = Path('/mdata5') / 'ldavis'
 CMIP5_FACETS = [
     'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
     'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
@@ -107,8 +109,7 @@ def download_cmip_wgets(**kwargs):  # noqa: U100
         keys = ('project', ('experiment', 'experiment_id'), ('cmor_table', 'table_id'))
         parts = []
         for key in keys:  # constraint components to use in file name
-            if isinstance(key, str):
-                key = (key,)
+            key = (key,) if isinstance(key, str) else key
             opts = sum((ctx.facet_constraints.getall(k) for k in key), start=[])
             if not opts:
                 raise RuntimeError
@@ -129,12 +130,11 @@ def download_cmip_wgets(**kwargs):  # noqa: U100
             print('Created:', name)
 
 
-def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
+def load_cmip_tables(project='cmip5'):
     """
     Load forcing-feedback data from each source. Return a dictionary of dataframes.
     """
-    dir = Path(dir)
-    dir = dir.expanduser()
+    path = DATA / 'cmip-tables'
     paths = [path for ext in ('.txt', '.json') for path in dir.glob('cmip*' + ext)]
     tables = {}
     for path in paths:
@@ -143,13 +143,13 @@ def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
                 src = json.load(f)
             index = pd.MultiIndex.from_tuples([], names=('model', 'variant'))
             df = pd.DataFrame(index=index)
-            for model, variants in src['CMIP' + str(version)].items():
+            for model, variants in src[project.upper()].items():
                 for variant, data in variants.items():
                     for name, value in data.items():
                         df.loc[(model, variant), name] = value
             tables[path.stem.split('_')[-1]] = df
         elif path.suffix == '.txt':
-            if '5' != str(version) or 'zelinka' in path.stem:
+            if project[-1] != '5' or 'zelinka' in path.stem:
                 pass
             else:
                 df = pd.read_table(
@@ -174,16 +174,18 @@ def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
 
 
 def load_cmip_xsections(
-    name='ta', forcing='piControl', path='~/data/cmip_Amon'
+    name='ta', project='cmip5', experiment='piControl', table='Amon',
 ):
     """
     Load CMIP variables for each model. Return a dictionary of datasets.
     """
-    path = Path(path)
-    path = path.expanduser()
+    path = DATA / f'{project}-{experiment}-{table}'
+    if not path.is_dir():
+        raise RuntimeError(f'Path {path!s} not found.')
+    name = f'{name}_{project}-{experiment}-{table}'
     files = [
         file for file in path.glob('*.nc')
-        if file.name.startswith('_'.join((name, forcing)))
+        if file.name.startswith('-'.join((name, project, experiment)))
     ]
     monthly, seasonal, annual = {}, {}, {}
     for file in files:
@@ -218,7 +220,7 @@ def load_cmip_xsections(
         monthly[model] = mds
         seasonal[model] = sds
         annual[model] = ads
-    print(f'Variable {name!r} forcing {forcing!r}: ' + ', '.join(monthly))
+    print(f'Variable {name!r} experiment {experiment!r}: ' + ', '.join(monthly))
     print(f'Number of models: {len(monthly)}.')
     return monthly, seasonal, annual
 

@@ -23,7 +23,7 @@ else:  # TODO: add conditionals?
     root = Path('/mdata5') / 'ldavis'
 openid = 'https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd'
 input_dir = root / 'wgets'
-output_dir = root / 'cmip'
+output_dir = root
 delim = 'EOF--dataset.file.url.chksum_type.chksum'
 maxyears = 50  # retain only first N years of each simulation?
 line_url = lambda line: line.split("'")[3].strip()
@@ -268,10 +268,11 @@ if __name__ == '__main__':
     # Get monthly data without response
     # for project in ('cmip6', 'cmip5'):
     # for project in ('cmip6',):
-    for project in ('cmip5',):
+    for project in ('cmip5', 'cmip6'):
         file, models = wget_filter(
             project=project,
             skipnode='ceda.ac.uk',  # WARNING: temporary issues only?
+            overwrite=False,
             duplicate=False,
             # duplicate=False,
             variables='ta',
