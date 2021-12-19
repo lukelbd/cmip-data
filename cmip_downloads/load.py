@@ -3,8 +3,9 @@
 Load various CMIP datasets.
 """
 import json
-import pathlib
 import warnings
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,12 @@ from icecream import ic  # noqa: F401
 import climopy as climo  # noqa: F401  # add accessor
 from climopy import ureg
 
+# Constants and utilities
+DATA = Path.home() / 'data'
+if sys.platform == 'darwin':
+    ROOT = Path.home() / 'data'
+else:  # TODO: add conditionals?
+    ROOT = Path('/mdata5') / 'ldavis'
 
 # Results of get_facet_options() called on SearchContext(project='CMIP5')
 # and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
@@ -65,7 +72,6 @@ def download_cmip_wgets(**kwargs):  # noqa: U100
 
     # Iterate over tables
     from pyesgf.search import SearchConnection
-    from pathlib import Path
     url = 'https://esgf-node.llnl.gov/esg-search'
     conn = SearchConnection(url, distrib=True)
     cmip6 = conn.new_context(project='CMIP6')
@@ -95,40 +101,40 @@ def download_cmip_wgets(**kwargs):  # noqa: U100
         cmor_table=['Amon'],
     )
     ctxs = (cmip6_control, cmip5_control, cmip6_response, cmip5_response)
+    print(cmip5.facet_constraints)
     for i in range(4):
         ctx = ctxs[i]
-        if i <= 1:
-            continue
         print(f'Context {i}:', ctx, ctx.facet_constraints)
         print(f'Hit count {i}:', ctx.hit_count)
         keys = ('project', ('experiment', 'experiment_id'), ('cmor_table', 'table_id'))
         parts = []
         for key in keys:  # constraint components to use in file name
-            opts = sum((ctx.facet_constraints.getall(key) for key in keys), start=[])
+            key = (key,) if isinstance(key, str) else key
+            opts = sum((ctx.facet_constraints.getall(k) for k in key), start=[])
             if not opts:
                 raise RuntimeError
             elif len(opts) > 1:
                 raise NotImplementedError
-            parts.append(opts[0].replace('-', ''))
+            part = opts[0].replace('-', '')
+            if 'project' in key:
+                part = part.lower()
+            parts.append(part)
         for j, ds in enumerate(ctx.search()):  # iterate over models and dates
-            if i == 2 and j <= 831:
-                continue
             print(f'Dataset {j}:', ds)
             fc = ds.file_context()
             wget = fc.get_download_script()
             name = 'wget_' + '-'.join((*parts, str(j))) + '.sh'
-            path = Path(Path.home(), 'data', 'wgets', )
+            path = Path(ROOT, 'wgets', name)
             with open(path, 'w') as f:
                 f.write(wget)
             print('Created:', name)
 
 
-def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
+def load_cmip_tables(project='cmip5'):
     """
     Load forcing-feedback data from each source. Return a dictionary of dataframes.
     """
-    dir = pathlib.Path(dir)
-    dir = dir.expanduser()
+    path = DATA / 'cmip-tables'
     paths = [path for ext in ('.txt', '.json') for path in dir.glob('cmip*' + ext)]
     tables = {}
     for path in paths:
@@ -137,13 +143,13 @@ def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
                 src = json.load(f)
             index = pd.MultiIndex.from_tuples([], names=('model', 'variant'))
             df = pd.DataFrame(index=index)
-            for model, variants in src['CMIP' + str(version)].items():
+            for model, variants in src[project.upper()].items():
                 for variant, data in variants.items():
                     for name, value in data.items():
                         df.loc[(model, variant), name] = value
             tables[path.stem.split('_')[-1]] = df
         elif path.suffix == '.txt':
-            if '5' != str(version) or 'zelinka' in path.stem:
+            if project[-1] != '5' or 'zelinka' in path.stem:
                 pass
             else:
                 df = pd.read_table(
@@ -168,16 +174,18 @@ def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
 
 
 def load_cmip_xsections(
-    name='ta', forcing='piControl', path='~/data/cmip_Amon'
+    name='ta', project='cmip5', experiment='piControl', table='Amon',
 ):
     """
     Load CMIP variables for each model. Return a dictionary of datasets.
     """
-    path = pathlib.Path(path)
-    path = path.expanduser()
+    path = DATA / f'{project}-{experiment}-{table}'
+    if not path.is_dir():
+        raise RuntimeError(f'Path {path!s} not found.')
+    name = f'{name}_{project}-{experiment}-{table}'
     files = [
         file for file in path.glob('*.nc')
-        if file.name.startswith('_'.join((name, forcing)))
+        if file.name.startswith('-'.join((name, project, experiment)))
     ]
     monthly, seasonal, annual = {}, {}, {}
     for file in files:
@@ -212,7 +220,7 @@ def load_cmip_xsections(
         monthly[model] = mds
         seasonal[model] = sds
         annual[model] = ads
-    print(f'Variable {name!r} forcing {forcing!r}: ' + ', '.join(monthly))
+    print(f'Variable {name!r} experiment {experiment!r}: ' + ', '.join(monthly))
     print(f'Number of models: {len(monthly)}.')
     return monthly, seasonal, annual
 
