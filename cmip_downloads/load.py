@@ -3,8 +3,9 @@
 Load various CMIP datasets.
 """
 import json
-import pathlib
 import warnings
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,10 @@ from climopy import ureg
 # URL https://esgf-node.llnl.gov/esg-search:     11900116 hits for CMIP6 (use this one!)
 # URL https://esgf-data.dkrz.de/esg-search:      01009809 hits for CMIP6
 # URL https://esgf-node.ipsl.upmc.fr/esg-search: 01452125 hits for CMIP6
+if sys.platform == 'darwin':
+    ROOT = Path.home() / 'data'
+else:  # TODO: add conditionals?
+    ROOT = Path('/mdata5') / 'ldavis'
 CMIP5_FACETS = [
     'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
     'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
@@ -65,7 +70,6 @@ def download_cmip_wgets(**kwargs):  # noqa: U100
 
     # Iterate over tables
     from pyesgf.search import SearchConnection
-    from pathlib import Path
     url = 'https://esgf-node.llnl.gov/esg-search'
     conn = SearchConnection(url, distrib=True)
     cmip6 = conn.new_context(project='CMIP6')
@@ -95,29 +99,31 @@ def download_cmip_wgets(**kwargs):  # noqa: U100
         cmor_table=['Amon'],
     )
     ctxs = (cmip6_control, cmip5_control, cmip6_response, cmip5_response)
+    print(cmip5.facet_constraints)
     for i in range(4):
         ctx = ctxs[i]
-        if i <= 1:
-            continue
         print(f'Context {i}:', ctx, ctx.facet_constraints)
         print(f'Hit count {i}:', ctx.hit_count)
         keys = ('project', ('experiment', 'experiment_id'), ('cmor_table', 'table_id'))
         parts = []
         for key in keys:  # constraint components to use in file name
-            opts = sum((ctx.facet_constraints.getall(key) for key in keys), start=[])
+            if isinstance(key, str):
+                key = (key,)
+            opts = sum((ctx.facet_constraints.getall(k) for k in key), start=[])
             if not opts:
                 raise RuntimeError
             elif len(opts) > 1:
                 raise NotImplementedError
-            parts.append(opts[0].replace('-', ''))
+            part = opts[0].replace('-', '')
+            if 'project' in key:
+                part = part.lower()
+            parts.append(part)
         for j, ds in enumerate(ctx.search()):  # iterate over models and dates
-            if i == 2 and j <= 831:
-                continue
             print(f'Dataset {j}:', ds)
             fc = ds.file_context()
             wget = fc.get_download_script()
             name = 'wget_' + '-'.join((*parts, str(j))) + '.sh'
-            path = Path(Path.home(), 'data', 'wgets', )
+            path = Path(ROOT, 'wgets', name)
             with open(path, 'w') as f:
                 f.write(wget)
             print('Created:', name)
@@ -127,7 +133,7 @@ def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
     """
     Load forcing-feedback data from each source. Return a dictionary of dataframes.
     """
-    dir = pathlib.Path(dir)
+    dir = Path(dir)
     dir = dir.expanduser()
     paths = [path for ext in ('.txt', '.json') for path in dir.glob('cmip*' + ext)]
     tables = {}
@@ -173,7 +179,7 @@ def load_cmip_xsections(
     """
     Load CMIP variables for each model. Return a dictionary of datasets.
     """
-    path = pathlib.Path(path)
+    path = Path(path)
     path = path.expanduser()
     files = [
         file for file in path.glob('*.nc')

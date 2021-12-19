@@ -20,7 +20,7 @@ from pathlib import Path
 if sys.platform == 'darwin':
     root = Path.home() / 'data'
 else:  # TODO: add conditionals?
-    root = Path('mdata5', 'ldavis')
+    root = Path('/mdata5') / 'ldavis'
 input_dir = root / 'wgets'
 output_dir = root / 'cmip'
 delim = 'EOF--dataset.file.url.chksum_type.chksum'
