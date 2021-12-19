@@ -17,10 +17,12 @@ from pathlib import Path
 # Constants and utilities
 # NOTE: Some files have a '-clim' suffix at the end of the date range.
 # Try to account for that when filtering dashes below.
-input_dir = Path(Path.home(), 'data', 'wgets')
-output_dir = Path(Path(__file__).parent, 'wgets')
-# data_dir = Path('mdata2', 'ldavis', 'cmip')
-data_dir = Path(Path.home(), 'data', 'cmip')
+if sys.platform == 'darwin':
+    root = Path.home() / 'data'
+else:  # TODO: add conditionals?
+    root = Path('mdata5', 'ldavis')
+input_dir = root / 'wgets'
+output_dir = root / 'cmip'
 delim = 'EOF--dataset.file.url.chksum_type.chksum'
 maxyears = 50  # retain only first N years of each simulation?
 line_file = lambda line: line.split("'")[1].strip()
@@ -63,14 +65,17 @@ def wget_files(project='cmip6', experiment='piControl', table='Amon'):
         pattern = 'wget_' + '-'.join(part[0] for part in parts) + '-*.sh'
         raise ValueError(f'No wget files found for input pattern(s): {pattern!r}')
     string = '-'.join(part[0] for part in parts)
-    path = data_dir / string
+    path = output_dir / string
     if not path.is_dir():
         os.mkdir(path)
     output = path / f'wget_{string}.sh'
     return input, output
 
 
-def wget_filter(models=None, variables=None, maxyears=50, update=True, **kwargs):
+def wget_filter(
+    models=None, variables=None, maxyears=None,
+    duplicates=False, update=True, **kwargs
+):
     """
     Construct the summary wget file (optionally for only the input models).
     """
@@ -91,6 +96,8 @@ def wget_filter(models=None, variables=None, maxyears=50, update=True, **kwargs)
         models = (models,)
     if isinstance(variables, str):
         variables = (variables,)
+    if maxyears is None:
+        maxyears = 50
     for model in sorted(models):
         # Find minimimum date range for which all variables are available
         # NOTE: Use maxyears - 1 or else e.g. 50 years with 190001-194912 will not
@@ -128,7 +135,7 @@ def wget_filter(models=None, variables=None, maxyears=50, update=True, **kwargs)
             if years[1] < year_range[0] or years[0] > year_range[1]:
                 continue
             file = line_file(line)
-            if file in files:
+            if not duplicates and file in files:
                 continue
             dest = output.parent / file
             if update and dest.exists():
@@ -140,6 +147,7 @@ def wget_filter(models=None, variables=None, maxyears=50, update=True, **kwargs)
     # Save bulk download file
     if output.exists():
         os.remove(output)
+    print('File:', output)
     with open(output, 'w') as file:
         file.write(''.join(prefix + lines + suffix))
     os.chmod(output, 0o755)
@@ -155,12 +163,12 @@ def wget_models(models=None, **kwargs):
     and a dictionary with 'experiment' keys listing the possible variables.
     """
     # Group models available for various (experiment, variable)
-    files, _, netcdf = wget_files(**kwargs)
-    project, experiment, table = netcdf.name.split('-')
+    input, output = wget_files(**kwargs)
+    project, experiment, table = output.parent.name.split('-')
     frequency = table[-3:].lower()  # convert e.g. Amon to mon
     models_all = {*()}  # all models
     models_grouped = {}  # models by variable
-    for file in files:
+    for file in input:
         models_file = {line_model(line) for line in wget_lines(file) if line}
         models_all.update(models_file)
         if (experiment, frequency) in models_grouped:
@@ -247,9 +255,16 @@ table_daily = None
 # table_daily = 'cfDay'
 if __name__ == '__main__':
     # Get monthly data without response
-    for project in ('cmip6', 'cmip5'):
+    # for project in ('cmip6', 'cmip5'):
+    # for project in ('cmip6',):
+    for project in ('cmip5',):
         file, models = wget_filter(
-            project=project, variables='ta', experiment='piControl', table=table_monthly
+            project=project,
+            duplicates=True,
+            # duplicates=False,
+            variables='ta',
+            experiment='piControl',
+            table=table_monthly
         )
     print()
     print(f'Models ({len(models)}):', ', '.join(models))
