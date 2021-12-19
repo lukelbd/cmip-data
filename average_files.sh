@@ -42,10 +42,11 @@ maxyear() {
 driver() {
   # Find available models and variables
   # TODO: Enable wget=false or wget=true not automatically
-  [ $# -eq 3 ] || { echo && echo "Error: 3 arguments required." && return 1; }
+  [ $# -ge 3 ] || { echo && echo "Error: At least 3 arguments required." && return 1; }
   project=$1
   experiment=$2
   table=$3
+  vars=("${@:4}")  # TODO: also permit restricting models?
   string=${project}-${experiment}-${table}
   [[ "$table" =~ "mon" ]] && wget=false || wget=true  # show climate summaries from wget scripts?
   if $wget; then  # search files in wget script
@@ -63,8 +64,8 @@ driver() {
 
   # Iterate through models then variables
   # NOTE: The quotes around files are important! contains newlines!
-  vars=($(echo "$allfiles" | cut -d'_' -f1 | sort | uniq))
   models=($(echo "$allfiles" | cut -d'_' -f3 | sort | uniq))
+  [ ${#vars[@]} -eq 0 ] && vars=($(echo "$allfiles" | cut -d'_' -f1 | sort | uniq))
   echo
   echo "Table $table, experiment $experiment: ${#models[@]} models found"
   for model in ${models[@]}; do
@@ -145,9 +146,9 @@ for project in ${projects[@]}; do
   for experiment in ${experiments[@]}; do
     for table in ${tables[@]}; do
       string=$project-$experiment-$table
-      $dryrun && log=average_${string}.log || log=average-dryrun_${string}.log
+      $dryrun && log=logs/average_${string}.log || log=logs/average-dryrun_${string}.log
       [ -r $log ] && rm $log
-      driver $project $experiment $table | tee $log
+      driver $project $experiment $table ta | tee $log
     done
   done
 done

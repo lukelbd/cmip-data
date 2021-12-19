@@ -179,7 +179,7 @@ def load_cmip_xsections(
     """
     Load CMIP variables for each model. Return a dictionary of datasets.
     """
-    path = DATA / f'{project}-{experiment}-{table}'
+    path = DATA / f'{project}-{experiment}-{table}-avg'
     if not path.is_dir():
         raise RuntimeError(f'Path {path!s} not found.')
     monthly, seasonal, annual = {}, {}, {}
