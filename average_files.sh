@@ -51,8 +51,8 @@ driver() {
       [[ "$table" =~ "mon" ]] && wget=false || wget=true  # show climate summaries from wget scripts?
       if $wget; then
         # Search files listed in wget script!
-        eof='EOF--dataset.file.url.chksum_type.chksum'
-        wget="wgets/${exp}-${table}.sh"
+        eof=EOF--dataset.file.url.chksum_type.chksum
+        wget=$HOME/wgets/${exp}-${table}.sh
         ! [ -r $wget ] && echo && echo "Warning: File $wget not found." && continue
         allfiles="$(cat $wget | sed -n "/$eof/,/$eof/p" | grep -v "$eof" | cut -d"'" -f2)"
       else
@@ -108,9 +108,11 @@ driver() {
           [[ $exp =~ "CO2" ]] && ny=$nresponse chunks=true || ny=$nclimate chunks=false
           for i in $(seq 1 "${#files[@]}"); do
             # Final n years
-            # yr=$(date2 ${dates[i - 1]}) # end date!
-            # [ $yr -ge $((ymax - ny + 1)) ] && climo+=("${files[i - 1]}")
+            yr=$(date2 ${dates[i - 1]}) # end date!
+            [ $yr -ge $((ymax - ny + 1)) ] && climo+=("${files[i - 1]}")
             # First n years
+            # NOTE: Simulations are already spun up. And maybe
+            # averaging first few years minimized model drift?
             yr=$(date1 ${dates[i - 1]})  # start date!
             [ $yr -le $((ymin + ny - 1)) ] && climo+=("${files[i-1]}")
           done
@@ -148,6 +150,6 @@ driver() {
 }
 
 # Call main function
-$dryrun && log=make_climatology_dryrun.log || log=make_climatology.log
+$dryrun && log=average_files_dryrun.log || log=average_files.log
 [ -r $log ] && rm $log
 driver | tee $log

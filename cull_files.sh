@@ -13,9 +13,9 @@ for subdir in $root/*; do
   for file in $subdir/*.nc; do
     # Detect zero-byte files; only issue observed so far
     # [ "$(echo "$(ncdump -h $file)" | grep 'UNLIMITED' | tr -dc '[0-9]')" -eq 0 ]; then
-    # count=$(wc -c < $file) # slow because reads whole file; redirect is so filename not printed
-    count=$(ls -nl $file | awk '{print $5}')  # faster
-    if [ $count -eq 0 ]; then
+    # bytes=$(wc -c < $file) # slow because reads whole file
+    bytes=$(ls -nl $file | awk '{print $5}')  # faster
+    if [ $bytes -eq 0 ]; then
       echo "Removing empty file '${file##*/}'"
       rm $file
     fi

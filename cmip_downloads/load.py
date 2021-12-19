@@ -17,9 +17,11 @@ from climopy import ureg
 
 # Results of get_facet_options() called on SearchContext(project='CMIP5')
 # and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
-# for the SearchConnection URL. Conventions changed between projects so
-# e.g. 'experiment' in CMIP5 must be changed to 'experiment_id' in CMIP6.
-# Synonyms: 'member_id' and 'variant_label', 'variable' and 'variable_id'
+# for the SearchConnection URL. Conventions changed between projects so e.g.
+# 'experiment', 'ensemble', 'cmor_table', and 'time_frequency' in CMIP5 must be
+# changed to 'experiment_id', 'variant_label', 'table_id', and 'frequency' in CMIP6.
+# Note 'member_id' is equivalent to 'variant_label' if 'sub_experiment_id' is unset
+# and for some reason 'variable' and 'variable_id' are kepts synonyms in CMIP5.
 # URL https://esgf-node.llnl.gov/esg-search:     11900116 hits for CMIP6 (use this one!)
 # URL https://esgf-data.dkrz.de/esg-search:      01009809 hits for CMIP6
 # URL https://esgf-node.ipsl.upmc.fr/esg-search: 01452125 hits for CMIP6
@@ -39,11 +41,86 @@ CMIP6_FACETS = [
 ]
 
 
-def download_cmip_files(**kwargs):  # noqa: U100
+def download_cmip_wgets(**kwargs):  # noqa: U100
     """
-    Generate and wget script for the input query.
+    Download wget files using pyesgf. Will eventually repace download_wgets.sh. This
+    will leverage utilities eventually built into climopy.
     """
-    pass
+    # Log on with OpenID
+    # LLNL: https://esgf-node.llnl.gov/
+    # CEDA: https://esgf-index1.ceda.ac.uk/
+    # DKRZ: https://esgf-data.dkrz.de/
+    # GFDL: https://esgdata.gfdl.noaa.gov/
+    # IPSL: https://esgf-node.ipsl.upmc.fr/
+    # JPL:  https://esgf-node.jpl.nasa.gov/
+    # LIU:  https://esg-dn1.nsc.liu.se/
+    # NCI:  https://esgf.nci.org.au/
+    # NCCS: https://esgf.nccs.nasa.gov/
+    # Nodes listed here: https://esgf.llnl.gov/nodes.html
+    from pyesgf.logon import LogonManager
+    lm = LogonManager()
+    host = 'esgf-node.llnl.gov'
+    if not lm.is_logged_on():
+        lm.logon(username='lukelbd', password=None, hostname=host)
+
+    # Iterate over tables
+    from pyesgf.search import SearchConnection
+    from pathlib import Path
+    url = 'https://esgf-node.llnl.gov/esg-search'
+    conn = SearchConnection(url, distrib=True)
+    cmip6 = conn.new_context(project='CMIP6')
+    cmip5 = conn.new_context(project='CMIP5')
+    cmip6_control = cmip6.constrain(
+        experiment_id=['piControl'],
+        variable_id=['ta'],
+        variant_label=['r1i1p1f1'],
+        table_id=['Amon'],
+    )
+    cmip5_control = cmip5.constrain(
+        experiment=['piControl'],
+        variable=['ta'],
+        ensemble=['r1i1p1'],
+        cmor_table=['Amon'],
+    )
+    cmip6_response = cmip6.constrain(
+        experiment_id=['abrupt-4xCO2'],
+        variable_id=['rlut', 'rsut', 'rlutcs', 'rsutcs', 'tas'],
+        variant_label=['r1i1p1f1'],
+        table_id=['Amon'],
+    )
+    cmip5_response = cmip5.constrain(
+        experiment=['abrupt4xCO2'],  # no dash
+        variable=['rlut', 'rsut', 'rlutcs', 'rsutcs', 'tas'],
+        ensemble=['r1i1p1'],
+        cmor_table=['Amon'],
+    )
+    ctxs = (cmip6_control, cmip5_control, cmip6_response, cmip5_response)
+    for i in range(4):
+        ctx = ctxs[i]
+        if i <= 1:
+            continue
+        print(f'Context {i}:', ctx, ctx.facet_constraints)
+        print(f'Hit count {i}:', ctx.hit_count)
+        keys = ('project', ('experiment', 'experiment_id'), ('cmor_table', 'table_id'))
+        parts = []
+        for key in keys:  # constraint components to use in file name
+            opts = sum((ctx.facet_constraints.getall(key) for key in keys), start=[])
+            if not opts:
+                raise RuntimeError
+            elif len(opts) > 1:
+                raise NotImplementedError
+            parts.append(opts[0].replace('-', ''))
+        for j, ds in enumerate(ctx.search()):  # iterate over models and dates
+            if i == 2 and j <= 831:
+                continue
+            print(f'Dataset {j}:', ds)
+            fc = ds.file_context()
+            wget = fc.get_download_script()
+            name = 'wget_' + '-'.join((*parts, str(j))) + '.sh'
+            path = Path(Path.home(), 'data', 'wgets', )
+            with open(path, 'w') as f:
+                f.write(wget)
+            print('Created:', name)
 
 
 def load_cmip_tables(dir='~/data/cmip_tables/', version=5):
