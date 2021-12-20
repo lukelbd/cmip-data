@@ -53,19 +53,19 @@ driver() {
     eof=EOF--dataset.file.url.chksum_type.chksum
     input=$root/wgets/wget_${string}.sh
     [ -r "$input" ] || { echo && echo "Error: File $input not found." && return 1; }
-    allfiles=$(cat $input | sed -n "/$eof/,/$eof/p" | grep -v "$eof" | cut -d"'" -f2)
+    files_all=$(cat $input | sed -n "/$eof/,/$eof/p" | grep -v "$eof" | cut -d"'" -f2)
   else  # search files on disk
     input=${root}/${string}
     [ -d "$input" ] || { echo && echo "Error: Path $input not found." && return 1; }
     output=${data}/${string}-avg
     [ -r "$output" ] || mkdir "$output" || { echo && echo "Error: Failed to make $output." && return 1; }
-    allfiles=$(find $input -name "*.nc" -printf "%f\n")
+    files_all=$(find $input -name "*.nc" -printf "%f\n")
   fi
 
   # Iterate through models then variables
   # NOTE: The quotes around files are important! contains newlines!
-  models=($(echo "$allfiles" | cut -d'_' -f3 | sort | uniq))
-  [ ${#vars[@]} -eq 0 ] && vars=($(echo "$allfiles" | cut -d'_' -f1 | sort | uniq))
+  models=($(echo "$files_all" | cut -d'_' -f3 | sort | uniq))
+  [ ${#vars[@]} -eq 0 ] && vars=($(echo "$files_all" | cut -d'_' -f1 | sort | uniq))
   echo
   echo "Table $table, experiment $experiment: ${#models[@]} models found"
   for model in ${models[@]}; do
@@ -80,7 +80,7 @@ driver() {
       out=${output}/${var}_${table}_${model}_${experiment}_${project}.nc
       exists=false
       [ -r $out ] && [ "$(ncdump -h "$out" 2>/dev/null | grep 'UNLIMITED' | tr -dc 0-9)" -gt 0 ] && exists=true
-      files=($(echo "$allfiles" | grep "${var}_${table}_${model}_"))
+      files=($(echo "$files_all" | grep "${var}_${table}_${model}_"))
       dates=($(echo "${files[@]}" | tr ' ' $'\n' | rev | cut -d'_' -f1 | rev | sed 's/\.nc//g' | sort))
       if [ ${#files[@]} -eq 0 ]; then
         echo "$(printf "%-8s" "$var:") not found"
@@ -100,7 +100,11 @@ driver() {
       for i in $(seq 1 "${#files[@]}"); do
         file=${files[i - 1]}
         date=${dates[i - 1]}
-        if [ "$(year1 $date)" -le $((ymin + ny - 1)) ]; then
+        # shellcheck disable=SC2046
+        if [ $(stat -c "%s" "$input/$file") -eq 0 ]; then
+          echo "Warning: Deleting empty file $file"
+          rm "$input/$file"
+        elif [ "$(year1 $date)" -le $((ymin + ny - 1)) ]; then
           files_climo+=("$file")
           dates_climo+=("$date")
         fi
@@ -112,6 +116,7 @@ driver() {
       $wget && echo 'Skipping (wget only)...' && continue
       $exists && echo 'Skipping (file exists)...' && continue
       $dryrun && echo 'Skipping (dry run)...' && continue
+      [ ${#files_climo[@]} -eq 0 ] && echo 'Skipping (no files)...' && continue
 
       # Take zonal and time averages
       # NOTE: Use the initial years from the files rather than trailing years.
