@@ -134,7 +134,7 @@ driver() {
         done
         cdo -s -O -mergetime $cmd $out
       else
-        [ $nt1 -ge $nt2 ] && cmd="-seltimestep,1/$nt2" # "$((nt1 - nt2 + 1))/$nt1"  # final years
+        [ $nt1 -ge $nt2 ] && cmd="-seltimestep,1/$nt2"  # "$((nt1 - nt2 + 1))/$nt1"  # final years
         cdo -s -O -ymonmean $cmd $tmp $out
       fi
     done
@@ -143,8 +143,8 @@ driver() {
 
 # Call main function
 projects=(cmip5 cmip6)
-# experiments=(piControl abrupt4xCO2)
-experiments=(piControl)
+experiments=(piControl abrupt4xCO2)
+# experiments=(piControl)
 # tables=(Amon cfDay day)  # for 'cfDay' and 'day' just show tables (see below)
 tables=(Amon)
 for project in ${projects[@]}; do
@@ -153,7 +153,8 @@ for project in ${projects[@]}; do
       string=$project-$experiment-$table
       $dryrun && log=logs/average_${string}.log || log=logs/average-dryrun_${string}.log
       [ -r $log ] && rm $log
-      driver $project $experiment $table ta | tee $log
+      # driver $project $experiment $table ta | tee $log
+      driver $project $experiment $table intuadse intvadse intuaw intvaw | tee $log
     done
   done
 done
