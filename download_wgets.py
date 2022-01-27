@@ -44,36 +44,35 @@ if __name__ == '__main__':
     cmip6 = conn.new_context(project='CMIP6')
     cmip5 = conn.new_context(project='CMIP5')
     cmip5_control = cmip5_response = None
-    cmipy_control = cmip6_response = None
+    cmip5_control = cmip6_response = None
 
     # Integrated transport
-    # cmip6_control = cmip6.constrain(
-    #     experiment_id=['piControl'],
-    #     variable_id=['intuadse', 'intvadse', 'intuaw', 'intvaw'],
-    #     variant_label=['r1i1p1f1'],
-    # )
-    # cmip6_response = cmip6.constrain(
-    #     experiment_id=['abrupt-4xCO2'],
-    #     variable_id=['intuadse', 'intvadse', 'intuaw', 'intvaw'],
-    #     variant_label=['r1i1p1f1'],
-    # )
-
-    # Climate everything
     cmip6_control = cmip6.constrain(
         experiment_id=['piControl'],
-        variable_id=[
-            'ta', 'hur', 'hus', 'cl', 'clw', 'cli', 'clwvp', 'clwvi', 'clivi', 'cct',
-            # 'cldwatmxrat27', 'cldicemxrat27'
-        ],
+        variable_id=['intuadse', 'intvadse', 'intuaw', 'intvaw'],
         variant_label=['r1i1p1f1'],
-        table_id=['Amon'],
     )
-    cmip5_control = cmip5.constrain(
-        experiment=['piControl'],
-        variable=['ta'],
-        ensemble=['r1i1p1'],
-        cmor_table=['Amon'],
+    cmip6_response = cmip6.constrain(
+        experiment_id=['abrupt-4xCO2'],
+        variable_id=['intuadse', 'intvadse', 'intuaw', 'intvaw'],
+        variant_label=['r1i1p1f1'],
     )
+
+    # Climate everything
+    # 'cldwatmxrat27', 'cldicemxrat27'
+    # vars = ['ta', 'hur', 'hus', 'cl', 'clw', 'cli', 'clwvp', 'clwvi', 'clivi', 'cct']
+    # cmip6_control = cmip6.constrain(
+    #     experiment_id=['piControl'],
+    #     variable_id=vars,
+    #     variant_label=['r1i1p1f1'],
+    #     table_id=['Amon'],
+    # )
+    # cmip5_control = cmip5.constrain(
+    #     experiment=['piControl'],
+    #     variable=vars,
+    #     ensemble=['r1i1p1'],
+    #     cmor_table=['Amon'],
+    # )
 
     # Climate temperature
     # cmip6_response = cmip6.constrain(

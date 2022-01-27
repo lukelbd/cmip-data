@@ -17,6 +17,7 @@ from pathlib import Path
 DELIM = 'EOF--dataset.file.url.chksum_type.chksum'
 OPENID = 'https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd'
 MAXYEARS = 50  # retain only first N years of each simulation?
+ENDYEARS = False  # whether to use the end years instead of start years
 # MAXYEARS = 100  # retain 100 years for very solid climatology
 if sys.platform == 'darwin':
     ROOT = Path.home() / 'data'
@@ -79,7 +80,7 @@ def wget_files(project='cmip6', experiment='piControl', table='Amon', variables=
 
 
 def wget_filter(
-    models=None, variables=None, maxyears=None,
+    models=None, variables=None, maxyears=None, endyears=None,
     badnodes=None, badmodels=None, duplicate=False, overwrite=False,
     **kwargs
 ):
@@ -115,6 +116,8 @@ def wget_filter(
         variables = (variables,)
     if maxyears is None:
         maxyears = MAXYEARS
+    if endyears is None:
+        endyears = ENDYEARS
     for model in sorted(models):
         # Find minimimum date range for which all variables are available
         # NOTE: Use maxyears - 1 or else e.g. 50 years with 190001-194912 will not
@@ -130,15 +133,17 @@ def wget_filter(
                 years = [get_years(line) for line in lines_model if f'{var}_' in line]
             except ValueError:  # helpful message
                 for line in lines_model:
-                    print(line)
                     get_years(line)
-            year_ranges.append((min(p[0] for p in years), max(p[1] for p in years)))
+            year_ranges.append((min(y for y, _ in years), max(y for _, y in years)))
         if not year_ranges:
             continue
-        print('Model:', model)
         year_range = (max(p[0] for p in year_ranges), min(p[1] for p in year_ranges))
+        print('Model:', model)
         print('Initial years:', year_range)
-        year_range = (year_range[0], min(year_range[1], year_range[0] + maxyears - 1))
+        if endyears:
+            year_range = (max(year_range[0], year_range[1] - maxyears + 1), year_range[1])  # noqa: E501
+        else:
+            year_range = (year_range[0], min(year_range[1], year_range[0] + maxyears - 1))  # noqa: E501
         print('Final years:', year_range)
 
         # Add lines within the date range that were not downloaded already
@@ -284,46 +289,48 @@ kwargs = {
     'badnodes': ('ceda.ac.uk', 'nird.sigma2.no', 'nmlab.snu.ac.kr', 'esg.lasg.ac.cn'),  # noqa: E501
 }
 if __name__ == '__main__':
-    # Get monthly temp data without response
-    # for project in ('cmip6', 'cmip5'):
-    # for project in ('cmip5',):
-    for project in ('cmip6',):
-        file, models = wget_filter(
-            project=project,
-            # variables='ta',
-            variables=(
-                'ta', 'hur', 'hus',
-                'cl', 'clw', 'cli', 'clwvp', 'clwvi', 'clivi', 'cct',
-            ),
-            experiment='piControl',
-            table=table_monthly,
-            **kwargs,
-        )
-    print()
-    print(f'Models ({len(models)}):', ', '.join(models))
+    # Get monthly variable data without response
+    # vars = ('ta', 'hur', 'hus', 'cl', 'clw', 'cli', 'clwvp', 'clwvi', 'clivi', 'cct')
+    # # for project in ('cmip6', 'cmip5'):
+    # # for project in ('cmip5',):
+    # for project in ('cmip6',):
+    #     file, models = wget_filter(
+    #         project=project,
+    #         # variables='ta',
+    #         variables=vars,
+    #         experiment='piControl',
+    #         table=table_monthly,
+    #         endyears=True,
+    #         maxyears=100,
+    #         **kwargs,
+    #     )
+    # print()
+    # print(f'Models ({len(models)}):', ', '.join(models))
 
     # Get integrated transport in CMIP6
-    # file, models_control = wget_filter(
-    #     project='cmip6',
-    #     experiment='piControl',
-    #     variables=('intuadse', 'intvadse', 'intuaw', 'intvaw'),
-    #     table=table_monthly,
-    #     **kwargs,
-    # )
-    # file, models_response = wget_filter(
-    #     project='cmip6',
-    #     experiment='abrupt4xCO2',
-    #     variables=('intuadse', 'intvadse', 'intuaw', 'intvaw'),
-    #     table=table_monthly,
-    #     **kwargs,
-    # )
-    # both = {*models_response} & {*models_control}
-    # nocontrol = {*models_response} - {*models_control}
-    # noresponse = {*models_control} - {*models_response}
-    # print()
-    # print(f'Both ({len(both)}):', ', '.join(both))
-    # print(f'No control ({len(nocontrol)}):', ', '.join(nocontrol))
-    # print(f'No response ({len(noresponse)}):', ', '.join(noresponse))
+    vars = ('intuadse', 'intvadse', 'intuaw', 'intvaw')
+    kwargs.update({'maxyears': 100, 'endyears': True})
+    file, models_control = wget_filter(
+        project='cmip6',
+        variables=vars,
+        experiment='piControl',
+        table=table_monthly,
+        **kwargs,
+    )
+    file, models_response = wget_filter(
+        project='cmip6',
+        variables=vars,
+        experiment='abrupt4xCO2',
+        table=table_monthly,
+        **kwargs,
+    )
+    both = {*models_response} & {*models_control}
+    nocontrol = {*models_response} - {*models_control}
+    noresponse = {*models_control} - {*models_response}
+    print()
+    print(f'Both ({len(both)}):', ', '.join(both))
+    print(f'No control ({len(nocontrol)}):', ', '.join(nocontrol))
+    print(f'No response ({len(noresponse)}):', ', '.join(noresponse))
 
     # Get monthly temp data plus daily fluxes
     # Also filter to abrupt experiments for custom sensitivity assessment

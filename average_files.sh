@@ -14,7 +14,9 @@ shopt -s nullglob
 dryrun=false
 nclimate=50  # first 50 years
 nresponse=100  # first 100 years
-nchunks=10 # for response blockwise averages
+nchunks=10  # for response blockwise averages
+endyears=false  # whether to use end or start years
+endyears=true  # whether to use end or start years
 data=$HOME/data
 [[ "$OSTYPE" =~ darwin* ]] && root=$data || root=/mdata5/ldavis
 
@@ -119,22 +121,40 @@ driver() {
       [ ${#files_climo[@]} -eq 0 ] && echo 'Skipping (no files)...' && continue
 
       # Take zonal and time averages
-      # NOTE: Use the initial years from the files rather than trailing years.
-      unset cmd
+      # NOTE: Optionally use final years or intial years. Generally want initial
+      # years of control run to avoid model drift and final years of abrupt run.
+      # Note that runs published in CMIP are already spun up.
       cmds=${files_climo[*]/#/-zonmean -selname,$var $input/}
       [ ${#files_climo[@]} -gt 1 ] && cmds="-mergetime $cmds"
       cdo -s -O $cmds $tmp || { echo 'Warning: Merge failed.' && continue; }
-      nt1=$(cdo -s ntime $tmp)  # file time steps
-      nt2=$((ny * 12))  # final time steps
+      nt=$(cdo -s ntime $tmp)  # file time steps
+      nty=$((ny * 12))  # desired total time steps
+      ntc=$((nchunks * 12))  # desired chunk time steps
       if $chunks; then
-        for iy in $(seq 0 nchunks $((ny - nchunks))); do
-          ti=$((iy * 12 + 1))
-          tf=$(((iy + nchunks) * 12))
-          cmd="$cmd -ymonmean -seltimestep,$ti/$tf $tmp"
+        unset cmd
+        for ti in $(seq 1 ntc $((nty - ntc))); do
+          if [ $ti -ge $nt ]; then
+          if $endyears; then
+            t1=$((nt - ti - ntc))
+            t2=$((nt - ti + 1))  # endpoint inclusive starts at one
+          else
+            t1=$((ti))
+            t2=$((ti + ntc - 1))  # endpoint inclusive
+          fi
+          [ $t1 -lt 1 ] && t1=1
+          [ $t2 -gt $nt ] && t2=$nt
+          cmd="$cmd -ymonmean -seltimestep,$t1/$t2 $tmp"
         done
         cdo -s -O -mergetime $cmd $out
       else
-        [ $nt1 -ge $nt2 ] && cmd="-seltimestep,1/$nt2"  # "$((nt1 - nt2 + 1))/$nt1"  # final years
+        unset cmd
+        if [ $nty -ge $nt ]; then
+          echo "Warning: Requested $nty time steps but file only has $nt time steps."
+        elif $endyears; then
+          cmd="-seltimestep,$((nt - nty + 1))/$nt"  # final years
+        else
+          cmd="-seltimestep,1/$nty"  # initial years
+        fi
         cdo -s -O -ymonmean $cmd $tmp $out
       fi
     done
