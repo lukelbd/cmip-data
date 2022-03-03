@@ -12,15 +12,10 @@
 # Constants
 shopt -s nullglob
 dryrun=false
-nclimate=50  # first 50 years
-nresponse=100  # first 100 years
-nchunks=10  # for response blockwise averages
-endyears=false  # whether to use end or start years
-endyears=true  # whether to use end or start years
 data=$HOME/data
 [[ "$OSTYPE" =~ darwin* ]] && root=$data || root=/mdata5/ldavis
 
-# Helper functions
+# Simple helper functions
 # See: https://unix.stackexchange.com/a/13779/112647
 # WARNING: Dates sent to awk scripts must be sorted!
 year1() {
@@ -49,8 +44,9 @@ driver() {
   experiment=$2
   table=$3
   vars=("${@:4}")  # TODO: also permit restricting models?
-  string=${project}-${experiment}-${table}
-  [[ "$table" =~ "mon" ]] && wget=false || wget=true  # show climate summaries from wget scripts?
+  [[ "$table" =~ Emon ]] && pattern=Amon || pattern=$table
+  [[ "$pattern" =~ mon ]] && wget=false || wget=true  # show climate summaries from wget scripts?
+  string=${project}-${experiment}-${pattern}
   if $wget; then  # search files in wget script
     eof=EOF--dataset.file.url.chksum_type.chksum
     input=$root/wgets/wget_${string}.sh
@@ -59,7 +55,7 @@ driver() {
   else  # search files on disk
     input=${root}/${string}
     [ -d "$input" ] || { echo && echo "Error: Path $input not found." && return 1; }
-    output=${data}/${string}-avg
+    output=${data}/${string}
     [ -r "$output" ] || mkdir "$output" || { echo && echo "Error: Failed to make $output." && return 1; }
     files_all=$(find $input -name "*.nc" -printf "%f\n")
   fi
@@ -98,7 +94,7 @@ driver() {
       # NOTE: Use at least this many years from start of simulation (models are
       # already spun up, and this could help remove drift during control runs).
       unset files_climo dates_climo
-      [[ $experiment =~ CO2 ]] && ny=$nresponse chunks=true || ny=$nclimate chunks=false
+      [[ $experiment =~ CO2 ]] && ny=$nresponse || ny=$nclimate
       for i in $(seq 1 "${#files[@]}"); do
         file=${files[i - 1]}
         date=${dates[i - 1]}
@@ -115,16 +111,19 @@ driver() {
       ymax=$(maxyear "${dates_climo[@]#*-}")
       echo "$(printf "%-8s" "$var:") $ymin-$ymax (${#files_climo[@]} files, parent ${parent:-NA})"
       echo "Output: ${output##*/}/${out##*/}"
+      # $exists && echo 'Skipping (file exists)...' && continue
       $wget && echo 'Skipping (wget only)...' && continue
-      $exists && echo 'Skipping (file exists)...' && continue
       $dryrun && echo 'Skipping (dry run)...' && continue
       [ ${#files_climo[@]} -eq 0 ] && echo 'Skipping (no files)...' && continue
 
       # Take zonal and time averages
+      # NOTE: Optionally get chunks of N-yearly averages for calculating
+      # feedbacks and Gregory plots or just total climatological average.
       # NOTE: Optionally use final years or intial years. Generally want initial
       # years of control run to avoid model drift and final years of abrupt run.
       # Note that runs published in CMIP are already spun up.
-      cmds=${files_climo[*]/#/-zonmean -selname,$var $input/}
+      # cmds=${files_climo[*]/#/-zonmean -selname,$var $input/}
+      cmds=${files_climo[*]/#/-selname,$var $input/}
       [ ${#files_climo[@]} -gt 1 ] && cmds="-mergetime $cmds"
       cdo -s -O $cmds $tmp || { echo 'Warning: Merge failed.' && continue; }
       nt=$(cdo -s ntime $tmp)  # file time steps
@@ -133,8 +132,13 @@ driver() {
       if $chunks; then
         unset cmd
         for ti in $(seq 1 ntc $((nty - ntc))); do
-          if [ $ti -ge $nt ]; then
-          if $endyears; then
+          if [ $ti -gt $nt ]; then
+            echo "Warning: Requested $nty time steps but file only has $nt time steps."
+            break
+          elif [ $((ti + ntc - 1)) -gt $nt ]; then
+            echo "Warning: Averaging chunk size $ntc incompatible with $nt time steps."
+            break
+          elif $endyears; then
             t1=$((nt - ti - ntc))
             t2=$((nt - ti + 1))  # endpoint inclusive starts at one
           else
@@ -143,12 +147,12 @@ driver() {
           fi
           [ $t1 -lt 1 ] && t1=1
           [ $t2 -gt $nt ] && t2=$nt
-          cmd="$cmd -ymonmean -seltimestep,$t1/$t2 $tmp"
+          cmd="$cmd -mergetime -seltimestep,$t1/$t2 $tmp"
         done
-        cdo -s -O -mergetime $cmd $out
+        cdo -s -O -ensmean $cmd $out
       else
         unset cmd
-        if [ $nty -ge $nt ]; then
+        if [ $nty -gt $nt ]; then
           echo "Warning: Requested $nty time steps but file only has $nt time steps."
         elif $endyears; then
           cmd="-seltimestep,$((nt - nty + 1))/$nt"  # final years
@@ -161,12 +165,36 @@ driver() {
   done
 }
 
-# Call main function
+# Global variables
+# nchunks=10  # for response time series using blockwise averages
+# endyears=false  # whether to use end or start years
+
+# Temperature data
+# projects=(cmip6)
 projects=(cmip5 cmip6)
-experiments=(piControl abrupt4xCO2)
-# experiments=(piControl)
-# tables=(Amon cfDay day)  # for 'cfDay' and 'day' just show tables (see below)
-tables=(Amon)
+experiments=(piControl)
+tables=(Amon Emon)
+vars=(ta hur hus cl clw cli clt clwvp clwvi clivi cct)
+vars=(gs psl ua va)
+chunks=false
+nchunks=10
+nclimate=50  # first 50 years
+nresponse=50  # last 50 years
+endyears=false  # whether to use end or start years
+
+# Transport data
+# projects=(cmip6)
+# experiments=(piControl abrupt4xCO2)
+# tables=(Emon)
+# vars=(intuadse intvadse intuaw intvaw)
+# chunks=false
+# nchunks=10
+# nclimate=100  # last 100 years
+# nresponse=100  # last 100 years
+# endyears=true  # whether to use end or start years
+
+# Call main function
+# TODO: Limit files to number of timesteps
 for project in ${projects[@]}; do
   for experiment in ${experiments[@]}; do
     for table in ${tables[@]}; do
@@ -174,7 +202,7 @@ for project in ${projects[@]}; do
       $dryrun && log=logs/average_${string}.log || log=logs/average-dryrun_${string}.log
       [ -r $log ] && rm $log
       # driver $project $experiment $table ta | tee $log
-      driver $project $experiment $table intuadse intvadse intuaw intvaw | tee $log
+      driver $project $experiment $table ${vars[@]} | tee $log
     done
   done
 done

@@ -2,10 +2,10 @@
 """
 Convenient wrappers for python APIs to download CMIP data.
 """
+
 __all__ = [
     'cmip',
 ]
-
 
 # CMIP constants. Results of get_facet_options() for SearchContext(project='CMIP5')
 # and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
@@ -13,7 +13,7 @@ __all__ = [
 # 'experiment', 'ensemble', 'cmor_table', and 'time_frequency' in CMIP5 must be
 # changed to 'experiment_id', 'variant_label', 'table_id', and 'frequency' in CMIP6.
 # Note 'member_id' is equivalent to 'variant_label' if 'sub_experiment_id' is unset
-# and for some reason 'variable' and 'variable_id' are kepts synonyms in CMIP5.
+# and for some reason 'variable' and 'variable_id' are kept as synonyms in CMIP6.
 # URL https://esgf-node.llnl.gov/esg-search:     11900116 hits for CMIP6 (use this one!)
 # URL https://esgf-data.dkrz.de/esg-search:      01009809 hits for CMIP6
 # URL https://esgf-node.ipsl.upmc.fr/esg-search: 01452125 hits for CMIP6
@@ -49,10 +49,3 @@ def cmip(url=None):
     conn = SearchConnection(url, distrib=True)
     ctx = conn.new_context()
     return ctx
-
-
-def cesm():
-    """
-    Download large ensemble data.
-    """
-    raise NotImplementedError

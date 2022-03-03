@@ -39,54 +39,112 @@ if __name__ == '__main__':
         lm.logon(username='lukelbd', password=None, hostname=host)
 
     # Create CMIP5 and CMIP6 contexts
+    facets6 = 'project,experiment_id,variant_label,table_id,variable_id'
+    facets5 = 'project,experiment,ensemble,cmor_table,variable'
     url = 'https://esgf-node.llnl.gov/esg-search'
     conn = SearchConnection(url, distrib=True)
-    cmip6 = conn.new_context(project='CMIP6')
-    cmip5 = conn.new_context(project='CMIP5')
+    cmip6 = conn.new_context(
+        project='CMIP6',
+        variant_label=['r1i1p1f1'],
+        table_id=['Amon', 'Emon'],
+        facets=facets6,
+    )
+    cmip5 = conn.new_context(
+        project='CMIP5',
+        ensemble=['r1i1p1'],
+        cmor_table=['Amon', 'Emon'],
+        facets=facets5,
+    )
     cmip5_control = cmip5_response = None
-    cmip5_control = cmip6_response = None
+    cmip6_control = cmip6_response = None
 
     # Integrated transport
-    cmip6_control = cmip6.constrain(
-        experiment_id=['piControl'],
-        variable_id=['intuadse', 'intvadse', 'intuaw', 'intvaw'],
-        variant_label=['r1i1p1f1'],
-    )
-    cmip6_response = cmip6.constrain(
-        experiment_id=['abrupt-4xCO2'],
-        variable_id=['intuadse', 'intvadse', 'intuaw', 'intvaw'],
-        variant_label=['r1i1p1f1'],
-    )
-
-    # Climate everything
-    # 'cldwatmxrat27', 'cldicemxrat27'
-    # vars = ['ta', 'hur', 'hus', 'cl', 'clw', 'cli', 'clwvp', 'clwvi', 'clivi', 'cct']
+    # vars = ['intuadse', 'intvadse', 'intuaw', 'intvaw']
     # cmip6_control = cmip6.constrain(
     #     experiment_id=['piControl'],
     #     variable_id=vars,
-    #     variant_label=['r1i1p1f1'],
-    #     table_id=['Amon'],
     # )
+    # cmip6_response = cmip6.constrain(
+    #     experiment_id=['abrupt-4xCO2'],
+    #     variable_id=vars,
+    # )
+
+    # Residual transport and net feedbacks
+    # NOTE: Need abrupt 4xCO2 radiation data for 'local feedback parameter' estimates
+    # and pre-industrial control radition data for 'effective relaxation timescale'
+    # estimates. Then atmospheric parameters used for regressions and correlations
+    # (after multiplying by radiative kernel to get 'radiation due to parameter'
+    # then regressing or correlating with surface temperature). Also note albedo
+    # is taken from ratio of upwelling to downwelling surface solar.
+    # vars = [
+    #     'rtmt',  # net TOA LW and SW
+    #     'rls',  # net surface LW
+    #     'rss',  # net surface SW
+    #     'hsls',  # surface upward LH flux
+    #     'hsfs',  # surface upward SH flux
+    # ]
+    # vars = [
+    #     'ta',  # air temperature
+    #     'hus',  # specific humidity
+    #     'tas',  # surface temperature
+    #     'rsdt',  # downwelling SW TOA (identical to solar constant)
+    #     'rlut',  # upwelling LW TOA
+    #     'rsut',  # upwelling SW TOA
+    #     'rlds',  # downwelling LW surface
+    #     'rsds',  # downwelling SW surface
+    #     'rlus',  # upwelling LW surface
+    #     'rsus',  # upwelling SW surface
+    #     'rlutcs',  # upwelling LW TOA (clear-sky)
+    #     'rsutcs',  # upwelling SW TOA (clear-sky)
+    #     'rsuscs',  # upwelling SW surface (clear-sky) (in response to downwelling)
+    #     'rldscs',  # downwelling LW surface (clear-sky)
+    #     'rsdscs',  # downwelling SW surface (clear-sky)
+    #     'hsls',  # surface upward LH flux
+    #     'hsfs',  # surface upward SH flux
+    # ]
     # cmip5_control = cmip5.constrain(
     #     experiment=['piControl'],
     #     variable=vars,
-    #     ensemble=['r1i1p1'],
-    #     cmor_table=['Amon'],
-    # )
-
-    # Climate temperature
-    # cmip6_response = cmip6.constrain(
-    #     experiment_id=['abrupt-4xCO2'],
-    #     variable_id=['tas', 'rlut', 'rsut', 'rlutcs', 'rsutcs'],
-    #     variant_label=['r1i1p1f1'],
-    #     table_id=['Amon'],
     # )
     # cmip5_response = cmip5.constrain(
     #     experiment=['abrupt4xCO2'],  # no dash
-    #     variable=['tas', 'rlut', 'rsut', 'rlutcs', 'rsutcs'],
-    #     ensemble=['r1i1p1'],
-    #     cmor_table=['Amon'],
+    #     variable=vars,
     # )
+    # cmip6_control = cmip6.constrain(
+    #     experiment_id=['piControl'],
+    #     variable_id=vars,
+    # )
+    # cmip6_response = cmip6.constrain(
+    #     experiment_id=['abrupt-4xCO2'],  # include dash
+    #     variable_id=vars,
+    # )
+
+    # Climate everything
+    vars = ['cldwatmxrat27', 'cldicemxrat27']  # special cloud variables
+    vars = [
+        # 'psl',  # sea-level pressure
+        # 'gs',  # geopotential height
+        # 'ua',  # zonal wind
+        # 'va',  # meridional wind
+        'ta',  # air temperature
+        'hur',  # relative humidity
+        'hus',  # specific humidity
+        'cl',  # percent cloud cover
+        'clt',  # total percent cloud cover
+        'clw',  # mass fraction cloud water
+        'cli',  # mass fraction cloud ice
+        'clwvi',  # condensed water path
+        'clivi',  # condensed ice path
+        'cct',  # convective cloud top pressure
+    ]
+    cmip6_control = cmip6.constrain(
+        experiment_id=['piControl'],
+        variable_id=vars,
+    )
+    cmip5_control = cmip5.constrain(
+        experiment=['piControl'],
+        variable=vars,
+    )
 
     # Iterate over contexts
     # NOTE: Idea is that wget file names should be standardized like climatology
@@ -99,36 +157,30 @@ if __name__ == '__main__':
         # Create wget name
         print(f'Context {i}:', ctx, ctx.facet_constraints)
         print(f'Hit count {i}:', ctx.hit_count)
-        keys = (
-            'project',
-            ('experiment', 'experiment_id'),
-            ('cmor_table', 'table_id'),
-            ('variable_id', 'variable'),
-        )
         parts = []
-        for j, key in enumerate(keys):  # constraint components to use in file name
-            key = (key,) if isinstance(key, str) else key
-            opts = sum((ctx.facet_constraints.getall(k) for k in key), start=[])
-            part = '-'.join(opt.replace('-', '') for opt in opts)
+        for j, keys in enumerate(zip(facets5.split(','), facets6.split(','))):
+            opts = sum((ctx.facet_constraints.getall(k) for k in keys), start=[])
+            part = '-'.join(opt.replace('-', '') for opt in sorted(set(opts)))
             if j == 2:
-                part = part or 'Amon'  # TODO: remove
-            if 'project' in key:
+                part = part or 'Amon'  # TODO: remove kludge?
+            if 'project' in keys:
                 part = part.lower()
             parts.append(part)
         # Write wget file
-        for j, ds in enumerate(ctx.search()):  # iterate over models and dates
+        for j, ds in enumerate(ctx.search()):
             print(f'Dataset {j}:', ds)
             fc = ds.file_context()
-            name = 'wget_' + '_'.join((*parts, str(j))) + '.sh'
+            fc.facets = ctx.facets  # TODO: report bug and remove?
+            name = 'wget_' + '_'.join((*parts, format(j, '05d'))) + '.sh'
             path = Path(ROOT, 'wgets', name)
-            if path.exists():
+            if path.exists() and False:
                 print('Skipping script:', name)
+                continue
+            try:
+                wget = fc.get_download_script()
+            except Exception:
+                print('Download failed:', name)
             else:
-                try:
-                    wget = fc.get_download_script()
-                except Exception:
-                    print('Download failed:', name)
-                else:
-                    print('Creating script:', name)
-                    with open(path, 'w') as f:
-                        f.write(wget)
+                print('Creating script:', name)
+                with open(path, 'w') as f:
+                    f.write(wget)
