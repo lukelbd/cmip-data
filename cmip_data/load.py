@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import xarray as xr
+import metpy.interpolate as interp
 from icecream import ic  # noqa: F401
 
 import climopy as climo  # noqa: F401  # add accessor
@@ -16,6 +17,168 @@ from climopy import ureg
 
 # Constants
 DATA = Path.home() / 'data'
+
+
+def combine_cam_kernels(
+    path='~/data/kernels-cam5/cam5_plev.nc',
+    # ref='~/data/timescales_constants/hs1_t85l60e.nc',
+    month=None,
+    season=None,
+    shortwave=True,
+):
+    """
+    Create averages of
+
+    Parameters
+    ----------
+    path : path-like, optional
+        CAM data location.
+    month : month-spec, optional
+        Month(s) to be averaged.
+    season : season-spec, optional
+        Season(s) to be averaged.
+    shortwave : bool, optional
+        Whether to include shortwave components.
+    """
+    # Load kernel data, fixing sign convention so both LW and SW are +ve toward
+    # atmosphere (default is SW positive down, LW positive up, understandably).
+    # Also get cloudy-sky and net atmospheric components.
+    # NOTE: See load.py:load_cam for details
+    # NOTE: Xarray caches already-loaded datasets so this is fast after one run
+    print('Calculating averages...')
+    ds_cam5 = xr.open_dataset(path)
+    keep = ('ps', 'bnd', 'fln') + (('fsn',) if shortwave else ())
+    drop = tuple(var for var in ds_cam5 if not any(s in var for s in keep))
+    ds_cam5 = ds_cam5.drop_vars(drop)  # drop surface kernels, and maybe shortwave
+    ds_cam5 = ds_cam5.climo.sel_time(season=season, month=month)
+    ds_cam5 = ds_cam5.climo.mean('time')
+    ds_cam5['ps'].attrs['standard_name'] = 'surface_air_pressure'
+    with xr.set_options(keep_attrs=True):
+        for var in ds_cam5:
+            if 'flnt' in var or 'fsns' in var:
+                ds_cam5[var] *= -1
+        for var in ('t_fln', 'q_fln', 'q_fsn', 'ts_fln', 'alb_fsn'):
+            for s in ('c', ''):
+                if var + 't' + s in ds_cam5 and var + 's' + s in ds_cam5:
+                    ds_cam5[var + 'a' + s] = ds_cam5[var + 't' + s] + ds_cam5[var + 's' + s]  # noqa: E501
+            for s in ('t', 's', 'a'):
+                if var + s + 'c' in ds_cam5 and var + s in ds_cam5:
+                    ds_cam5[var + s + 'l'] = ds_cam5[var + s] - ds_cam5[var + s + 'c']
+    ds_cam5 = ds_cam5.climo.standardize_coords()
+    ds_cam5 = ds_cam5.climo.add_cell_measures(verbose=True)
+    ds_cam5 = ds_cam5.climo.quantify()
+    return ds_cam5
+
+
+def load_cam_kernels(
+    path='~/data/kernels-cam5/',
+    folders=('forcing', 'kernels'),
+    ref='~/data/timescales_constants/hs1_t85l60e.nc',
+):
+    """
+    Load the CAM forcing and feedback kernel data.
+
+    Parameters
+    ----------
+    base : path-like
+        The base directory in which `folders` is indexed.
+    ref : path-like
+        The path used for destination parameters.
+    """
+    # Get list of files
+    ps = set()
+    ref = Path(ref).expanduser()
+    path = Path(path).expanduser()
+    files = [file for folder in folders for file in (path / folder).glob('*.nc')]
+    files = [file for file in files if file.name != 'PS.nc' or ps.add(file)]
+    if not ps:
+        raise RuntimeError('Surface pressure data not found.')
+
+    # Load data using PS.nc for time coords (times are messed up on other datasets)
+    print('Loading data...')
+    ignore = ('gw', 'nlon', 'ntrk', 'ntrm', 'ntrn', 'w_stag', 'wnummax')
+    ds_mlev = xr.Dataset()  # will add variables one-by-one
+    for file in (*ps, *files):  # put PS.nc first
+        data = xr.open_dataset(file, use_cftime=True)
+        time_dim = data.time.dims[0]
+        if 'ncl' in time_dim:  # fix issue where 'time' coord dim is an NCL dummy name
+            data = data.swap_dims({time_dim: 'time'})
+        if file.name != 'PS.nc':  # ignore bad time indices
+            data = data.reset_index('time', drop=True)
+        var, *_ = file.name.split('.')  # first thing with dot
+        for name, da in data.items():  # iterates through variables, not coordinates
+            if name in ignore:
+                continue
+            name = name.lower()
+            if name[:2] in ('fl', 'fs'):  # longwave or shortwave radiative flux
+                name = var + '_' + name
+            ds_mlev[name] = da
+
+    # Normalize by pressure thickness and standardize units
+    print('Normalizing data...')
+    pi = ds_mlev.hyai * ds_mlev.p0 + ds_mlev.hybi * ds_mlev.ps
+    pi = pi.transpose('time', 'ilev', 'lat', 'lon')
+    pm = 0.5 * (pi.data[:, 1:, ...] + pi.data[:, :-1, ...])
+    dp = pi.data[:, 1:, ...] - pi.data[:, :-1, ...]
+    for name, da in ds_mlev.items():
+        if 'lev' in da.dims and da.ndim > 1:
+            da.data /= dp
+            da.attrs['units'] = 'W m^-2 K^-1 Pa^-1'
+        elif name[:2] == 'ts':
+            da.attrs['units'] = 'W m^-2 K^-1'
+        elif name[:3] == 'alb':
+            da.attrs['units'] = 'W m^-2 %^-1'
+        elif da.attrs.get('units', None) == 'W/m2':
+            da.attrs['units'] = 'W m^-2'
+    dims = ('time', 'lev', 'lat', 'lon')
+    attrs = {'units': 'Pa', 'long_name': 'approximate pressure thickness'}
+    ds_mlev['lev_delta'] = (dims, dp, attrs)
+    ds_mlev.lon.attrs['axis'] = 'X'
+    ds_mlev.lat.attrs['axis'] = 'Y'
+    ds_mlev.lev.attrs['axis'] = 'Z'
+    ds_mlev.time.attrs['axis'] = 'T'
+
+    # Interpolate onto standard pressure levels using metpy
+    # NOTE: Also normalize by pressure level thickness, giving units W m^-2 100hPa^-1
+    # TODO: Are copies of data arrays necessary?
+    ds_hs94 = xr.open_dataset(ref, decode_times=False)
+    if 'plev' in ds_hs94.coords:
+        ds_hs94 = ds_hs94.rename(plev='lev', plev_bnds='lev_bnds')
+    ds_plev = xr.Dataset(
+        coords={
+            'lon': ds_mlev.lon,
+            'lat': ds_mlev.lat,
+            'lev': ds_hs94.lev,
+            'time': ds_mlev.time,
+        }
+    )
+    ds_plev['lev'].attrs['bounds'] = 'lev_bnds'
+    ds_plev['lev_bnds'] = ds_hs94.lev_bnds
+    for name, da in ds_mlev.items():
+        if 'lev' in da.dims and da.ndim > 1 and name != 'lev_delta':
+            print(f'Interpolating {name!r}...')
+            dims = list(da.dims)
+            shape = list(da.shape)
+            dims[1] = 'lev'
+            shape[1] = ds_plev.lev.size
+            data = np.empty(shape)
+            for i in range(shape[0]):  # iterate through times
+                for j in range(shape[1]):  # iterate through levels
+                    data[i, j, ...] = interp.interpolate_to_isosurface(
+                        pm[i, ...], da.data[i, ...], 100 * ds_plev.lev.data[j]
+                    )
+            ds_plev[name] = (dims, data, da.attrs)
+        elif not any(dim in da.dims for dim in ('lev', 'ilev')):
+            print(f'Copying {name!r}.')
+            ds_plev[name] = da
+
+    # Save and return
+    try:
+        ds_mlev.to_netcdf(f'{path}/cam5_mlev.nc')
+        ds_plev.to_netcdf(f'{path}/cam5_plev.nc')
+    except Exception:
+        warnings.warn('Failed to save datasets. Possible permissions error.')
+    return ds_mlev, ds_plev
 
 
 def load_cmip_tables():
