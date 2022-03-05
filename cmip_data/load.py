@@ -80,10 +80,10 @@ def load_cam_kernels(
 
     Parameters
     ----------
-    base : path-like
-        The base directory in which `folders` is indexed.
+    path : path-like
+        The base directory in which radiative feedback kernels are stored.
     ref : path-like
-        The path used for destination parameters.
+        The file in which relaxation feedback kernels are stored.
     """
     # Get list of files
     ps = set()
