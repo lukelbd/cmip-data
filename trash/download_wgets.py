@@ -35,7 +35,7 @@ if __name__ == '__main__':
     # Log on
     lm = LogonManager()
     host = 'esgf-node.llnl.gov'
-    if not lm.is_logged_on():
+    if not lm.is_logged_on():  # surface orography
         lm.logon(username='lukelbd', password=None, hostname=host)
 
     # Create CMIP5 and CMIP6 contexts
@@ -46,13 +46,13 @@ if __name__ == '__main__':
     cmip6 = conn.new_context(
         project='CMIP6',
         variant_label=['r1i1p1f1'],
-        table_id=['Amon', 'Emon'],
+        table_id=['Amon', 'Emon', 'fx'],
         facets=facets6,
     )
     cmip5 = conn.new_context(
         project='CMIP5',
         ensemble=['r1i1p1'],
-        cmor_table=['Amon', 'Emon'],
+        cmor_table=['Amon', 'Emon', 'fx'],
         facets=facets5,
     )
     cmip5_control = cmip5_response = None
@@ -122,20 +122,28 @@ if __name__ == '__main__':
     # Climate everything
     vars = ['cldwatmxrat27', 'cldicemxrat27']  # special cloud variables
     vars = [
+        # Phase 3
+        'ts',  # surface temperature
+        'hurs',  # near-surace relative humidity
+        'huss',  # near-surace specific humidity
+        'prw',  # water vapor path
+        'pr',  # precipitation
+        # Phase 2
         # 'psl',  # sea-level pressure
         # 'gs',  # geopotential height
         # 'ua',  # zonal wind
         # 'va',  # meridional wind
-        'ta',  # air temperature
-        'hur',  # relative humidity
-        'hus',  # specific humidity
-        'cl',  # percent cloud cover
-        'clt',  # total percent cloud cover
-        'clw',  # mass fraction cloud water
-        'cli',  # mass fraction cloud ice
-        'clwvi',  # condensed water path
-        'clivi',  # condensed ice path
-        'cct',  # convective cloud top pressure
+        # Phase 1
+        # 'ta',  # air temperature
+        # 'hur',  # relative humidity
+        # 'hus',  # specific humidity
+        # 'cl',  # percent cloud cover
+        # 'clt',  # total percent cloud cover
+        # 'clw',  # mass fraction cloud water
+        # 'cli',  # mass fraction cloud ice
+        # 'clwvi',  # condensed water path
+        # 'clivi',  # condensed ice path
+        # 'cct',  # convective cloud top pressure
     ]
     cmip6_control = cmip6.constrain(
         experiment_id=['piControl'],

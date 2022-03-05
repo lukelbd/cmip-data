@@ -121,6 +121,9 @@ def load_cmip_xsections(
                         ds = ds.isel(bnds=slice(None, None, -1))
                 ds = ds.climo.add_cell_measures(verbose=False)
                 da = ds[name].squeeze(drop=True)  # e.g. already averaged longitude
+                if name[:3] in ('clw', 'cli'):
+                    if da.attrs['units'] == 'kg m-2':
+                        raise RuntimeError('Unexpected units for cloud water.')
                 print('', da.attrs['units'], end='')
                 ds.close()
 
@@ -128,7 +131,8 @@ def load_cmip_xsections(
                 # TODO: Re-compute with 100 years instead of 50 years.
                 # TODO: Re-download data that only exists in longitude
                 # means originally computed and transfered from laptop.
-                if any(dim not in da.coords for dim in ('lon', 'lat', 'lev')):
+                # if any(dim not in da.coords for dim in ('lon', 'lat', 'lev')):
+                if any(dim not in da.coords for dim in ('lon', 'lat',)):
                     messages.append('Missing spatial coordinates.')
                     continue
                 if mode == 'latlev':  # cross-section
@@ -222,8 +226,9 @@ def concat_datasets(tables, datasets, lat=10, lon=20, lev=50):
 
     # Combine datasets
     # WARNING: Critical to have same variables in each dataset
-    print('Concatenating datasets...')
     names = {name for ds in concat.values() for name in ds.data_vars}
+    print('Concatenating datasets...')
+    print(f'Variables names: {names}')
     for ds in concat.values():  # interpolated datasets
         for name in names:
             if name not in ds:
@@ -231,7 +236,6 @@ def concat_datasets(tables, datasets, lat=10, lon=20, lev=50):
                 da = xr.full_like(da, np.nan)
                 da.attrs.clear()
                 ds[name] = da
-    print(f'Variables names: {names}')
     models = xr.DataArray(
         list(concat),
         dims='model',
@@ -245,6 +249,27 @@ def concat_datasets(tables, datasets, lat=10, lon=20, lev=50):
         compat='equals',  # problems with e.g. both surface and integrated values
         combine_attrs='drop_conflicts',  # drop e.g. history but keep e.g. long_name
     )
+    for suffix in ('', 'vi'):  # in-place and vertially integrated
+        ice = 'cli' + suffix  # solid
+        water = 'clw' + suffix  # liquid + solid (read description)
+        if ice in names and water in names:
+            da = 100 * concat[ice] / concat[water]
+            da = da.clip(0, 100)
+            da.attrs['long_name'] = 'ice water ratio'
+            da.attrs['units'] = '%'
+            concat['clr' + suffix] = da
+    for name in names:
+        da = concat[name]
+        if da.climo.units == ureg.Pa:
+            da.attrs['standard_units'] = 'hPa'  # default standard units
+        if 'title' not in da.attrs:
+            pass
+        elif 'long_name' not in da.attrs:
+            da.attrs['long_name'] = da.attrs['title'].lower()
+        else:
+            del da.attrs['title']
+        if da.climo.standard_units:
+            concat[name] = da.climo.to_standard_units()
     concat = concat.climo.add_cell_measures(verbose=False)
 
     # Add tables

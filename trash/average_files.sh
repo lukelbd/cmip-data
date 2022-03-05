@@ -11,6 +11,7 @@
 #------------------------------------------------------------------------------#
 # Constants
 shopt -s nullglob
+overwrite=false
 dryrun=false
 data=$HOME/data
 [[ "$OSTYPE" =~ darwin* ]] && root=$data || root=/mdata5/ldavis
@@ -39,6 +40,7 @@ maxyear() {
 driver() {
   # Find available models and variables
   # TODO: Enable wget=false or wget=true not automatically
+  local project experiment table vars  # avoid overwriting these, don't worry about others
   [ $# -ge 3 ] || { echo && echo "Error: At least 3 arguments required." && return 1; }
   project=$1
   experiment=$2
@@ -72,6 +74,7 @@ driver() {
     echo "Input: ${input##*/}, Model: $model"
     for var in "${vars[@]}"; do
       # List files and get file info
+      # NOTE: Files may indicate if they are 'spun up' with 'parent_experiment_id'
       # NOTE: Some files have extra field but date is always last so use rev.
       # TODO: Add year suffix? Then need to auto-remove files with different range.
       tmp=${output}/tmp.nc
@@ -81,13 +84,12 @@ driver() {
       files=($(echo "$files_all" | grep "${var}_${table}_${model}_"))
       dates=($(echo "${files[@]}" | tr ' ' $'\n' | rev | cut -d'_' -f1 | rev | sed 's/\.nc//g' | sort))
       if [ ${#files[@]} -eq 0 ]; then
-        echo "$(printf "%-8s" "$var:") not found"
+        echo "$(printf "%-20s" "$var (unfiltered):") not found"
         continue
       else
         ymin=$(minyear "${dates[@]%-*}")
         ymax=$(maxyear "${dates[@]#*-}")
-        parent=$(ncdump -h ${files[0]} 2>/dev/null | grep 'parent_experiment_id' | cut -d'=' -f2 | tr -dc a-zA-Z)
-        echo "$(printf "%-8s" "$var:") $ymin-$ymax (${#files[@]} files, parent ${parent:-NA}"
+        echo "$(printf "%-20s" "$var (unfiltered):") $ymin-$ymax (${#files[@]} files)"
       fi
 
       # Select files for averaging
@@ -109,9 +111,8 @@ driver() {
       done
       ymin=$(minyear "${dates_climo[@]%-*}")
       ymax=$(maxyear "${dates_climo[@]#*-}")
-      echo "$(printf "%-8s" "$var:") $ymin-$ymax (${#files_climo[@]} files, parent ${parent:-NA})"
-      echo "Output: ${output##*/}/${out##*/}"
-      # $exists && echo 'Skipping (file exists)...' && continue
+      echo "$(printf "%-20s" "$var (filtered):") $ymin-$ymax (${#files_climo[@]} files)"
+      $exists && ! $overwrite && echo 'Skipping (output exists)...' && continue
       $wget && echo 'Skipping (wget only)...' && continue
       $dryrun && echo 'Skipping (dry run)...' && continue
       [ ${#files_climo[@]} -eq 0 ] && echo 'Skipping (no files)...' && continue
@@ -147,6 +148,7 @@ driver() {
           fi
           [ $t1 -lt 1 ] && t1=1
           [ $t2 -gt $nt ] && t2=$nt
+          echo "$(printf "%-20s" "$var (timesteps):") $t1-$t2 ($(((t2 - t1 + 1) / 12)) years)"
           cmd="$cmd -mergetime -seltimestep,$t1/$t2 $tmp"
         done
         cdo -s -O -ensmean $cmd $out
@@ -154,13 +156,18 @@ driver() {
         unset cmd
         if [ $nty -gt $nt ]; then
           echo "Warning: Requested $nty time steps but file only has $nt time steps."
-        elif $endyears; then
-          cmd="-seltimestep,$((nt - nty + 1))/$nt"  # final years
-        else
-          cmd="-seltimestep,1/$nty"  # initial years
+        elif $endyears; then  # ifnal years
+          t1=$((nt - nty + 1))
+          t2=$nt
+        else  # initial years
+          t1=1
+          t2=$nty
         fi
+        echo "$(printf "%-20s" "$var (timesteps):") $t1-$t2 ($(((t2 - t1 + 1) / 12)) years)"
+        cmd="-seltimestep,$t1,$t2"
         cdo -s -O -ymonmean $cmd $tmp $out
       fi
+      echo "Output: ${output##*/}/${out##*/}"
     done
   done
 }
@@ -174,8 +181,10 @@ driver() {
 projects=(cmip5 cmip6)
 experiments=(piControl)
 tables=(Amon Emon)
-vars=(ta hur hus cl clw cli clt clwvp clwvi clivi cct)
-vars=(gs psl ua va)
+# vars=(gs psl ua va)  # circulation variables
+# vars=(ta hur hus cl clw cli clt clwvp clwvi clivi cct)  # thermodynamics variables
+vars=(ta gs ua va hur hus cl clw cli)  # multi-level bariables
+# vars=(psl clt cct clwvp clwvi clivi)  # single-level variables
 chunks=false
 nchunks=10
 nclimate=50  # first 50 years
