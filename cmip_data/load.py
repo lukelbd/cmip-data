@@ -19,83 +19,147 @@ from climopy import ureg
 DATA = Path.home() / 'data'
 
 
-def combine_cam_kernels(
-    path='~/data/kernels-cam5/cam5_plev.nc',
-    # ref='~/data/timescales_constants/hs1_t85l60e.nc',
-    month=None,
-    season=None,
-    shortwave=True,
-):
+def _standardize_kernels(ds, standardize_coords=False):
     """
-    Create averages of
-
-    Parameters
-    ----------
-    path : path-like, optional
-        CAM data location.
-    month : month-spec, optional
-        Month(s) to be averaged.
-    season : season-spec, optional
-        Season(s) to be averaged.
-    shortwave : bool, optional
-        Whether to include shortwave components.
+    Standardize the radiative kernel data. Add cloudy sky and atmospheric kernels, take
+    month selections or season averages, and optionally drop shortwave water vapor.
     """
-    # Load kernel data, fixing sign convention so both LW and SW are +ve toward
-    # atmosphere (default is SW positive down, LW positive up, understandably).
-    # Also get cloudy-sky and net atmospheric components.
-    # NOTE: See load.py:load_cam for details
-    # NOTE: Xarray caches already-loaded datasets so this is fast after one run
-    print('Calculating averages...')
-    ds_cam5 = xr.open_dataset(path)
-    keep = ('ps', 'bnd', 'fln') + (('fsn',) if shortwave else ())
-    drop = tuple(var for var in ds_cam5 if not any(s in var for s in keep))
-    ds_cam5 = ds_cam5.drop_vars(drop)  # drop surface kernels, and maybe shortwave
-    ds_cam5 = ds_cam5.climo.sel_time(season=season, month=month)
-    ds_cam5 = ds_cam5.climo.mean('time')
-    ds_cam5['ps'].attrs['standard_name'] = 'surface_air_pressure'
+    vars_keep = ('ps', 'bnd', 'fln', 'fsn')
+    vars_drop = tuple(var for var in ds if not any(s in var for s in vars_keep))
+    ds = ds.drop_vars(vars_drop)  # drop surface kernels, and maybe shortwave kernels
     with xr.set_options(keep_attrs=True):
-        for var in ds_cam5:
+        for var in ds:
             if 'flnt' in var or 'fsns' in var:
-                ds_cam5[var] *= -1
+                ds[var] *= -1
         for var in ('t_fln', 'q_fln', 'q_fsn', 'ts_fln', 'alb_fsn'):
             for s in ('c', ''):
-                if var + 't' + s in ds_cam5 and var + 's' + s in ds_cam5:
-                    ds_cam5[var + 'a' + s] = ds_cam5[var + 't' + s] + ds_cam5[var + 's' + s]  # noqa: E501
+                if var + 't' + s in ds and var + 's' + s in ds:
+                    da = ds[var + 't' + s] + ds[var + 's' + s]  # noqa: E501
+                    da.attrs['long_name'] = da.attrs['long_name'].replace(
+                        'at top of model', 'across atmospheric column'
+                    )
+                    ds[var + 'a' + s] = da
             for s in ('t', 's', 'a'):
-                if var + s + 'c' in ds_cam5 and var + s in ds_cam5:
-                    ds_cam5[var + s + 'l'] = ds_cam5[var + s] - ds_cam5[var + s + 'c']
-    ds_cam5 = ds_cam5.climo.standardize_coords()
-    ds_cam5 = ds_cam5.climo.add_cell_measures(verbose=True)
-    ds_cam5 = ds_cam5.climo.quantify()
-    return ds_cam5
+                if var + s + 'c' in ds and var + s in ds:
+                    da = ds[var + s] - ds[var + s + 'c']
+                    da.attrs['long_name'] = da.attrs['long_name'].replace(
+                        'Net', 'Cloud effect'
+                    )
+                    ds[var + s + 'l'] = da
+    # for da in ds.values():  # debug unit conversion
+    #     print(da.name, da.attrs.get('units', None))
+    if standardize_coords:
+        ds = ds.climo.standardize_coords()
+        ds = ds.climo.add_cell_measures(verbose=True)
+    return ds.climo.quantify()
 
 
-def load_cam_kernels(
+def combine_era_kernels(path='~/data/kernels-eraint/', **kwargs):
+    """
+    Combine and standardize the ERA-Interim kernel data downloaded from Yi Huang to
+    match naming convention with CAM5.
+    """
+    # Initialize dataset
+    # TODO: Currently right side of bnds must be larger than left. Perhaps order
+    # should correspond to order of vertical coordinate.
+    path = Path(path)
+    path = path.expanduser()
+    time = np.arange('2000-01', '2001-01', dtype='M')
+    src = xr.open_dataset(path / 'dp1.nc')  # seems to be identical duplicate of dp2.nc
+    levs = src['plevel']  # level edges as opposed to 'player' level centers
+    bnds = np.vstack((levs.data[1:], levs.data[:-1]))
+    time = xr.DataArray(time, dims='time', attrs={'axis': 'T', 'standard_name': 'time'})
+    ds = xr.Dataset(coords={'time': time})
+    ds['lev_bnds'] = (('lev', 'bnds'), bnds.T[::-1, :])
+
+    # Load and combine files
+    # TODO: Check whether 'cld' means full-sky or cloud effect
+    print('Loading kernel data...')
+    files = sorted(path.glob('RRTM*.nc'))
+    for file in files:
+        # Standardize name
+        parts = file.name.split('_')
+        if len(parts) == 6:  # longwave or shortwave water vapor
+            _, var, wav, lev, sky, _ = parts
+        else:  # always longwave unless albedo
+            _, var, lev, sky, _ = parts
+            wav = 'sw' if var == 'alb' else 'lw'
+        var = 'q' if var == 'wv' else var
+        wav = wav.replace('w', 'n')  # i.e. 'sw' to 'sn' for 'shortwave net'
+        lev = lev[0]  # i.e. 'surface' to 's' and 'longwave' to 'l'
+        sky = '' if sky == 'cld' else 'c'
+        name = f'{var}_f{wav}{lev}{sky}'  # standard name
+        # Standardize data
+        # TODO: When to multiply by -1
+        da = xr.open_dataarray(file)
+        with xr.set_options(keep_attrs=True):
+            da = da * -1
+        da = da.isel(lat=slice(None, None, -1))  # match CAM5 data
+        da = da.rename(month='time')
+        da = da.assign_coords(time=time)
+        units = da.attrs.get('units', None)
+        if units is None:
+            print(f'Warning: Adding missing units to {name!r}.')
+            da.attrs['units'] = 'W/m2/K/100mb'  # match other unit
+        else:
+            if var == 'alb':
+                da.attrs['units'] = units.replace('0.01', '%')  # repair albedo units
+        if 'player' in da.coords:
+            da = da.rename(player='lev')
+            da = da.isel(lev=slice(None, None, -1))  # match CAM5 data
+            lev = da.coords['lev']
+            lev.attrs['bounds'] = 'lev_bnds'
+            if lev[-1] == lev[-2]:  # duplicate 1000 hPa level bug
+                print(f'Warning: Ignoring duplicate pressure level in {name!r}.')
+                da = da.isel(lev=slice(None, -1))
+        # Add dataarray and add pressure data
+        # if 'time' in da.coords:
+        ds[name] = da  # note this adds coords and silently replaces da.name
+        if 'ps' not in ds:
+            src = xr.open_dataset(path / 'ps_cam5.nc')
+            ps = src['PS']  # surface pressure from CAM5
+            ps = ps.climo.replace_coords(time=time)
+            ps = ps.interp(lat=da.lat, lon=da.lon)
+            ds['ps'] = ps
+
+    # Standardize and save data
+    print('Standardizing kernel data...')
+    ds = _standardize_kernels(ds, **kwargs)
+    print('Saving kernel data...')
+    try:
+        ds.climo.dequantify().to_netcdf(path / 'kernels.nc')
+    except Exception as err:
+        warnings.warn(f'Failed to save datasets. Error message: {err}.')
+    return ds
+
+
+def combine_cam_kernels(
     path='~/data/kernels-cam5/',
     folders=('forcing', 'kernels'),
     ref='~/data/timescales_constants/hs1_t85l60e.nc',
 ):
     """
-    Load the CAM forcing and feedback kernel data.
+    Combine and interpolate the model-level CAM5 feedback kernel data downloaded
+    from Angie Pendergrass.
 
     Parameters
     ----------
     path : path-like
-        The base directory in which radiative feedback kernels are stored.
+        The base directory in which `folders` is indexed.
     ref : path-like
-        The file in which relaxation feedback kernels are stored.
+        The path used for destination parameters.
     """
     # Get list of files
+    path = Path(path)
+    path = path.expanduser()
     ps = set()
-    ref = Path(ref).expanduser()
-    path = Path(path).expanduser()
     files = [file for folder in folders for file in (path / folder).glob('*.nc')]
     files = [file for file in files if file.name != 'PS.nc' or ps.add(file)]
-    if not ps:
+    if not ps:  # attempted to record separately
         raise RuntimeError('Surface pressure data not found.')
 
     # Load data using PS.nc for time coords (times are messed up on other datasets)
-    print('Loading data...')
+    print('Loading kernel data...')
     ignore = ('gw', 'nlon', 'ntrk', 'ntrm', 'ntrn', 'w_stag', 'wnummax')
     ds_mlev = xr.Dataset()  # will add variables one-by-one
     for file in (*ps, *files):  # put PS.nc first
@@ -105,7 +169,8 @@ def load_cam_kernels(
             data = data.swap_dims({time_dim: 'time'})
         if file.name != 'PS.nc':  # ignore bad time indices
             data = data.reset_index('time', drop=True)
-        var, *_ = file.name.split('.')  # first thing with dot
+        var, *_ = file.name.split('.')  # format is varname.category.nc
+        # if 'time' in ds_mlev.data:
         for name, da in data.items():  # iterates through variables, not coordinates
             if name in ignore:
                 continue
@@ -115,7 +180,7 @@ def load_cam_kernels(
             ds_mlev[name] = da
 
     # Normalize by pressure thickness and standardize units
-    print('Normalizing data...')
+    print('Standardizing kernel data...')
     pi = ds_mlev.hyai * ds_mlev.p0 + ds_mlev.hybi * ds_mlev.ps
     pi = pi.transpose('time', 'ilev', 'lat', 'lon')
     pm = 0.5 * (pi.data[:, 1:, ...] + pi.data[:, :-1, ...])
@@ -156,7 +221,7 @@ def load_cam_kernels(
     ds_plev['lev_bnds'] = ds_hs94.lev_bnds
     for name, da in ds_mlev.items():
         if 'lev' in da.dims and da.ndim > 1 and name != 'lev_delta':
-            print(f'Interpolating {name!r}...')
+            print(f'Interpolating kernel {name!r}...')
             dims = list(da.dims)
             shape = list(da.shape)
             dims[1] = 'lev'
@@ -169,15 +234,19 @@ def load_cam_kernels(
                     )
             ds_plev[name] = (dims, data, da.attrs)
         elif not any(dim in da.dims for dim in ('lev', 'ilev')):
-            print(f'Copying {name!r}.')
+            print(f'Copying kernel {name!r}.')
             ds_plev[name] = da
 
-    # Save and return
+    # Standardize and save data
+    print('Standardizing kernel data...')
+    ds_plev = _standardize_kernels(ds_plev)
+    ds_mlev = _standardize_kernels(ds_mlev, standardize_coords=False)
+    print('Saving kernel data...')
     try:
-        ds_mlev.to_netcdf(f'{path}/cam5_mlev.nc')
-        ds_plev.to_netcdf(f'{path}/cam5_plev.nc')
-    except Exception:
-        warnings.warn('Failed to save datasets. Possible permissions error.')
+        ds_mlev.climo.dequantify().to_netcdf(path / 'kernels_mlev.nc')
+        ds_plev.climo.dequantify().to_netcdf(path / 'kernels_plev.nc')
+    except Exception as err:
+        warnings.warn(f'Failed to save datasets. Error message: {err}.')
     return ds_mlev, ds_plev
 
 
