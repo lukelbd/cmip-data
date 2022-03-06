@@ -16,9 +16,9 @@ from pyesgf.search import SearchConnection
 
 # Global functions
 __all__ = [
+    'process_files',
     'download_wgets',
     'filter_wgets',
-    'merge_files',
 ]
 
 # Constants
@@ -42,6 +42,19 @@ CMIP_NODES = {
     'NCI': 'https://esgf.nci.org.au/',
     'NCCS': 'https://esgf.nccs.nasa.gov/',
 }
+# CMIP models and nodes to ignore by default
+# These can be adjusted by experience
+CMIP_MODELS_BAD = (
+    'EC-Earth3-CC',
+)
+CMIP_NODES_BAD = (
+    # 'ceda.ac.uk',
+    'nird.sigma2.no',
+    'nmlab.snu.ac.kr',
+    'esg.lasg.ac.cn',
+    'cmip.fio.org.cn',
+    'vesg.ipsl.upmc.fr',
+)
 
 # CMIP constants obtained from get_facet_options() for SearchContext(project='CMIP5')
 # and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
@@ -83,15 +96,12 @@ get_file = lambda line: line.split("'")[1].strip()
 get_model = lambda line: line.split('_')[2]  # model id from netcdf line
 get_years = lambda line: tuple(int(date[:4]) for date in line.split('.')[0].split('_')[-1].split('-')[:2])  # noqa: E501
 get_var = lambda line: line.split('_')[0][1:]  # variable from netcdf line
-year1 = lambda date: int(re.sub(r'-.*\Z', '', date)[:4])
-year2 = lambda date: int(re.sub(r'\A.*-', '', date)[:4])
-minyear = lambda *args: min(map(year1, args), default=None)
-maxyear = lambda *args: max(map(year2, args), default=None)
 
 
-def _wget_lines(filename, complement=False):
+def _wget_parse(filename, complement=False):
     """
-    Return the download lines or the lines on either side.
+    Return the download lines of the wget files or their complement. The latter is
+    used when constructing a single wget file from many wget files.
     """
     lines = open(filename, 'r').readlines()  # list of lines
     idxs = [i for i, line in enumerate(lines) if DELIM in line]
@@ -106,10 +116,21 @@ def _wget_lines(filename, complement=False):
     return lines
 
 
-def _wget_files(project='cmip6', experiment='piControl', table='Amon', variables='ta'):
+def _wget_files(
+    project='cmip6',
+    experiment='piControl',
+    table='Amon',
+    variables='ta',
+    intersection=False,
+):
     """
     Return a list of input wget files matching the criteria along with an output
     wget file to be constructed and the associated output folder for NetCDFs.
+
+    Todo
+    ----
+    Add `intersection` option for getting e.g. models with both pre-industrial and
+    abrupt 4xCO2 versions of the input variable. Needed for forced-response utilities.
     """
     # TODO: Permit both 'and' or 'or' logic when searching and filtering files
     # matching options. Maybe add boolean 'intersection' keywords or something.
@@ -129,6 +150,8 @@ def _wget_files(project='cmip6', experiment='piControl', table='Amon', variables
         input.extend(sorted(path.glob(pattern)))
     if not input:
         raise ValueError(f'No wget files found in {path} for pattern(s): {patterns!r}')
+    if intersection:
+        raise NotImplementedError('Cannot yet find intersection of parts.')
     path = ROOT / '-'.join(part[0] for part in parts[:3])  # TODO: improve
     if not path.is_dir():
         os.mkdir(path)
@@ -142,6 +165,12 @@ def _wget_models(models=None, **kwargs):
     Return a set of all models in the group of wget scripts, a dictionary
     with keys of (experiment, variable) pairs listing the models present,
     and a dictionary with 'experiment' keys listing the possible variables.
+
+    Todo
+    ----
+    Clean this up to support either union or intersection operations.
+    Sometimes acceptable to have missing variables e.g. for constraints
+    and sometimes not e.g. for getting transport as energy budget residual.
     """
     # Group models available for various (experiment, variable)
     input, output = _wget_files(**kwargs)
@@ -150,7 +179,7 @@ def _wget_models(models=None, **kwargs):
     models_all = {*()}  # all models
     models_grouped = {}  # models by variable
     for file in input:
-        models_file = {get_model(line) for line in _wget_lines(file) if line}
+        models_file = {get_model(line) for line in _wget_parse(file) if line}
         models_all.update(models_file)
         if (experiment, frequency) in models_grouped:
             models_grouped[(experiment, frequency)].update(models_file)
@@ -166,8 +195,8 @@ def _wget_models(models=None, **kwargs):
 
     # Find models missing in some of these pairs
     exps_missing = {}
-    models_download = {*()}
-    models_ignore = {*()}
+    models_download = set()
+    models_ignore = set()
     for model in sorted(models_all):
         # Manual filter, e.g. filter daily data based on
         # whether they have some monthly data for same period?
@@ -304,7 +333,7 @@ def filter_wgets(
     # Also manually replace the open ID
     kwargs['variables'] = variables
     input, output = _wget_files(**kwargs)
-    prefix, suffix = _wget_lines(input[0], complement=True)
+    prefix, suffix = _wget_parse(input[0], complement=True)
     for i, line in enumerate(prefix):
         if line == 'openId=\n':
             prefix[i] = 'openId=' + OPENID + '\n'
@@ -313,12 +342,20 @@ def filter_wgets(
     # Collect all download lines for files
     files = set()  # unique file tracking (ignore same file from multiple nodes)
     lines = []  # final lines
-    lines_input = [line for file in input for line in _wget_lines(file) if line]
+    lines_input = [line for file in input for line in _wget_parse(file) if line]
 
     # Iterate by *model*, filter to date range for which *all* variables are available!
     # So far just issue for GISS-E2-R runs but important to make this explicit!
     if models is None:
         models = _wget_models(**kwargs)
+    if badmodels is None:
+        badmodels = CMIP_MODELS_BAD
+    if badnodes is None:
+        badnodes = CMIP_NODES_BAD
+    if maxyears is None:
+        maxyears = MAXYEARS
+    if endyears is None:
+        endyears = ENDYEARS
     if isinstance(badmodels, str):
         badmodels = (badmodels,)
     if isinstance(badnodes, str):
@@ -327,10 +364,6 @@ def filter_wgets(
         models = (models,)
     if isinstance(variables, str):
         variables = (variables,)
-    if maxyears is None:
-        maxyears = MAXYEARS
-    if endyears is None:
-        endyears = ENDYEARS
     for model in sorted(models):
         # Find minimimum date range for which all variables are available
         # NOTE: Use maxyears - 1 or else e.g. 50 years with 190001-194912 will not
@@ -398,7 +431,7 @@ def filter_wgets(
     return output, models
 
 
-def merge_files(
+def process_files(
     project, experiment, table, *vars,
     wget=False, dryrun=False, overwrite=False,
     nyears=50, nchunks=10, endyears=False, chunk=False,
@@ -534,197 +567,3 @@ def merge_files(
             if out.is_file():  # if zero-length
                 os.remove(out)
             raise RuntimeError(f'Failed to create output file {out.name}.')
-
-
-if __name__ == '__main__':
-    # Common variables
-    cmip5_kwargs = {
-        'ensemble': ['r1i1p1'],
-        'cmor_table': ['Amon', 'Emon', 'fx'],
-    }
-    cmip6_kwargs = {
-        'variant_label': ['r1i1p1f1'],
-        'table_id': ['Amon', 'Emon', 'fx'],
-    }
-    table_monthly = ('Amon', 'Emon')
-    table_daily = None
-    # table_daily = 'day'
-    # table_daily = 'cfDay'
-    filter_kwargs = {
-        'overwrite': False,
-        'duplicate': False,
-        'badmodels': 'EC-Earth3-CC',
-        'badnodes': (
-            'ceda.ac.uk',
-            'nird.sigma2.no',
-            'nmlab.snu.ac.kr',
-            'esg.lasg.ac.cn',
-            'cmip.fio.org.cn',
-            'vesg.ipsl.upmc.fr',
-        ),
-    }
-
-    # Pre-industrial control data for emergent constraints
-    vars_constrain = [
-        # Phase 3
-        'ts',  # surface temperature
-        'hurs',  # near-surace relative humidity
-        'huss',  # near-surace specific humidity
-        'prw',  # water vapor path
-        'pr',  # precipitation
-        # Phase 2
-        # 'psl',  # sea-level pressure
-        # 'gs',  # geopotential height
-        # 'ua',  # zonal wind
-        # 'va',  # meridional wind
-        # Phase 1
-        # 'ta',  # air temperature
-        # 'hur',  # relative humidity
-        # 'hus',  # specific humidity
-        # 'cl',  # percent cloud cover
-        # 'clt',  # total percent cloud cover
-        # 'clw',  # mass fraction cloud water
-        # 'cli',  # mass fraction cloud ice
-        # 'clwvi',  # condensed water path
-        # 'clivi',  # condensed ice path
-        # 'cct',  # convective cloud top pressure
-    ]
-    download_wgets(
-        project='CMIP6',
-        experiment_id='piControl',
-        variable_id=vars_constrain,
-        **cmip6_kwargs,
-    )
-    download_wgets(
-        project='CMIP5',
-        experiment='piControl',
-        variable=vars_constrain,
-        **cmip5_kwargs,
-    )
-    for project in ('CMIP6', 'CMIP5'):
-        file, models = filter_wgets(
-            project=project,
-            # variables='ta',
-            variables=vars_constrain,
-            experiment='piControl',
-            table=table_monthly,
-            endyears=False,
-            maxyears=50,
-            **filter_kwargs,
-        )
-    print()
-    print(f'Models ({len(models)}):', ', '.join(models))
-
-    # Average the resulting files
-    # TODO: Move this to another script
-    # projects = ('cmip5', 'cmip6')
-    # experiments = ('piControl',)
-    # tables = ('Amon', 'Emon')
-    # for project in projects:
-    #     for experiment in experiments:
-    #         merge_files(project, experiment, table_monthly, *vars_constrain)
-
-    # Residual transport and net feedbacks
-    # NOTE: Need abrupt 4xCO2 radiation data for 'local feedback parameter' estimates
-    # and pre-industrial control radition data for 'effective relaxation timescale'
-    # estimates. Then atmospheric parameters used for regressions and correlations
-    # (after multiplying by radiative kernel to get 'radiation due to parameter'
-    # then regressing or correlating with surface temperature). Also note albedo
-    # is taken from ratio of upwelling to downwelling surface solar.
-    # vars_explicit = [
-    #     'intuadse',
-    #     'intvadse',
-    #     'intuaw',
-    #     'intvaw'
-    # ]
-    # vars_implicit = [
-    #     'rtmt',  # net TOA LW and SW
-    #     'rls',  # net surface LW
-    #     'rss',  # net surface SW
-    #     'hsls',  # surface upward LH flux
-    #     'hsfs',  # surface upward SH flux
-    # ]
-    # vars_implicit = [
-    #     'ta',  # air temperature
-    #     'hus',  # specific humidity
-    #     'tas',  # surface temperature
-    #     'rsdt',  # downwelling SW TOA (identical to solar constant)
-    #     'rlut',  # upwelling LW TOA
-    #     'rsut',  # upwelling SW TOA
-    #     'rlds',  # downwelling LW surface
-    #     'rsds',  # downwelling SW surface
-    #     'rlus',  # upwelling LW surface
-    #     'rsus',  # upwelling SW surface
-    #     'rlutcs',  # upwelling LW TOA (clear-sky)
-    #     'rsutcs',  # upwelling SW TOA (clear-sky)
-    #     'rsuscs',  # upwelling SW surface (clear-sky) (in response to downwelling)
-    #     'rldscs',  # downwelling LW surface (clear-sky)
-    #     'rsdscs',  # downwelling SW surface (clear-sky)
-    #     'hsls',  # surface upward LH flux
-    #     'hsfs',  # surface upward SH flux
-    # ]
-    # download_wgets(
-    #     project='CMIP6',
-    #     experiment_id=['piControl', 'abrupt-4xCO2'],  # has dash
-    #     variable_id=vars_explicit,
-    #     **cmip6_kwargs
-    # )
-    # download_wgets(
-    #     project='CMIP6',
-    #     experiment_id=['piControl', 'abrupt-4xCO2'],  # has dash
-    #     variable_id=vars_implicit,
-    #     **cmip6_kwargs,
-    # )
-    # download_wgets(
-    #     project='CMIP5',
-    #     experiment=['piControl', 'abrupt4xCO2'],  # has no dash
-    #     variable=vars_implicit,
-    #     **cmip5_kwargs,
-    # )
-    # models = []
-    # for experiment in ('piControl', 'abrupt-4xCO2'):
-    #     file, imodels = filter_wgets(
-    #         project='CMIP6',
-    #         variables=vars_explicit,
-    #         experiment=experiment,
-    #         table=table_monthly,
-    #         endyears=True,
-    #         maxyears=100,
-    #         **filter_kwargs,
-    #     )
-    #     models.append(imodels)
-    # models_control, models_response = models
-    # both = {*models_response} & {*models_control}
-    # nocontrol = {*models_response} - {*models_control}
-    # noresponse = {*models_control} - {*models_response}
-    # print()
-    # print(f'Both ({len(both)}):', ', '.join(both))
-    # print(f'No control ({len(nocontrol)}):', ', '.join(nocontrol))
-    # print(f'No response ({len(noresponse)}):', ', '.join(noresponse))
-
-    # Get monthly temperature data plus daily radiation fluxes
-    # Also filter to abrupt experiments for custom sensitivity assessment
-    # TODO: This is extremely out of date. Kept here only for posterity.
-    # for project in ('CMIP6', 'CMIP5'):
-    #     file, models_monthly = filter_wgets(
-    #         project=project,
-    #         experiment=('piControl', 'abrupt4xCO2'),
-    #         table=table_monthly,
-    #         vars='ta',
-    #         **filter_kwargs
-    #     )
-    #     file, models_daily = filter_wgets(
-    #         project=project,
-    #         experiment='piControl',
-    #         table=table_daily,
-    #         models=models_monthly,
-    #         vars='ta',
-    #         **filter_kwargs
-    #     )
-    #     both = {*models_monthly} & {*models_daily}
-    #     nodaily = {*models_monthly} - {*models_daily}
-    #     nomonthly = {*models_daily} - {*models_monthly}
-    #     print()
-    #     print(f'Both ({len(both)}):', ', '.join(both))
-    #     print(f'No daily ({len(nodaily)}):', ', '.join(nodaily))
-    #     print(f'No monthly ({len(nomonthly)}):', ', '.join(nomonthly))
