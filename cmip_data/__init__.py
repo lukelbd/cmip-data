@@ -2,4 +2,5 @@
 """
 Shared package for working with CMIP experiments.
 """
-from . import load  # noqa: F401
+from .load import *  # noqa: F401, F403
+from .download import *  # noqa: F401, F403
