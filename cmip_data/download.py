@@ -4,7 +4,6 @@ Convenient wrappers for python APIs to download CMIP data.
 """
 import itertools
 import os
-import re
 import sys
 from pathlib import Path
 
