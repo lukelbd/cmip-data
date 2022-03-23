@@ -28,32 +28,20 @@ if sys.platform == 'darwin':
 else:
     ROOT = Path('/mdata5') / 'ldavis'
 
-# CMIP nodes for OpenID logon
-# Nodes are listed here: https://esgf.llnl.gov/nodes.html
+# CMIP hosts for OpenID logon
+# Hosts are listed here: https://esgf.llnl.gov/nodes.html
+# Nodes and statuses are listed here: https://esgf-node.llnl.gov/status/
 CMIP_NODES = {
-    'LLNL': 'https://esgf-node.llnl.gov/',
-    'CEDA': 'https://esgf-index1.ceda.ac.uk/',
-    'DKRZ': 'https://esgf-data.dkrz.de/',
-    'GFDL': 'https://esgdata.gfdl.noaa.gov/',
-    'IPSL': 'https://esgf-node.ipsl.upmc.fr/',
-    'JPL': 'https://esgf-node.jpl.nasa.gov/',
-    'LIU': 'https://esg-dn1.nsc.liu.se/',
-    'NCI': 'https://esgf.nci.org.au/',
-    'NCCS': 'https://esgf.nccs.nasa.gov/',
+    'llnl': 'esgf-node.llnl.gov',
+    'ceda': 'esgf-index1.ceda.ac.uk',
+    'dkrz': 'esgf-data.dkrz.de',
+    'gfdl': 'esgdata.gfdl.noaa.gov',
+    'ipsl': 'esgf-node.ipsl.upmc.fr',
+    'jpl': 'esgf-node.jpl.nasa.gov',
+    'liu': 'esg-dn1.nsc.liu.se',
+    'nci': 'esgf.nci.org.au',
+    'nccs': 'esgf.nccs.nasa.gov',
 }
-# CMIP models and nodes to ignore by default
-# These can be adjusted by experience
-CMIP_MODELS_BAD = (
-    'EC-Earth3-CC',
-)
-CMIP_NODES_BAD = (
-    # 'ceda.ac.uk',
-    'nird.sigma2.no',
-    'nmlab.snu.ac.kr',
-    'esg.lasg.ac.cn',
-    'cmip.fio.org.cn',
-    'vesg.ipsl.upmc.fr',
-)
 
 # CMIP constants obtained from get_facet_options() for SearchContext(project='CMIP5')
 # and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
@@ -78,6 +66,10 @@ CMIP6_FACETS = [
     'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
     'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
     'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
+]
+SORTED_FACETS = [
+    'project', 'model', 'source_id', 'experiment', 'experiment_id',
+    'ensemble', 'variant_label', 'cmor_table', 'table_id', 'variable', 'variable_id',
 ]
 
 # Constants for path management
@@ -131,6 +123,8 @@ def _wget_files(
     Add `intersection` option for getting e.g. models with both pre-industrial and
     abrupt 4xCO2 versions of the input variable. Needed for forced-response utilities.
     """
+    # TODO: Permit retrieving and naming based on arbitrary facets rather
+    # than selecting only four facets. Example: large CESM ensemble.
     # TODO: Permit both 'and' or 'or' logic when searching and filtering files
     # matching options. Maybe add boolean 'intersection' keywords or something.
     # TODO: Auto name wget files based on the files listed in the script. The wgets
@@ -265,21 +259,28 @@ def download_wgets(node=None, **kwargs):
     **kwargs
         Passed to `~pyesgf.search.SearchContext`.
     """
-    # Log on and initalize connection
-    lm = LogonManager()
-    host = 'esgf-node.llnl.gov'
-    if not lm.is_logged_on():  # surface orography
-        lm.logon(username='lukelbd', password=None, hostname=host)
-    node = node or 'LLNL'
+    # Retrieve node
+    node = node or 'llnl'
+    node = node.lower()
     if node in CMIP_NODES:
-        url = CMIP_NODES[node]
+        host = CMIP_NODES[node]
+    elif node in CMIP_NODES.values():
+        host = node
     else:
         raise ValueError(f'Invalid node {node!r}.')
+
+    # Log on and initalize connection
+    lm = LogonManager()
+    if not lm.is_logged_on():  # surface orography
+        lm.logon(username='lukelbd', password=None, hostname=host)
+    url = f'https://{host}/esg-search'  # suffix is critical
     conn = SearchConnection(url, distrib=True)
 
     # Create contexts with default facets
     facets = kwargs.pop('facets', None)
-    facets = facets or ','.join(kwargs)  # default to the search keys
+    facets = facets or list(kwargs)  # default to the search keys
+    if isinstance(facets, str):
+        facets = facets.split(',')
     ctx = conn.new_context(facets=facets, **kwargs)
 
     # Create the wgets
@@ -287,11 +288,13 @@ def download_wgets(node=None, **kwargs):
     print('Context:', ctx, ctx.facet_constraints)
     print('Hit count:', ctx.hit_count)
     parts = []
-    for facet in ctx.facets:  # facet search
+    facets = (
+        *(facet for facet in SORTED_FACETS if facet in ctx.facets),
+        *(facet for facet in ctx.facets if facet not in SORTED_FACETS)
+    )
+    for facet in facets:  # facet search
         opts = ctx.facet_constraints.getall(facet)
         part = '-'.join(opt.replace('-', '') for opt in sorted(set(opts)))
-        if facet in ('table_id', 'cmor_table'):
-            part = part or 'Amon'  # TODO: remove this kludge?
         if facet == 'project':
             part = part.lower()
         parts.append(part)
@@ -316,9 +319,8 @@ def download_wgets(node=None, **kwargs):
 
 
 def filter_wgets(
-    models=None, variables=None, maxyears=None, endyears=None,
-    badnodes=None, badmodels=None, duplicate=False, overwrite=False,
-    **kwargs
+    models=None, ignore=None, variables=None, maxyears=None, endyears=None,
+    overwrite=False, **kwargs
 ):
     """
     Filter the input wget files to within some input climatology.
@@ -347,18 +349,12 @@ def filter_wgets(
     # So far just issue for GISS-E2-R runs but important to make this explicit!
     if models is None:
         models = _wget_models(**kwargs)
-    if badmodels is None:
-        badmodels = CMIP_MODELS_BAD
-    if badnodes is None:
-        badnodes = CMIP_NODES_BAD
     if maxyears is None:
         maxyears = MAXYEARS
     if endyears is None:
         endyears = ENDYEARS
-    if isinstance(badmodels, str):
-        badmodels = (badmodels,)
-    if isinstance(badnodes, str):
-        badnodes = (badnodes,)
+    if isinstance(ignore, str):
+        ignore = (ignore,)
     if isinstance(models, str):
         models = (models,)
     if isinstance(variables, str):
@@ -371,6 +367,8 @@ def filter_wgets(
         # matching period. Data availability or table differences could cause bugs.
         year_ranges = []
         lines_model = [line for line in lines_input if f'_{model}_' in line]
+        if model in ignore:
+            continue
         for var in set(map(get_var, lines_model)):
             if variables and var not in variables:
                 continue
@@ -392,29 +390,25 @@ def filter_wgets(
         print('Final years:', year_range)
 
         # Add lines within the date range that were not downloaded already
-        # WARNING: Only exclude files that are *wholly* outside range. Allow
-        # intersection of date ranges. Important for cfDay IPSL data.
+        # NOTE: Previously we detected and removed identical files available from
+        # multiple nodes but this was terrible idea. The wget script auto-skip files
+        # that both exist and are recorded in the .wget cache so as it loops over files
+        # will skip entries successfully downloaded. This lets us maximize probability
+        # of retrieving file without having to account for intermittently bad nodes.
         for line in lines_model:
-            url = get_url(line)
-            if badnodes and any(node in url for node in badnodes):
-                continue
-            file = get_file(line)
-            if not duplicate and file in files:
-                continue
-            model = get_model(line)
-            if badmodels and any(model == m for m in badmodels):
-                continue
             var = get_var(line)
             if variables and var not in variables:
                 continue
             years = get_years(line)
             if years[1] < year_range[0] or years[0] > year_range[1]:
                 continue
+            file = get_file(line)
             dest = output.parent / file
-            if dest.is_file() and dest.stat().st_size == 0:
-                os.remove(dest)  # remove empty files caused by download errors
-            if not overwrite and dest.is_file():
-                continue  # skip if destination exists
+            if dest.is_file():
+                if overwrite or dest.stat().st_size == 0:
+                    os.remove(dest)  # remove empty files caused by download errors
+                else:
+                    continue  # skip if valid destination exists
             files.add(file)
             lines.append(line)
 
