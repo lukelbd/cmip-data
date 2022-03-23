@@ -89,19 +89,24 @@ get_years = lambda line: tuple(int(date[:4]) for date in line.split('.')[0].spli
 get_var = lambda line: line.split('_')[0][1:]  # variable from netcdf line
 
 
-def _wget_parse(filename, complement=False):
+def _wget_parse(arg, string=False, complement=False):
     """
     Return the download lines of the wget files or their complement. The latter is
     used when constructing a single wget file from many wget files.
     """
-    lines = open(filename, 'r').readlines()  # list of lines
+    if string:
+        lines = arg.split('\n')
+    else:
+        lines = open(arg, 'r').readlines()  # list of lines
     idxs = [i for i, line in enumerate(lines) if DELIM in line]
-    if not idxs:
-        return []
-    elif len(idxs) != 2:
+    if idxs and len(idxs) != 2:
+        raise NotImplementedError
+    if not idxs and complement:
         raise NotImplementedError
     if complement:
         return lines[:idxs[0] + 1], lines[idxs[1]:]  # return tuple of pairs
+    elif not idxs:
+        return lines  # only the filenames were saved
     else:
         return lines[idxs[0] + 1:idxs[1]]
     return lines
@@ -136,19 +141,20 @@ def _wget_files(
     path = ROOT / 'wgets'
     input = []
     patterns = []
-    for i, part in enumerate(itertools.product(*parts)):
-        if i == 0:  # project
-            part = tuple(s.lower() for s in part)
-        patterns.append(pattern := 'wget_' + '[_-]*'.join(part) + '[_-]*.sh')
-        input.extend(sorted(path.glob(pattern)))
+    for i, items in enumerate(itertools.product(*parts)):
+        items = list(items)
+        items[0] = items[0].lower()  # project
+        patterns.append(pattern := 'wget_' + '[_-]*'.join(items) + '[_-]*.sh')
+        input.extend(path.glob(pattern))
     if not input:
         raise ValueError(f'No wget files found in {path} for pattern(s): {patterns!r}')
     if intersection:
         raise NotImplementedError('Cannot yet find intersection of parts.')
-    path = ROOT / '-'.join(part[0] for part in parts[:3])  # TODO: improve
+    path = ROOT / '-'.join(part[0] for part in parts[:3])  # TODO: improve folder names
     if not path.is_dir():
         os.mkdir(path)
     name = 'wget_' + '_'.join('-'.join(part) for part in parts) + '.sh'
+    input = sorted(set(input))
     output = path / name
     return input, output
 
@@ -298,24 +304,31 @@ def download_wgets(node=None, **kwargs):
         if facet == 'project':
             part = part.lower()
         parts.append(part)
+
     # Write wget file
+    # NOTE: Thousands of these files can take up significant space... so
+    # instead save just the filenames after downloading the first script.
+    lines = []
+    prefix = suffix = None
     for j, ds in enumerate(ctx.search()):
         print(f'Dataset {j}:', ds)
         fc = ds.file_context()
         fc.facets = ctx.facets  # TODO: report bug and remove?
-        name = 'wget_' + '_'.join((*parts, format(j, '05d'))) + '.sh'
-        path = Path(ROOT, 'wgets', name)
-        if path.is_file() and False:
-            print('Skipping script:', name)
-            continue
         try:
             wget = fc.get_download_script()
         except Exception:
-            print('Download failed:', name)
-        else:
-            print('Creating script:', name)
-            with open(path, 'w') as f:
-                f.write(wget)
+            print('Download {j} failed.')
+            continue
+        if not wget.strip():
+            print('Download {j} is empty.')
+            continue
+        if not prefix and not suffix:
+            prefix, suffix = _wget_parse(wget, string=True, complement=True)
+        lines.extend(_wget_parse(wget, string=True))
+    name = 'wget_' + '_'.join(parts) + '.sh'
+    path = Path(ROOT, 'wgets', name)
+    with open(path, 'w') as f:
+        f.write('\n'.join((*prefix, *lines, *suffix)))
 
 
 def filter_wgets(
@@ -417,10 +430,9 @@ def filter_wgets(
         os.remove(output)
     print('File:', output)
     with open(output, 'w') as file:
-        file.write(''.join(prefix + lines + suffix))
+        file.write(''.join((*prefix, *lines, *suffix)))
     os.chmod(output, 0o755)
     print(f'Output file ({len(lines)} files): {output}')
-
     return output, models
 
 
