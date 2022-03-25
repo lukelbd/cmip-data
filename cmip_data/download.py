@@ -4,6 +4,7 @@ Convenient wrappers for python APIs to download CMIP data.
 """
 import itertools
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -16,8 +17,8 @@ from pyesgf.search import SearchConnection
 # Global functions
 __all__ = [
     'process_files',
-    'download_wgets',
-    'filter_wgets',
+    'download_wget',
+    'filter_wget',
 ]
 
 # Constants
@@ -28,10 +29,9 @@ if sys.platform == 'darwin':
 else:
     ROOT = Path('/mdata5') / 'ldavis'
 
-# CMIP hosts for OpenID logon
+# ESGF hosts for OpenID logon and pyesgf usage
 # Hosts are listed here: https://esgf.llnl.gov/nodes.html
-# Nodes and statuses are listed here: https://esgf-node.llnl.gov/status/
-CMIP_NODES = {
+HOST_URLS = {
     'llnl': 'esgf-node.llnl.gov',
     'ceda': 'esgf-index1.ceda.ac.uk',
     'dkrz': 'esgf-data.dkrz.de',
@@ -43,23 +43,123 @@ CMIP_NODES = {
     'nccs': 'esgf.nccs.nasa.gov',
 }
 
-# CMIP constants obtained from get_facet_options() for SearchContext(project='CMIP5')
-# and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
-# for the SearchConnection URL. Conventions changed between projects so e.g.
-# 'experiment', 'ensemble', 'cmor_table', and 'time_frequency' in CMIP5 must be
-# changed to 'experiment_id', 'variant_label', 'table_id', and 'frequency' in CMIP6.
-# Note 'member_id' is equivalent to 'variant_label' if 'sub_experiment_id' is unset
+# ESGF data nodes for downloading sorted by priority
+# Nodes and statuses are listed here: https://esgf-node.llnl.gov/status/
+# NOTE: Periodically update these lists as participating institutes change (ignore
+# esgf node and university department prefixes during sort). Last updated 2022-03-24.
+NODE_URLS = [
+    'aims3.llnl.gov',
+    'cmip.bcc.cma.cn',
+    'cmip.dess.tsinghua.edu.cn',
+    'cmip.fio.org.cn',
+    'cordexesg.dmi.dk',
+    'crd-esgf-drc.ec.gc.ca',
+    'data.meteo.unican.es',
+    'dataserver.nccs.nasa.gov',
+    'dist.nmlab.snu.ac.kr',
+    'dpesgf03.nccs.nasa.gov',
+    'eridanus.eoc.dlr.de',
+    'esg-cccr.tropmet.res.in',
+    'esg-dn1.nsc.liu.se',
+    'esg-dn1.ru.ac.th',
+    'esg-dn2.nsc.liu.se',
+    'esg.camscma.cn',
+    'esg.lasg.ac.cn',
+    'esg.pik-potsdam.de',
+    'esg1.umr-cnrm.fr',
+    'esg2.umr-cnrm.fr',
+    'esgdata.gfdl.noaa.gov',
+    'esgf-cnr.hpc.cineca.it',
+    'esgf-data.csc.fi',
+    'esgf-data.ucar.edu',
+    'esgf-data1.ceda.ac.uk',
+    'esgf-data1.diasjp.net',
+    'esgf-data1.llnl.gov',
+    'esgf-data2.ceda.ac.uk',
+    'esgf-data2.diasjp.net',
+    'esgf-data2.llnl.gov',
+    'esgf-data3.ceda.ac.uk',
+    'esgf-data3.diasjp.net',
+    'esgf-ictp.hpc.cineca.it',
+    'esgf-nimscmip6.apcc21.org',
+    'esgf-node.cmcc.it',
+    'esgf-node2.cmcc.it',
+    'esgf.anl.gov',
+    'esgf.apcc21.org',
+    'esgf.bsc.es',
+    'esgf.dwd.de',
+    'esgf.ichec.ie',
+    'esgf.nccs.nasa.gov',
+    'esgf.nci.org.au',
+    'esgf.rcec.sinica.edu.tw',
+    'esgf1.dkrz.de',
+    'esgf2.dkrz.de',
+    'esgf3.dkrz.de',
+    'noresg.nird.sigma2.no',
+    'polaris.pknu.ac.kr',
+    'vesg.ipsl.upmc.fr'
+]
+
+# ESGF data node domains sorted by order of download preference. This reduces download
+# time without inadvertantly missing files by restricting search to particular nodes.
+# NOTE: Previously we removed bad or down nodes but this is unreliable and has
+# to be updated regularly. Instead now prioritize local nodes over distant nodes and
+# then wget script automatically skips duplicate files after successful download.
+NODE_ORDER = [
+    'ucar.edu',  # colorado
+    'anl.gov',  # illinois
+    'llnl.gov',  # california
+    'nccs.nasa.gov',  # maryland
+    'gfdl.noaa.gov',  # new jersey
+    'ec.gc.ca',  # canada
+    'ceda.ac.uk',  # uk
+    'ichec.ie',  # ireland
+    'ipsl.upmc.fr',  # france
+    'umr-cnrm.fr',  # france
+    'dkrz.de',  # germany
+    'dlr.de',  # germany
+    'dwd.de',  # germany
+    'pik-potsdam.de',  # germany
+    'cineca.it',  # italy
+    'cmcc.it',  # italy
+    'bsc.es',  # spain
+    'unican.es',  # spain
+    'dmi.dk',  # denmark
+    'nird.sigma2.no',  # norway
+    'liu.se',  # sweden
+    'csc.fi',  # finland
+    'nci.org.au',  # australia
+    'diasjp.net',  # japan
+    'snu.ac.kr',  # south korea
+    'pknu.ac.kr',  # south korea
+    'apcc21.org',  # south korea
+    'bcc.cma.cn',  # china
+    'camscma.cn',  # china
+    'fio.org.cn',  # china
+    'lasg.ac.cn',  # china
+    'tsinghua.edu.cn',  # china
+    'sinica.edu.tw',  # taiwan
+    'ru.ac.th',  # thailand
+    'tropmet.res.in',  # india
+]
+
+# ESGF facets obtained with get_facet_options() for SearchContext(project='CMIP5')
+# then SearchContext(project='CMIP6') with host https://esgf-node.llnl.gov/esg-search.
+# NOTE: Conventions changed between projects so e.g. 'experiment', 'ensemble',
+# 'cmor_table', and 'time_frequency' in CMIP5 must be changed to 'experiment_id',
+# 'variant_label', 'table_id', and 'frequency' in CMIP6.
+# NOTE: 'member_id' is equivalent to 'variant_label' if 'sub_experiment_id' is unset
 # and for some reason 'variable' and 'variable_id' are kept as synonyms in CMIP6.
-# URL https://esgf-node.llnl.gov/esg-search:     11900116 hits for CMIP6 (use this one!)
-# URL https://esgf-data.dkrz.de/esg-search:      01009809 hits for CMIP6
-# URL https://esgf-node.ipsl.upmc.fr/esg-search: 01452125 hits for CMIP6
-CMIP5_FACETS = [
+# Node esgf-node.llnl.gov:     11900116 hits for CMIP6 (best!)
+# Node esgf-data.dkrz.de:      01009809 hits for CMIP6
+# Node esgf-node.ipsl.upmc.fr: 01452125 hits for CMIP6
+FACET_CMIP5 = [
     'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
     'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
     'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
     'variable', 'variable_long_name', 'version'
 ]
-CMIP6_FACETS = [
+FACET_CMIP6 = [
     'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
     'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
     'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
@@ -67,236 +167,189 @@ CMIP6_FACETS = [
     'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
     'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
 ]
-SORTED_FACETS = [
+FACET_ORDER = [
     'project', 'model', 'source_id', 'experiment', 'experiment_id',
     'ensemble', 'variant_label', 'cmor_table', 'table_id', 'variable', 'variable_id',
 ]
 
-# Constants for path management
-# TODO: Increase to 100 years after first step
-DELIM = 'EOF--dataset.file.url.chksum_type.chksum'
-OPENID = 'https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd'
-MAXYEARS = 50  # retain only first N years of each simulation?
-ENDYEARS = False  # whether to use the end years instead of start years
-# MAXYEARS = 100  # retain 100 years for very solid climatology
 
 # Helper functions for reading lines of wget files
 # NOTE: Some files have a '-clim' suffix at the end of the date range.
-get_url = lambda line: line.split("'")[3].strip()
-get_file = lambda line: line.split("'")[1].strip()
-get_model = lambda line: line.split('_')[2]  # model id from netcdf line
-get_years = lambda line: tuple(int(date[:4]) for date in line.split('.')[0].split('_')[-1].split('-')[:2])  # noqa: E501
-get_var = lambda line: line.split('_')[0][1:]  # variable from netcdf line
+_get_experiment = lambda line: line.split('_')[3]  # netcdf experiment id
+_get_file = lambda line: line.split("'")[1].strip()  # netcdf string name
+_get_model = lambda line: line.split('_')[2]  # netcdf model id
+_get_node = lambda line: line.split("'")[3].strip()  # node string name
+_get_order = lambda line: min((i for i, node in enumerate(NODE_ORDER) if node in _get_node(line)), default=len(NODE_ORDER))  # noqa: E501
+_get_table = lambda line: line.split('_')[1]  # netcdf table id
+_get_variable = lambda line: line.split('_')[0][1:]  # netcdf variable id (omit quote)
+_get_years = lambda line: tuple(int(date[:4]) for date in line.split('.')[0].split('_')[-1].split('-')[:2])  # noqa: E501
 
 
-def _wget_parse(arg, string=False, complement=False):
+def _wget_parse(arg, complement=False):
     """
     Return the download lines of the wget files or their complement. The latter is
-    used when constructing a single wget file from many wget files.
+    used when constructing a single files file from many wget files.
+
+    Parameters
+    ----------
+    arg : str or path-like
+        The string content or `pathlib.Path` location.
+    complement : bool, default: False
+        Whether to return the filename lines or the preceding and succeeding lines.
     """
-    if string:
-        lines = arg.split('\n')
+    if isinstance(arg, Path):
+        lines = open(arg, 'r').readlines()
     else:
-        lines = open(arg, 'r').readlines()  # list of lines
-    idxs = [i for i, line in enumerate(lines) if DELIM in line]
+        lines = [_ + '\n' for _ in arg.split('\n')]
+    eof = 'EOF--dataset.file.url.chksum_type.chksum'  # esgf filename marker
+    idxs = [i for i, line in enumerate(lines) if eof in line]
     if idxs and len(idxs) != 2:
         raise NotImplementedError
-    if not idxs and complement:
-        raise NotImplementedError
     if complement:
+        if not idxs:
+            raise NotImplementedError
         return lines[:idxs[0] + 1], lines[idxs[1]:]  # return tuple of pairs
-    elif not idxs:
-        return lines  # only the filenames were saved
     else:
-        return lines[idxs[0] + 1:idxs[1]]
-    return lines
+        if idxs:
+            lines = lines[idxs[0] + 1:idxs[1]]
+        return lines
 
 
-def _wget_files(
+def _wget_read(
+    path='~/data',
     project='cmip6',
     experiment='piControl',
     table='Amon',
-    variables='ta',
-    intersection=False,
+    variable='ta',
 ):
     """
     Return a list of input wget files matching the criteria along with an output
     wget file to be constructed and the associated output folder for NetCDFs.
 
-    Todo
-    ----
-    Add `intersection` option for getting e.g. models with both pre-industrial and
-    abrupt 4xCO2 versions of the input variable. Needed for forced-response utilities.
+    Parameters
+    ----------
+    path : path-like
+        The location of the files.
+    project, experiment, table, variable : str, optional
+        The facets to search for and use in the output folder.
     """
     # TODO: Permit retrieving and naming based on arbitrary facets rather
     # than selecting only four facets. Example: large CESM ensemble.
-    # TODO: Permit both 'and' or 'or' logic when searching and filtering files
-    # matching options. Maybe add boolean 'intersection' keywords or something.
     # TODO: Auto name wget files based on the files listed in the script. The wgets
     # generated by searches do not generally mix variables or experiments.
-    parts = [
-        sorted(set((part,) if isinstance(part, str) else part))
-        for part in (project, experiment, table, variables)
-    ]
-    path = ROOT / 'wgets'
-    input = []
+    path = Path(path).expanduser()
+    parts = [project, experiment, table, variable]
+    parts = [sorted(set((part,) if isinstance(part, str) else part)) for part in parts]
+    parts[0] = sorted(map(str.lower, parts[0]))  # lowercase project
+    source = path / 'unfiltered'
+    files = []
     patterns = []
     for i, items in enumerate(itertools.product(*parts)):
         items = list(items)
-        items[0] = items[0].lower()  # project
-        patterns.append(pattern := 'wget_' + '[_-]*'.join(items) + '[_-]*.sh')
-        input.extend(path.glob(pattern))
-    if not input:
+        items[0] = items[0].lower()  # project is lowercase
+        pattern = 'wget_' + '[_-]*'.join(items) + '[_-]*.sh'
+        patterns.append(pattern)
+        for file in source.glob(pattern):
+            if '_' + '-'.join(parts[1]) + '_' not in str(file):
+                pass  # enforce an exact match for the experiment?
+            files.append(file)
+    if not files:
         raise ValueError(f'No wget files found in {path} for pattern(s): {patterns!r}')
-    if intersection:
-        raise NotImplementedError('Cannot yet find intersection of parts.')
-    path = ROOT / '-'.join(part[0] for part in parts[:3])  # TODO: improve folder names
-    if not path.is_dir():
-        os.mkdir(path)
+    files = sorted(set(files))
+    for file in files:
+        print(f'Input script: {file}')
     name = 'wget_' + '_'.join('-'.join(part) for part in parts) + '.sh'
-    input = sorted(set(input))
-    output = path / name
-    return input, output
+    pieces = list(parts)  # group like table ids into the same folder
+    pieces[2] = sorted(set('Amon' if s == 'Emon' else s for s in pieces[2]))
+    dest = path / '-'.join(piece[0] for piece in pieces[:3]) / name
+    return files, dest, *parts
 
 
-def _wget_models(models=None, **kwargs):
+def _wget_write(path, prefix, center, suffix, openid=None):
     """
-    Return a set of all models in the group of wget scripts, a dictionary
-    with keys of (experiment, variable) pairs listing the models present,
-    and a dictionary with 'experiment' keys listing the possible variables.
-
-    Todo
-    ----
-    Clean this up to support either union or intersection operations.
-    Sometimes acceptable to have missing variables e.g. for constraints
-    and sometimes not e.g. for getting transport as energy budget residual.
-    """
-    # Group models available for various (experiment, variable)
-    input, output = _wget_files(**kwargs)
-    project, experiment, table = output.parent.name.split('-')
-    frequency = table[-3:].lower()  # convert e.g. Amon to mon
-    models_all = {*()}  # all models
-    models_grouped = {}  # models by variable
-    for file in input:
-        models_file = {get_model(line) for line in _wget_parse(file) if line}
-        models_all.update(models_file)
-        if (experiment, frequency) in models_grouped:
-            models_grouped[(experiment, frequency)].update(models_file)
-        else:
-            models_grouped[(experiment, frequency)] = models_file
-
-    # Get dictionary of variables per experiment
-    exps_vars = {}
-    for (exp, var) in models_grouped:
-        if exp not in exps_vars:
-            exps_vars[exp] = {*()}
-        exps_vars[exp].add(var)
-
-    # Find models missing in some of these pairs
-    exps_missing = {}
-    models_download = set()
-    models_ignore = set()
-    for model in sorted(models_all):
-        # Manual filter, e.g. filter daily data based on
-        # whether they have some monthly data for same period?
-        pairs_missing = []
-        for pair, group in models_grouped.items():
-            if model not in group:
-                pairs_missing.append(pair)
-        filtered = bool(models and model not in models)
-        if not pairs_missing and not filtered:
-            models_download.add(model)
-            continue
-
-        # Get variables missing per experiment
-        models_ignore.add(model)
-        exp_dict = {}
-        for (exp, var) in pairs_missing:
-            if exp not in exp_dict:
-                exp_dict[exp] = {*()}
-            exp_dict[exp].add(var)
-
-        # Add to per-experiment dictionary that records models for
-        # which certain individual variables are missing
-        for exp, vars in exp_dict.items():
-            if exp not in exps_missing:
-                exps_missing[exp] = {}
-            missing = exps_missing[exp]
-            if filtered:
-                # Manual filter, does not matter if any variables were missing
-                if 'filtered' not in missing:
-                    missing['filtered'] = []
-                missing['filtered'].append(model)
-            elif vars == exps_vars[exp]:  # set comparison
-                # All variables missing
-                if 'all' not in missing:
-                    missing['all'] = []
-                missing['all'].append(model)
-            else:
-                # Just some variables missing
-                for var in vars:
-                    if var not in missing:
-                        missing[var] = []
-                    missing[var].append(model)
-
-    # Print message
-    print()
-    print(f'Input models ({len(models_download)}):')
-    print(', '.join(sorted(models_download)))
-    for exp, exps_missing in exps_missing.items():
-        vars = sorted(exps_missing)
-        print()
-        print(f'{exp}:')
-        for var in vars:
-            missing = exps_missing[var]
-            print(f'Missing {var} ({len(missing)}): {", ".join(sorted(missing))}')
-    print()
-    return models_download
-
-
-def download_wgets(node=None, **kwargs):
-    """
-    Download CMIP wget files.
+    Write the wget file to the specified path. Lines are sorted first by model,
+    second by variable, and third by node priority.
 
     Parameters
     ----------
-    url : str, default: 'LLNL'
+    path : path-like
+        The script path.
+    prefix, center, suffix : list
+        The script components.
+    openid : str, optional
+        The openid to be hardcoded in the file.
+    """
+    # NOTE: Previously we detected and removed identical files available from
+    # multiple nodes but this was terrible idea. The wget script auto-skip files
+    # that both exist and are recorded in the .wget cache so as it loops over files
+    # it autoskips entries already downloaded. This lets us maximize probability
+    # of retrieving file without having to account for intermittently bad nodes.
+    path = Path(path).expanduser()
+    sorter = lambda line: (
+        _get_experiment(line),
+        _get_model(line),
+        _get_variable(line),
+        _get_table(line),
+        _get_order(line),
+        line  # last resort is to sort by line (e.g. date range)
+    )
+    center = sorted(center, key=sorter)
+    script = ''.join((*prefix, *center, *suffix))
+    if openid is not None:
+        script = re.sub('openId=\n', f'openId={openid!r}\n', script)
+    if not path.parent.is_dir():
+        os.mkdir(path.parent)
+    with open(path, 'w') as f:
+        f.write(script)
+    os.chmod(path, 0o755)
+    print(f'Output script ({len(center)} files): {path}\n')
+    return path
+
+
+def download_wget(path='~/data', node='llnl', openid=None, **kwargs):
+    """
+    Download a wget file using `pyesgf`. The resulting file can be subsequently
+    filtered to particular years or models using `filter_wget`.
+
+    Parameters
+    ----------
+    path : path-like, default: '~/data'
+        The output path for the resulting wget file.
+    node : str, default: 'llnl'
         The ESGF node to use for searching.
+    openid : str, optional
+        The openid to hardcode into the resulting wget file.
     **kwargs
         Passed to `~pyesgf.search.SearchContext`.
     """
-    # Retrieve node
-    node = node or 'llnl'
+    # Log on and initalize the connection using requested node
     node = node.lower()
-    if node in CMIP_NODES:
-        host = CMIP_NODES[node]
-    elif node in CMIP_NODES.values():
+    if node in HOST_URLS:
+        host = HOST_URLS[node]
+    elif node in HOST_URLS.values():
         host = node
     else:
         raise ValueError(f'Invalid node {node!r}.')
-
-    # Log on and initalize connection
     lm = LogonManager()
     if not lm.is_logged_on():  # surface orography
         lm.logon(username='lukelbd', password=None, hostname=host)
     url = f'https://{host}/esg-search'  # suffix is critical
     conn = SearchConnection(url, distrib=True)
 
-    # Create contexts with default facets
+    # Create context with input facets
+    # NOTE: Since project is always all-upercase we convert to lowercase
+    # for convenience. Otherwise case of variables is preserved.
     facets = kwargs.pop('facets', None)
     facets = facets or list(kwargs)  # default to the search keys
     if isinstance(facets, str):
         facets = facets.split(',')
     ctx = conn.new_context(facets=facets, **kwargs)
-
-    # Create the wgets
-    # TODO: Check that looking up 'facets' works instead of checking lists
     print('Context:', ctx, ctx.facet_constraints)
     print('Hit count:', ctx.hit_count)
     parts = []
     facets = (
-        *(facet for facet in SORTED_FACETS if facet in ctx.facets),
-        *(facet for facet in ctx.facets if facet not in SORTED_FACETS)
+        *(facet for facet in FACET_ORDER if facet in ctx.facets),
+        *sorted(facet for facet in ctx.facets if facet not in FACET_ORDER)
     )
     for facet in facets:  # facet search
         opts = ctx.facet_constraints.getall(facet)
@@ -304,145 +357,188 @@ def download_wgets(node=None, **kwargs):
         if facet == 'project':
             part = part.lower()
         parts.append(part)
+    name = '_'.join(('wget', *parts)) + '.sh'
+    path = Path(path).expanduser() / 'unfiltered'
 
-    # Write wget file
+    # Create the wget file
     # NOTE: Thousands of these files can take up significant space... so
-    # instead save just the filenames after downloading the first script.
-    lines = []
+    # instead just save into a single script.
+    center = []
     prefix = suffix = None
     for j, ds in enumerate(ctx.search()):
         print(f'Dataset {j}:', ds)
         fc = ds.file_context()
         fc.facets = ctx.facets  # TODO: report bug and remove?
         try:
-            wget = fc.get_download_script()
-        except Exception:
-            print('Download {j} failed.')
+            script = fc.get_download_script()
+        except Exception:  # download failed
+            print(f'Download {j} failed.')
             continue
-        if not wget.strip():
-            print('Download {j} is empty.')
+        if script.count('\n') <= 1:  # just an error message
+            print(f'Download {j} is empty.')
             continue
+        lines = _wget_parse(script, complement=False)
         if not prefix and not suffix:
-            prefix, suffix = _wget_parse(wget, string=True, complement=True)
-        lines.extend(_wget_parse(wget, string=True))
-    name = 'wget_' + '_'.join(parts) + '.sh'
-    path = Path(ROOT, 'wgets', name)
-    with open(path, 'w') as f:
-        f.write('\n'.join((*prefix, *lines, *suffix)))
+            prefix, suffix = _wget_parse(script, complement=True)
+        center.extend(lines)
+
+    # Return filename
+    return _wget_write(path / name, prefix, center, suffix, openid=openid)
 
 
-def filter_wgets(
-    models=None, ignore=None, variables=None, maxyears=None, endyears=None,
-    overwrite=False, **kwargs
+def filter_wget(
+    path='~/data', maxyears=50, endyears=False, intersect=False, overwrite=False,
+    models_include=None, models_exclude=None, **kwargs
 ):
     """
     Filter the input wget files to within some input climatology.
 
+    Parameters
+    ----------
+    path : path-like, default: '~/data'
+        The output path for the resulting data subfolder and wget file.
+    maxyears : int, default: 50
+        The number of years required for downloading.
+    endyears : bool, default: False
+        Whether to download from the start or end of the available times.
+    intersect : bool, optional
+        Whether to enforce intersection over the variable time ranges.
+    overwrite : bool, optional
+        Whether to overwrite the resulting datasets.
+    models_include : str or sequence, optional
+        If passed, files not belonging to these models are excluded.
+    models_exclude : str or sequence, optional
+        If passed, files belonging to thse models are excluded.
+    **kwargs
+        Passed to `_wget_read`.
+
     Todo
     ----
-    Automatically invoke this from `download_wgets` or better to download
+    Automatically invoke this from `download_wget` or better to download
     cache of files then filter later?
     """
-    # Get all lines for download
-    # Also manually replace the open ID
-    kwargs['variables'] = variables
-    input, output = _wget_files(**kwargs)
-    prefix, suffix = _wget_parse(input[0], complement=True)
-    for i, line in enumerate(prefix):
-        if line == 'openId=\n':
-            prefix[i] = 'openId=' + OPENID + '\n'
-            break
+    # Collect wget files and restrict the models
+    # NOTE: To overwrite previous files this script can simply be called with
+    # overwrite=True. Then the file is removed so the wget script can be called
+    # without -U and thus still skip duplicate files from the same node. Note
+    # that if a file is not in the esgf wget script cache then the wget command
+    # itself will skip files that already exist unless ESGF_WGET_OPTS includes -O.
+    files, dest, _, experiments, tables, variables = _wget_read(path, **kwargs)
+    models = set(_get_model(line) for file in files for line in _wget_parse(file))
+    if isinstance(models_include, str):
+        models_include = (models_include,)
+    if isinstance(models_exclude, str):
+        models_exclude = (models_exclude,)
+    if models_include is not None:
+        models &= set(models_include)
+    if models_exclude is not None:
+        models -= set(models_exclude)
+    lines_all = [
+        line for file in files for line in _wget_parse(file) if any(
+            '_'.join((var, table, model, experiment)).replace('-', '')
+            in line.replace('-', '')  # match 'abrupt4xCO2' to 'abrupt-4xCO2'
+            for var, table, model, experiment
+            in itertools.product(variables, tables, models, experiments)
+        )
+    ]
 
-    # Collect all download lines for files
-    files = set()  # unique file tracking (ignore same file from multiple nodes)
-    lines = []  # final lines
-    lines_input = [line for file in input for line in _wget_parse(file) if line]
-
-    # Iterate by *model*, filter to date range for which *all* variables are available!
-    # So far just issue for GISS-E2-R runs but important to make this explicit!
-    if models is None:
-        models = _wget_models(**kwargs)
-    if maxyears is None:
-        maxyears = MAXYEARS
-    if endyears is None:
-        endyears = ENDYEARS
-    if isinstance(ignore, str):
-        ignore = (ignore,)
-    if isinstance(models, str):
-        models = (models,)
-    if isinstance(variables, str):
-        variables = (variables,)
+    # Iterate over models
+    center = []
+    prefix, suffix = _wget_parse(files[0], complement=True)
     for model in sorted(models):
-        # Find minimimum date range for which all variables are available
-        # NOTE: Use maxyears - 1 or else e.g. 50 years with 190001-194912 will not
-        # "satisfy" the range and result in the next file downloaded.
-        # NOTE: Ensures variables required for same analysis are present over
-        # matching period. Data availability or table differences could cause bugs.
-        year_ranges = []
-        lines_model = [line for line in lines_input if f'_{model}_' in line]
-        if model in ignore:
-            continue
-        for var in set(map(get_var, lines_model)):
-            if variables and var not in variables:
-                continue
-            try:
-                years = [get_years(line) for line in lines_model if f'{var}_' in line]
-            except ValueError:  # helpful message
-                for line in lines_model:
-                    get_years(line)
-            year_ranges.append((min(y for y, _ in years), max(y for _, y in years)))
-        if not year_ranges:
-            continue
-        year_range = (max(p[0] for p in year_ranges), min(p[1] for p in year_ranges))
+        # Get date ranges for each variable, possibly enforcing intersection (transport
+        # project) or inspecting each range individually (constraints project).
+        # NOTE: Must use maxyears - 1 or else e.g. 50 years with 190001-194912 will
+        # not "satisfy" the range and result in the next file downloaded.
         print('Model:', model)
-        print('Initial years:', year_range)
-        if endyears:
-            year_range = (max(year_range[0], year_range[1] - maxyears + 1), year_range[1])  # noqa: E501
+        lines = [line for line in lines_all if f'_{model}_' in line]
+        ranges = {}  # year ranges for each variable
+        min_, max_ = 10000, -10000  # dummy range when files not found
+        for var in sorted(variables):
+            years = [_get_years(line) for line in lines if f'{var}_' in line]
+            years = (
+                min((y for y, _ in years), default=min_),
+                max((y for _, y in years), default=max_),
+            )
+            ranges[var] = years
+        print('Initial years: ', end='')
+        print(', '.join(k + ' ' + '-'.join(map(str, v)) for k, v in ranges.items()))
+        if intersect:
+            for var in tuple(ranges):
+                ranges[var] = (
+                    max((p[0] for p in ranges.values()), default=min_),
+                    min((p[1] for p in ranges.values()), default=max_),
+                )
+        for var in tuple(ranges):
+            years = ranges[var]
+            if endyears:
+                years = (int(max(years[0], years[1] - maxyears + 1)), years[1])
+            else:
+                years = (years[0], int(min(years[1], years[0] + maxyears - 1)))
+            ranges[var] = years
+        print('Final years: ', end='')
+        print(', '.join(k + ' ' + '-'.join(map(str, v)) for k, v in ranges.items()))
+
+        # Restrict output to within date range. If overwriting then remove old files
+        # now so the script can be called without -U and still skip duplicates.
+        include = set()
+        for line in lines:
+            ys = _get_years(line)
+            var = _get_variable(line)
+            years = ranges[var]
+            if ys[1] < years[0] or ys[0] > years[1]:
+                continue
+            output = dest.parent / _get_file(line)
+            if not output.is_file():
+                pass
+            elif overwrite or output.stat().st_size == 0:  # test if empty due to error
+                os.remove(output)
+            else:  # could continue but instead rely on caching
+                pass
+            include.add(line)  # duplicates can be caused by multiple source scripts
+        if include:
+            center.extend(include)
         else:
-            year_range = (year_range[0], min(year_range[1], year_range[0] + maxyears - 1))  # noqa: E501
-        print('Final years:', year_range)
+            print('No intersecting model data found.')
+            models.remove(model)
 
-        # Add lines within the date range that were not downloaded already
-        # NOTE: Previously we detected and removed identical files available from
-        # multiple nodes but this was terrible idea. The wget script auto-skip files
-        # that both exist and are recorded in the .wget cache so as it loops over files
-        # will skip entries successfully downloaded. This lets us maximize probability
-        # of retrieving file without having to account for intermittently bad nodes.
-        for line in lines_model:
-            var = get_var(line)
-            if variables and var not in variables:
-                continue
-            years = get_years(line)
-            if years[1] < year_range[0] or years[0] > year_range[1]:
-                continue
-            file = get_file(line)
-            dest = output.parent / file
-            if dest.is_file():
-                if overwrite or dest.stat().st_size == 0:
-                    os.remove(dest)  # remove empty files caused by download errors
-                else:
-                    continue  # skip if valid destination exists
-            files.add(file)
-            lines.append(line)
-
-    # Save bulk download file
-    if output.is_file():
-        os.remove(output)
-    print('File:', output)
-    with open(output, 'w') as file:
-        file.write(''.join((*prefix, *lines, *suffix)))
-    os.chmod(output, 0o755)
-    print(f'Output file ({len(lines)} files): {output}')
-    return output, models
+    # Return filename and model list
+    dest = _wget_write(dest, prefix, center, suffix)
+    return dest, models
 
 
 def process_files(
-    project, experiment, table, *vars,
-    wget=False, dryrun=False, overwrite=False,
-    nyears=50, nchunks=10, endyears=False, chunk=False,
+    path='~/data', nyears=50, nchunks=1, endyears=False, chunks=False,
+    overwrite=False, dryrun=False, wget=False, **kwargs,
 ):
     """
-    Average and standardize the raw files downloaded with the wget script.
+    Average and standardize the files downloaded with a wget script.
+
+    Parameters
+    ----------
+    path : path-like
+        The input path for the raw data.
+    project, experiment, table, *variables
+        The facets to select when searching files.
+    nyears : int, default: 50
+        The number of years for the resulting climatology.
+    nchunks : int, default: 1
+        The number of years in each chunk for the resulting times eries.
+    endyears : bool, default: False
+        Whether to average from the start or end of the available times.
+    chunks : bool, optional
+        Whether to create an `nyears` long time series of successive `nchunks` long
+        time averages or simply average `nyears` of data.
+    output : path-like, optional
+        The output path for the raw data.
+    overwrite : bool, optional
+        Whether to overwrite existing files or skip them.
+    dryrun : bool, optional
+        Whether to only print time information and exit.
+    wget : bool, optional
+        Whether to print time information about wget files rather than downloaded files.
+    **kwargs
+        Passed to `_wget_read`.
     """
     # Initialize cdo (a bit sloow)
     # NOTE: conda cdo is the command-line tool and pip cdo is the python binding
@@ -454,37 +550,40 @@ def process_files(
     # Find available models and variables
     # NOTE: Have to emit warning if files from multiple tables are found.
     # TODO: This should list the files we failed to download.
-    pattern = 'Amon' if 'Emon' in table else table
-    string = '-'.join(project, experiment, pattern)
-    files_all = _wget_files(project, experiment, table, vars)
-    if wget:  # search files in wget script
-        input = ROOT / string
-        output = DATA / string
-        if not input.is_dir():
-            raise RuntimeError(f'Input directory {input!r} not found.')
-        if not output.is_dir():
-            raise RuntimeError(f'Output directory {output!r} not found.')
-        files_all = input.glob('*.nc')
+    path = Path(path).expanduser()
+    files_all, dest, projects, experiments, tables, variables = _wget_read(**kwargs)
+    if not dest.is_dir():
+        raise RuntimeError(f'Output directory {dest!r} not found.')
+    if not wget:  # search actual files
+        path = path / dest.name  # match subfolder name
+        if not path.is_dir():
+            os.mkdir(path)
+        files_all = dest.glob('*.nc')
 
     # Iterate through models then variables
-    # NOTE: The quotes around files are important! contains newlines!
-    models = sorted(set(map(get_model, map(str, files_all))))
-    if not vars:
-        vars = sorted(set(map(get_var, map(str, files_all))))
+    # TODO: Support different variants e.g. ensemble membes.
+    models = sorted(set(map(_get_model, map(str, files_all))))
+    suffix = (
+        ('climate', f'timeseries-{nchunks}yr')[chunks]
+        + f'-{nyears}yr-'
+        + ('start', 'end')[endyears]
+    )
     print()
-    print(f'Table {table}, experiment {experiment}: {len(models)} models found')
-    for model, var in itertools.product(models, vars):
-        # List files and remove empty files
-        files = [file for file in files_all if f'{var}_{table}_{model}_' in file]
-        if var == vars[0]:
-            print()
-            print('Input: {input.name}, Model: {model}')
+    print(f'Input {dest.name}: {len(models)} found for variables {", ".join(variables)}.')  # noqa: E501
+    for project, experiment, model, table, variable in itertools.product(
+        projects, experiments, models, tables, variables
+    ):
+        # List the files and remove empty files
+        files = [f for f in files_all if f'{variable}_{table}_{model}_{experiment}' in f]  # noqa: E501
+        output = dest / f'{variable}_{table}_{model}_{experiment}_{project}_{suffix}.nc'
+        exists = output.is_file() and output.stat().st_size > 0
+        print(f'Output: {output.parent.name}/{output.name}')
         for file in files:
             if file.stat().st_size == 0:
-                print(f'Warning: Deleting empty input file {file.name}.')
+                print(f'Warning: Removing empty input file {file.name}.')
                 os.remove(file)
-        dates = tuple(map(get_years, map(str, files)))
-        prefix = format(f'{var} (unfiltered):', ' <20s')
+        dates = tuple(map(_get_years, map(str, files)))
+        prefix = format(f'{variable} (unfiltered):', ' <20s')
         if files:
             ymin, ymax = min(tup[0] for tup in dates), max(tup[1] for tup in dates)
             print(f'{prefix} {ymin}-{ymax} ({len(files)} files)')
@@ -492,20 +591,19 @@ def process_files(
             print(f'{prefix} not found')
             continue
 
-        # Select files for averaging
+        # Merge files into a single time series
         # TODO: Add year suffix? Then need to auto-remove files with different range.
-        # NOTE: Simulations should already be spun up, see parent_experiment_id.
+        # NOTE: Can use mergetime as dedicated func with probably more sanity checks
+        # but cdo docs also mention that cat and copy should work.
         mfiles = []
         mdates = []
         for file, date in zip(files, dates):
             if date[0] < ymin + nyears - 1:
                 mfiles.append(file)
                 mdates.append(date)
-        tmp = output / 'tmp.nc'
+        tmp = dest / 'tmp.nc'
         ymin, ymax = min(tup[0] for tup in mdates), max(tup[1] for tup in mdates)
-        out = output / f'{var}_{table}_{model}_{experiment}_{project}.nc'
-        exists = out.is_file() and out.stat().st_size > 0
-        prefix = format(f'{var} (filtered):', ' <20s')
+        prefix = format(f'{variable} (filtered):', ' <20s')
         print(f'{prefix} {ymin}-{ymax} ({len(mfiles)} files)')
         if exists and not overwrite:
             print('Skipping (output exists)...')
@@ -516,29 +614,27 @@ def process_files(
         if dryrun:
             print('Skipping (dry run)...')
             continue
-
-        # Take time averages
-        # NOTE: Can use mergetime as dedicated func with probably more sanity checks
-        # but cdo docs also mention that cat and copy should work.
-        # NOTE: This returns either chunk-yearly averages or a blanket time average,
-        # optionally uses initial or final years, and ignores NaNs when averaging.
-        # TODO: Also detrend data before averaging using simple cdo command? And also
-        # interpolate horizontally and vertically to standard grid?
-        # cmds = [f'-zonmean -selname,{var} {file}' for file in mfiles]
         if tmp.is_file():
             os.remove(tmp)
-        cmd = ' '.join(f'-selname,{var} {file}' for file in mfiles)
+        cmd = ' '.join(f'-selname,{variable} {file}' for file in mfiles)
         cdo.mergetime(input=cmd, output=str(tmp), options=opts)
         if not tmp.is_file() or tmp.stat().st_size == 0:
             if tmp.is_file():
                 os.remove(tmp)
             raise RuntimeError(f'Failed to merge {tuple(f.name for f in mfiles)}.')
+
+        # Take time averages
+        # NOTE: This returns either chunk-yearly averages or a blanket time average,
+        # optionally uses initial or final years, and ignores NaNs when averaging.
+        # TODO: Also detrend data before averaging using simple cdo command? And also
+        # interpolate horizontally and vertically to standard grid?
+        # cmds = [f'-zonmean -selname,{var} {file}' for file in mfiles]
         ntime = cdo.ntime(input=str(tmp), options=opts)
         ntime = int(ntime[0])  # returns singleton list of string
         ntime_years = nyears * 12  # TODO: adapt for other time intervals
         ntime_chunks = nchunks * 12
-        prefix = format(f'{var} (timesteps):', ' <20s')
-        if chunk:
+        prefix = format(f'{variable} (timesteps):', ' <20s')
+        if chunks:
             cmds = []
             for itime in range(1, ntime_years + 1, ntime_chunks):  # endpoint exclusive
                 if itime > ntime:
@@ -555,7 +651,7 @@ def process_files(
                 print(f'{prefix} {time1}-{time2} ({(time2 - time1 + 1) / 12} years)')
                 cmds.append(f'-timmean -seltimestep,{time1}/{time2} {tmp}')
             cmd = ' '.join(cmds)  # single command
-            cdo.mergetime(input=cmd, output=str(out), options=opts)
+            cdo.mergetime(input=cmd, output=str(output), options=opts)
         else:
             if ntime_years > ntime:
                 print(f'Warning: Requested {ntime_years} but file has only {ntime} steps.')  # noqa: E501
@@ -565,10 +661,8 @@ def process_files(
                 time1, time2 = 1, ntime_years
             print(f'{prefix} {time1}-{time2} ({(time2 - time1 + 1) / 12} years)')
             cmd = f'-seltimestep,{time1},{time2} {tmp}'
-            cdo.ymonmean(input=cmd, output=str(out), options=opts)
-        if out.is_file() and out.stat().st_size > 0:
-            print(f'Output: {output.name}/{out.name}')
-        else:
-            if out.is_file():  # if zero-length
-                os.remove(out)
-            raise RuntimeError(f'Failed to create output file {out.name}.')
+            cdo.ymonmean(input=cmd, output=str(output), options=opts)
+        if output.is_file() and output.stat().st_size > 0:
+            if output.is_file():  # if zero-length
+                os.remove(output)
+            raise RuntimeError(f'Failed to create output file {output.name}.')
