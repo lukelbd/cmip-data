@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Load various CMIP datasets.
+Load datasets downloaded from external sources and downloaded here.
 """
 import json
 import warnings

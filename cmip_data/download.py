@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """
+Download and filter datasets using the ESGF python API.
 Convenient wrappers for python APIs to download CMIP data.
 """
 import os
 import re
-import warnings
 from pathlib import Path
 
 import numpy as np
-from cdo import Cdo
 from pyesgf.logon import LogonManager
 from pyesgf.search import SearchConnection
 
 __all__ = [
+    'compare_files',
+    'search_connection',
     'download_script',
     'filter_script',
-    'process_files',
-    'search_connection',
 ]
 
 # Interpolate grid constants
@@ -155,19 +154,27 @@ NODE_PRIORITIES = [
 # Experiments: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_experiment_id.html
 # Institutions: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_institution_id.html
 # Models/sources: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_source_id.html
-FACET_CMIP5 = [
+FACETS_CMIP5 = [
     'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
     'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
     'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
     'variable', 'variable_long_name', 'version'
 ]
-FACET_CMIP6 = [
+FACETS_CMIP6 = [
     'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
     'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
     'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
     'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
     'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
     'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
+]
+FACETS_ORDER = [
+    'project',  # same as folder
+    'model', 'source_id',
+    'experiment', 'experiment_id',  # same as folder
+    'ensemble', 'variant_label',
+    'table', 'cmor_table', 'table_id',  # same as folder
+    'variable', 'variable_id',
 ]
 FACET_ALIASES = {
     ('CMIP5', 'table'): 'cmor_table',
@@ -181,20 +188,16 @@ FACET_ALIASES = {
     ('CMIP6', 'institution'): 'institution_id',
 }
 FACET_RENAMES = {
-    ('CMIP5', 'abrupt-4xCO2'): 'abrupt4xCO2',
-    ('CMIP5', 'esm-piControl'): 'esmControl',
-    ('CMIP5', 'esm-hist'): 'esmHistorical',
-    ('CMIP5', 'hist-GHG'): 'historicalGHG',
     ('CMIP5', 'hist-nat'): 'historicalNat',
+    ('CMIP5', 'hist-GHG'): 'historicalGHG',
+    ('CMIP5', 'esm-hist'): 'esmHistorical',
+    ('CMIP5', 'esm-piControl'): 'esmControl',
+    ('CMIP5', 'abrupt-4xCO2'): 'abrupt4xCO2',
 }
-FACET_PRIORITIES = [
-    'project',  # same as folder
-    'model', 'source_id',
-    'experiment', 'experiment_id',  # same as folder
-    'ensemble', 'variant_label',
-    'table', 'cmor_table', 'table_id',  # same as folder
-    'variable', 'variable_id',
-]
+FACET_RENAMES = {
+    **FACET_RENAMES,
+    **{('CMIP6', new_opt): old_opt for (_, old_opt), new_opt in FACET_RENAMES.items()},
+}
 
 # Variant labels associated with flagship versions of the pre-industrial control
 # and abrupt 4xCO2 experiments. Note the CNRM, MIROC, and UKESM models run both their
@@ -203,32 +206,42 @@ FACET_PRIORITIES = [
 # EC-Earth3 strangely only runs the abrupt experiment with the 'r8' realization
 # and the (parent) control experiment with the 'r1' control realiztion.
 # NOTE: See the download_process.py script for details on available models.
-MODEL_FLAGSHIPS = {
-    'r8i1p1f1': (
-        'EC-Earth3',
-    ),
-    'r1i1p1f3': (
-        'HadGEM3-GC31-LL',
-        'HadGEM3-GC31-MM'
-    ),
-    'r1i1p1f2': (
-        'CNRM-CM6-1',
-        'CNRM-CM6-1-HR',
-        'CNRM-ESM2-1',
-        'MIROC-ES2L',
-        'MIROC-ES2H',
-        'UKESM1-0-LL',
-    ),
+FLAGSHIP_ENSEMBLES = {
+    ('CMIP5', None, None): 'r1i1p1',
+    ('CMIP6', None, None): 'r1i1p1f1',
+    ('CMIP6', 'piControl', 'CNRM-CM6-1'): 'r1i1p1f2',
+    ('CMIP6', 'piControl', 'CNRM-CM6-1-HR'): 'r1i1p1f2',
+    ('CMIP6', 'piControl', 'CNRM-ESM2-1'): 'r1i1p1f2',
+    ('CMIP6', 'piControl', 'MIROC-ES2L'): 'r1i1p1f2',
+    ('CMIP6', 'piControl', 'MIROC-ES2H'): 'r1i1p1f2',
+    ('CMIP6', 'piControl', 'UKESM1-0-LL'): 'r1i1p1f2',
+    ('CMIP6', 'abrupt-4xCO2', 'CNRM-CM6-1'): 'r1i1p1f2',
+    ('CMIP6', 'abrupt-4xCO2', 'CNRM-CM6-1-HR'): 'r1i1p1f2',
+    ('CMIP6', 'abrupt-4xCO2', 'CNRM-ESM2-1'): 'r1i1p1f2',
+    ('CMIP6', 'abrupt-4xCO2', 'MIROC-ES2L'): 'r1i1p1f2',
+    ('CMIP6', 'abrupt-4xCO2', 'MIROC-ES2H'): 'r1i1p1f2',
+    ('CMIP6', 'abrupt-4xCO2', 'UKESM1-0-LL'): 'r1i1p1f2',
+    ('CMIP6', 'abrupt-4xCO2', 'HadGEM3-GC31-LL'): 'r1i1p1f3',
+    ('CMIP6', 'abrupt-4xCO2', 'HadGEM3-GC31-MM'): 'r1i1p1f3',
+    ('CMIP6', 'abrupt-4xCO2', 'EC-Earth3'): 'r8i1p1f1',
 }
+
+# Helper functions for building files
+# NOTE: This is used for log files, script files, and folder names (which use
+# simply <project_id>-<experiment_id>-<table_id>). Replace the dashes so that
+# e.g. models and experiments with dashes are not mistaken for field delimiters.
+_join_opts = lambda options: '_'.join(
+    '-'.join(opt.lower().replace('-', '') for opt in opts)
+    for opts in options
+)
 
 # Helper functions for parsing script lines
 # NOTE: Netcdf names are: <variable_id>_<table_id>_<source_id>_<experiment_id>...
-# ..._<member_id>_<grid_label>[_<time_range>].nc, where grid labels are described
-# here: https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json.
-# However data folders are sorted <project_id>-<experiment_id>-<table_id>.
+# ..._<member_id>_[<grid_label>[_<time_range>]].nc where grid labels are new in
+# cmip6 (see https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json).
 _line_file = lambda line: line.split()[0].strip("'")
 _line_node = lambda line: line.split()[1].strip("'")
-_line_date = lambda line: line.split('_')[6].split('.')[0]
+_line_date = lambda line: line.split('_')[-1].split('.')[0]
 _line_range = lambda line: tuple(int(s[:4]) for s in _line_date(line).split('-')[:2])
 _line_parts = {
     'model': lambda line: line.split('_')[2],
@@ -236,7 +249,7 @@ _line_parts = {
     'ensemble': lambda line: line.split('_')[4],
     'table': lambda line: line.split('_')[1],
     'variable': lambda line: line.split('_')[0].strip("'"),
-    'grid': lambda line: line.split('_')[5].split('.')[0],
+    'grid': lambda line: s if (s := line.split('_')[5].split('.')[0])[0] == 'g' else 'g'
 }
 
 # Helper functions for managing lists and databases of script lines
@@ -251,37 +264,8 @@ _sort_index = lambda line: min(
 )
 _sort_lines = lambda lines: sorted(
     lines,
-    key=lambda line: (*(f(line) for f in _line_parts.values()), _sort_index(line), line)
+    key=lambda line: (*(func(line) for func in _line_parts.values()), _sort_index(line), _line_date(line))  # noqa: E501
 )
-
-
-def _files_unknown(path='~/data'):
-    """
-    Print and return a list of the netcdf files not present in the wget scripts for the
-    specified inputs. This is printed after adding a script with `filter_wgets`.
-
-    Parameters
-    ----------
-    path : path-like
-        The path to be searched.
-    """
-    # NOTE: This is generally used to remove unnecessarily downloaded files as
-    # users refine their filtering or downloading steps.
-    path = Path(path).expanduser()
-    files_downloaded = {
-        file.name for file in path.glob('*.nc')
-    }
-    files_scripts = {
-        _line_file(line) for file in path.glob('wget*.sh')
-        for line in _script_lines(file, complement=False)
-    }
-    files_finished = files_downloaded & files_scripts
-    files_missing = files_scripts - files_downloaded
-    files_extra = files_downloaded - files_scripts
-    print(f'Finished files ({len(files_finished)}): ', *sorted(files_finished))
-    print(f'Missing files ({len(files_missing)}): ', *sorted(files_missing))
-    print(f'Extra files ({len(files_extra)})): ', *sorted(files_extra))
-    return files_finished, files_missing, files_extra
 
 
 def _parse_constraints(reverse=False, **constraints):
@@ -298,22 +282,19 @@ def _parse_constraints(reverse=False, **constraints):
     # NOTE: This sets a default project when called by download_script, filter_script,
     # or process_files, and enforces a standard order for file and folder naming.
     constraints = {
-        facet: sorted(opts.split(',') if isinstance(opts, str) else opts)
+        facet: sorted(set(opts.split(',') if isinstance(opts, str) else opts))
         for facet, opts in constraints.items()
     }
+    renames = FACET_RENAMES
     if reverse:
         aliases = {(_, facet): alias for (_, alias), facet in FACET_ALIASES.items()}
     else:
         aliases = FACET_ALIASES
-    renames = {
-        **FACET_RENAMES,
-        **{('CMIP6', new): old for (_, old), new in FACET_RENAMES.items()},
-    }
     project = constraints.setdefault('project', ['CMIP6'])
     project = project[0] if len(project) == 1 else None
     facets = (
-        *(facet for facet in FACET_PRIORITIES if facet in constraints),
-        *sorted(facet for facet in constraints if facet not in FACET_PRIORITIES)
+        *(facet for facet in FACETS_ORDER if facet in constraints),
+        *sorted(facet for facet in constraints if facet not in FACETS_ORDER)
     )
     constraints = {
         aliases.get((project, facet), facet):
@@ -323,53 +304,30 @@ def _parse_constraints(reverse=False, **constraints):
     return project, constraints
 
 
-def _parse_description(lines):
+def _make_printer(prefix, **constraints):
     """
-    Convert the cdo horizontal or vertical grid description into a dictionary.
+    Return a funcation that simultaneously prints information and records
+    the result in a log file named based on the input constraints.
 
     Parameters
     ----------
-    lines : list
-        The lines returned by cdo commands like 'griddes' and 'zaxisdes'.
+    prefix : str
+        The log file prefix.
+    **constraints
+        The constraints.
     """
-    result = []
-    results = [result]
-    for line in lines:
-        if line and line[0] != '#':
-            if '=' in line:
-                result.append(line)
-            elif result:
-                result[-1] += ' ' + line
-            else:
-                warnings.warn(f'Ignoring unexpected line {line!r}.')
-        elif result:  # separate block
-            results.append(result := [])  # redefine list
-    descrips = []
-    for result in results:
-        descrip = {}
-        for string in result:
-            try:
-                key, value = (s.strip() for s in string.split('='))
-            except ValueError:
-                warnings.warn(f'Ignoring unexpected line(s) {string!r}.')
-            else:
-                value = [s.strip().strip("'").strip('"') for s in value.split(' ')]
-                for dtype in (int, float, str):
-                    try:
-                        value = np.array(value, dtype=dtype)
-                    except ValueError:
-                        pass
-                    else:
-                        break
-                if isinstance(value, list) or key in descrip:
-                    warnings.warn(f'Ignoring unexpected line(s) {string!r}.')
-                else:
-                    descrip[key] = value.item() if value.size == 1 else value
-        if not descrip:
-            raise ValueError(f'Failed to read table {result!r}.')
-        else:
-            descrips.append(descrip)
-    return descrips
+    name = prefix + '_' + _join_opts(constraints.values()) + '.log'
+    path = Path(__file__).parent.parent / 'logs' / name
+    if not path.parent.is_dir():
+        path.parent.mkdir()
+    if path.is_file():
+        print(f'Moving previous log to backup: {path}')
+        path.rename(str(path) + '.bak')
+    def _printer(*args, sep=' ', end='\n'):  # noqa: E306
+        print(*args, sep=sep, end=end)
+        with open(path, 'a') as f:
+            f.write(sep.join(map(str, args)) + end)
+    return _printer
 
 
 def _script_lines(arg, complement=False):
@@ -419,10 +377,10 @@ def _script_write(path, prefix, center, suffix, openid=None, **constraints):
         The constraints.
     """
     path = Path(path).expanduser()
-    parts = ('-'.join(opt.lower().replace('-', '') for opt in opts) for opts in constraints.values())  # noqa: E501
     if not path.is_dir():
         os.mkdir(path)
-    path = path / ('wget_' + '_'.join(parts) + '.sh')
+    name = _join_opts(constraints.values())
+    path = path / ('wget_' + name + '.sh')
     script = ''.join((*prefix, *_sort_lines(center), *suffix))
     if openid is not None:
         script = re.sub('openId=\n', f'openId={openid!r}\n', script)
@@ -434,10 +392,57 @@ def _script_write(path, prefix, center, suffix, openid=None, **constraints):
     return path
 
 
+def compare_files(path='~/data', remove=False):
+    """
+    Compare the netcdf files in the directory to the netcdf files listed
+    in the wget scripts in the same directory.
+
+    Parameters
+    ----------
+    path : path-like
+        The path to be searched.
+    remove : bool, optional
+        Whether to remove detected missing files. Use this option with caution!
+    """
+    # NOTE: This is generally used to remove unnecessarily downloaded files as
+    # users refine their filtering or downloading steps.
+    path = Path(path).expanduser()
+    files_downloaded = {
+        file.name for file in path.glob('*.nc')
+    }
+    files_scripts = {
+        _line_file(line) for file in path.glob('wget*.sh')
+        for line in _script_lines(file, complement=False)
+    }
+    files_finished = sorted(files_downloaded & files_scripts)
+    files_missing = sorted(files_scripts - files_downloaded)
+    files_extra = sorted(files_downloaded - files_scripts)
+    print('Path:', path)
+    print('Finished files:', len(files_finished))
+    print('Missing files:', len(files_missing))
+    print('Extra files:', len(files_extra))
+    if remove:
+        response = input(f'Remove {len(files_extra)} files (y/[n])?').lower().strip()
+        if response[:1] == 'y':
+            print('Removing files...')
+            for file in files_extra:
+                os.remove(path / file)
+    return files_finished, files_missing, files_extra
+
+
 def search_connection(node='llnl', username=None, password=None):
     """
     Initialize a distributed search connection over the specified node
     with the specified user information.
+
+    Parameters
+    ----------
+    node : str, default: 'llnl'
+        The ESGF node to use for searching.
+    username : str, optional
+        The username for logging on.
+    password : str, optional
+        The password for logging on.
     """
     # Log on and initalize the connection using requested node
     node = node.lower()
@@ -456,48 +461,49 @@ def search_connection(node='llnl', username=None, password=None):
 
 def download_script(
     path='~/data', node='llnl', username=None, password=None, openid=None,
-    skip=None, flagship=False, **constraints
+    dataset_filter=None, flagship_filter=False, **constraints
 ):
     """
-    Download a wget file using `pyesgf`. The resulting file can be subsequently
-    filtered to particular years or models using `filter_script`.
+    Download a wget script using `pyesgf`. The resulting script can be filtered to
+    particular years or intersecting constraints using `filter_script`.
 
     Parameters
     ----------
     path : path-like, default: '~/data'
         The output path for the resulting wget file.
-    node : str, default: 'llnl'
-        The ESGF node to use for searching.
-    username : str, optional
-        The username for logging on.
-    password : str, optional
-        The password for logging on.
+    node, username, password : str, defaultflagship_filter 'llnl'
+        Passed to `connect_node`.
     openid : str, optional
         The openid to hardcode into the resulting wget script.
-    skip : callable, optional
-        Function that returns whether to skip a dataset id.
-    flagship : bool, optional
-        Whether to select variant labels corresponding to CMIP6 flagships only.
+    dataset_filter : callable, optional
+        Function that returns whether to retain a dataset id.
+    flagship_filter : bool, optional
+        Whether to select only flagship CMIP5 and CMIP6 ensembles.
     **constraints
         Constraints passed to `~pyesgf.search.SearchContext`.
     """
     # Translate constraints and possibly apply flagship filter
-    # NOTE: The flagship list should be updated as CMIP6 results filter in.
-    # For example EC-Earth3 likely will publish 'r1' in near future.
-    func = skip  # avoid recursion issues
+    # NOTE: The datasets returned by .search() will often be 'empty' but this usually
+    # means it is not available from a particular node and available at another node.
+    # NOTE: The flagship filter must compare lowercase because project identifier is
+    # lowercase in cmip5 dataset ids, and cannot parse dataset ids directly because
+    # they are unstandardized and differ significantly between cmip5 and cmip6.
     project, constraints = _parse_constraints(**constraints)
-    if not flagship:
-        pass
-    elif project == 'CMIP5':  # sort ensemble constraint
-        _, constraints = _parse_constraints(ensemble='r1i1p1', **constraints)
-    elif project == 'CMIP6':  # sort ensemble constraint and define dataset filter
-        _, constraints = _parse_constraints(ensemble=['r1i1p1f1', *MODEL_FLAGSHIPS], **constraints)  # noqa: E501
-        func = lambda s: skip and skip(s) or any(
-            f'.{variant}.' in s and not any(f'.{model}.' in s for model in models)
-            for variant, models in MODEL_FLAGSHIPS.items()
-        )
-    else:
-        raise ValueError(f'Invalid {project=} for {flagship=}. Must be CMIP[56].')
+    print = _make_printer('download', **constraints)
+    if flagship_filter:
+        ensembles = [ensemble for (proj, _, _), ensemble in FLAGSHIP_ENSEMBLES.items() if proj == project]  # noqa: E501
+        if ensembles:
+            _, constraints = _parse_constraints(ensemble=ensembles, **constraints)
+        else:
+            raise ValueError(f'Invalid {project=} for {flagship_filter=}. Must be CMIP5 or CMIP6.')  # noqa: E501
+        def flagship_filter(string):  # noqa: E301
+            identifiers = [s.lower() for s in string.split('.')]
+            for keys, ensemble in FLAGSHIP_ENSEMBLES.items():
+                if all(key and key.lower() in identifiers for key in keys):
+                    break
+            else:
+                ensemble = FLAGSHIP_ENSEMBLES[project, None, None]
+            return ensemble in identifiers
 
     # Search and parse wget scripts
     # NOTE: Thousands of these scripts can take up significant space... so instead we
@@ -531,8 +537,11 @@ def download_script(
         fc = ds.file_context()
         fc.facets = ctx.facets  # TODO: report bug and remove?
         message = f'Dataset {i} (%s): {ds.dataset_id}'
-        if func and func(ds.dataset_id):
+        if dataset_filter and not dataset_filter(ds.dataset_id):
             print(message % 'skipped!!!')
+            continue
+        if flagship_filter and not flagship_filter(ds.dataset_id):
+            print(message % 'nonflag!!!')
             continue
         try:
             script = fc.get_download_script(**constraints)
@@ -556,10 +565,11 @@ def download_script(
 
 def filter_script(
     path='~/data', maxyears=50, endyears=False, overwrite=False,
-    facets_intersect=None, facets_folder=None, **constraints
+    facets_intersect=None, facets_folder=None, flagship_filter=False, **constraints
 ):
     """
-    Filter the input wget files to within some input climatology.
+    Filter the wget scripts to the input number of years for intersecting
+    facet constraints and group the new scripts into folders.
 
     Parameters
     ----------
@@ -572,9 +582,11 @@ def filter_script(
     overwrite : bool, optional
         Whether to overwrite the resulting datasets.
     facets_intersect : str or sequence, optional
-        The facets that should be enforced to intersect across other options.
+        The facets that should be enforced to intersect across other facets.
     facets_folder : str or sequence, optional
         The facets that should be grouped into unique folders.
+    flagship_filter : bool, optional
+        Whether to group ensembles according to flagship or nonflagship identity.
     **constraints
         The constraints.
     """
@@ -588,12 +600,12 @@ def filter_script(
     # without -U and thus still skip duplicate files from the same node. Note
     # that if a file is not in the ESGF script cache then the wget command itself
     # will skip files that already exist unless ESGF_WGET_OPTS includes -O.
-    def _standardize_facets(**facets):  # noqa: E301
+    def _parse_facets(**facets):  # noqa: E301
         project, facets = _parse_constraints(reverse=True, **facets)
         if facets.keys() - _line_parts.keys() not in (set(), set(('project',))):
             raise ValueError(f'Facets {facets.keys()} must be subset of: {_line_parts.keys()}')  # noqa: E501
         return project, facets
-    def _summarize_database(database, group_facets, key_facets, message=None):  # noqa: E301, E501
+    def _print_database(database, group_facets, key_facets, message=None):  # noqa: E301, E501
         if message:
             print(f'{message}:')
         for parent, group in database.items():
@@ -601,56 +613,64 @@ def filter_script(
             options = tuple(sorted(set(opts)) for opts in zip(*group.keys()))
             print('\n'.join(f'  {facet} ({len(opts)}): ' + ', '.join(opts) for facet, opts in zip(key_facets, options)))  # noqa: E501
         print()
-    def _generate_database(source, facets, project=None):  # noqa: E301
+    def _generate_database(source, facets):  # noqa: E301
         database = {}
-        facets = tuple(facets.split(',') if isinstance(facets, str) else facets)
+        facets = (facets.split(',') if isinstance(facets, str) else facets)
         facets = {facet: () for facet in facets}
-        _, facets = _standardize_facets(**facets)
-        group_facets = tuple(facet for facet in _line_parts if facet in facets)
-        key_facets = tuple(facet for facet in _line_parts if facet not in facets)
-        if project:
-            group_facets = ('project', *group_facets)
+        _, facets = _parse_facets(**facets)
+        key_facets = (*(facet for facet in _line_parts if facet not in facets),)
+        group_facets = ('project', *(facet for facet in _line_parts if facet in facets))
         for opts, content in source:
             if any(opt not in constraints.get(facet, (opt,)) for facet, opt in opts.items()):  # noqa: E501
                 continue  # useful during initial consolidation of script lines
-            if project:
-                opts = {'project': project, **opts}
+            opts = {'project': project, **opts}
+            if flagship_filter and 'flagship' not in (ensemble := opts['ensemble']):
+                key1, key2 = (project, opts['experiment'], opts['model']), (project, None, None)  # noqa: E501
+                try:
+                    flagship = FLAGSHIP_ENSEMBLES.get(key1, FLAGSHIP_ENSEMBLES[key2])
+                except KeyError:
+                    raise ValueError('Project CMIP5 or CMIP6 required for flaghip filtering.')  # noqa: E501
+                opts['ensemble'] = 'flagship' if ensemble == flagship else 'nonflagship'
             group = tuple(opts[facet] for facet in group_facets)
             data = database.setdefault(group, {})
             key = tuple(opts[facet] for facet in key_facets)
             if isinstance(content, str):
                 data.setdefault(key, []).append(content)
-            elif key in data:
-                raise RuntimeError(f'Facet data already present: {group}, {key}.')
-            else:
+            elif key not in data:
                 data[key] = list(content)
+            else:
+                raise RuntimeError(f'Facet data already present: {group}, {key}.')
         return database, group_facets, key_facets
 
     # Read the file and group lines into dictionaries indexed by the facets we
     # want to intersect and whose keys indicate the remaining facets, then find the
-    # intersection of these facets (e.g., 'ts_Amon_MODEL' for two experiment groups).
+    # intersection of these facets (e.g., 'ts_Amon_MODEL' for two experiment ids).
     # NOTE: Here we only constrain search to the project, which is otherwise not
     # indicated in native wget script lines. Similar approach to process_files().
     # NOTE: For some reason in CMIP5 have piControl EC-EARTH but abrupt4xCO2
     # EC-Earth so ignore case when comparing. Seems that Mark Zelinka failed to
     # do this! Otherwise available models are exactly the same as his results.
-    project, constraints = _standardize_facets(**constraints)
+    project, constraints = _parse_facets(**constraints)
+    print = _make_printer('filter', **constraints)
     path = Path(path).expanduser() / 'unfiltered'
-    files = list(path.glob(f'wget_{project}_*.sh'))
+    files = list(path.glob(f'wget_{project.lower()}_*.sh'))
+    print('Source file(s):')
+    print('\n'.join(map(str, files)))
+    print()
     prefix, suffix = _script_lines(files[0], complement=True)
     source = [
         ({facet: func(line) for facet, func in _line_parts.items()}, line)
         for file in files for line in _script_lines(file, complement=False)
     ]
-    database, group_facets, key_facets = _generate_database(source, facets_intersect, project=project)  # noqa: E501
+    database, group_facets, key_facets = _generate_database(source, facets_intersect)
+    _print_database(database, group_facets, key_facets, message='Initial groups')
     keys = set(tuple(database.values())[0].keys())
     keys = keys.intersection(*(set(group.keys()) for group in database.values()))
-    _summarize_database(database, group_facets, key_facets, message='Initial groups')
     database = {
         group: {key: lines for key, lines in data.items() if key in keys}
         for group, data in database.items()
     }
-    _summarize_database(database, group_facets, key_facets, message='Intersect groups')
+    _print_database(database, group_facets, key_facets, message='Intersect groups')
 
     # Collect the facets into a dictionary whose keys are the facets unique to
     # each folder and whose values are dictionaries with keys indicating the remaining
@@ -662,15 +682,14 @@ def filter_script(
         for group, data in database.items() for key, lines in data.items()
     ]
     dests = []
-    unknowns = []
-    database, group_facets, key_facets = _generate_database(source, facets_folder, project=project)  # noqa: E501
-    _summarize_database(database, group_facets, key_facets, message='Folder groups')
+    database, group_facets, key_facets = _generate_database(source, facets_folder)
+    _print_database(database, group_facets, key_facets, message='Folder groups')
     for group, data in database.items():
         center = []  # wget script lines
-        folder = path.parent / '-'.join(s.lower().replace('-', '') for s in group)
+        folder = path.parent / _join_opts((group,))
         parts = {facet: (opt,) for facet, opt in zip(group_facets, group)}
         parts.update({facet: opts for facet, opts in constraints.items() if facet not in group_facets})  # noqa: E501
-        _, parts = _parse_constraints(**parts)
+        _, parts = _parse_facets(**parts)
         print('Writing script:', ', '.join(group))
         for key, lines in data.items():
             print('  ' + ', '.join(key) + ':', end=' ')
@@ -695,136 +714,5 @@ def filter_script(
                 center.append(line)
             print()
         dest = _script_write(folder, prefix, center, suffix, **parts)
-        unknown = _files_unknown(folder, **parts)
         dests.append(dest)
-        unknowns.append(unknown)
-    return dests, unknowns
-
-
-def process_files(
-    path='~/data', dest=None, climate=True, numyears=50, endyears=False, detrend=False,
-    overwrite=False, dryrun=False, **constraints,
-):
-    """
-    Average and standardize the files downloaded with a wget script.
-
-    Parameters
-    ----------
-    path : path-like
-        The input path for the raw data.
-    dest : path-like, optional
-        The output path for the averaged and standardized data.
-    climate : bool, optional
-        Whether to create a monthly-mean climatology or an annual-mean time series.
-    numyears : int, default: 50
-        The number of years used in the annual time series or monthly climatology.
-    endyears : bool, default: False
-        Whether to use the start or end of the available times.
-    detrend : bool, default: False
-        Whether to detrend input data. Used with feedback and budget calculations.
-    output : path-like, optional
-        The output path for the raw data.
-    overwrite : bool, optional
-        Whether to overwrite existing files or skip them.
-    dryrun : bool, optional
-        Whether to only print time information and exit.
-    **constraints
-        Passed to `_parse_constraints`.
-    """
-    # Find files and restrict to unique constraints
-    # NOTE: Here we only constrain search to the project, which is otherwise not
-    # indicated in native netcdf filenames. Similar approach to filter_script().
-    opts = '-s -O'  # overwrite existing output and engage silent mode
-    project, constraints = _parse_constraints(reverse=True, **constraints)
-    path = Path(path).expanduser()
-    dest = Path(dest).expanduser() if dest else path
-    files = list(path.glob(f'{project}*/*.nc'))
-    numsteps = numyears * 12  # TODO: adapt for other time intervals
-    if constraints.keys() - _line_parts.keys() != set(('project',)):
-        raise ValueError(f'Input constraints {constraints.keys()} must be subset of: {_line_parts.keys()}')  # noqa: E501
-    if not files:
-        raise FileNotFoundError(f'Pattern {project}*/*.nc in directory {path} returned no netcdf files.')  # noqa: E501
-    database = {}
-    for file in files:
-        opts = {facet: func(file) for facet, func in _line_parts.items()}
-        if any(opt not in constraints.get(facet, (opt,)) for facet, opt in opts.items()):  # noqa: E501
-            continue
-        if file.stat().st_size == 0:
-            print(f'Warning: Removing empty input file {file.name}.')
-            os.remove(file)
-            continue
-        key = tuple(opts.keys())
-        database.setdefault(key, []).append(file)
-
-    # Initialize cdo and process files. Use 'conda install cdo' for the command-line
-    # tool and 'conda install python-cdo' or 'pip install cdo' for the python binding.
-    def _check_output(path):
-        if not path.is_file() or path.stat().st_size == 0:
-            if path.is_file():
-                os.remove(path)
-            raise RuntimeError(f'Failed to create output file: {path}.')
-    print('Initializing cdo python binding.')
-    cdo = Cdo()
-    cdo.env['CDO_TIMESTAT_DATE'] = 'first'
-    descrip = (
-        ('timeseries', 'climate')[climate],
-        '-'.join(str(numyears), 'year', ('start', 'end')[endyears], ('raw', 'detrend')[detrend]),  # noqa: E501
-    )
-    outputs = []
-    for key, files in database.items():
-        # Print information and merge files into single time series
-        # TODO: Should also merge surface pressure for model level interpolation
-        # and for graying out subsurface pressure regions in figures.
-        parts = dict(zip(_line_parts, key))
-        name = '_'.join((*files[0].name.split('_')[:6], *descrip))
-        output = dest / files[0].parent.name / name
-        exists = output.is_file() and output.stat().st_size > 0
-        outputs.append(output)
-        print('Parts:', ', '.join(parts))
-        print('Output:', '/'.join((output.parent.name, output.name)))
-        if exists and not overwrite:
-            print('  skipping (output exists)...')
-            continue
-
-        # Merge files into single time series
-        # NOTE: Here use 'mergetime' because it is more explicit and possibly safer but
-        # cdo docs also mention that 'cat' and 'copy' can do the same thing.
-        tmp_merge = dest / 'tmp_merge.nc'
-        dates = tuple(map(_line_parts['years'], map(str, files)))
-        ymin, ymax = min(tup[0] for tup in dates), max(tup[1] for tup in dates)
-        print(f'  unfiltered: {ymin}-{ymax} ({len(files)} files)')
-        files, dates = zip((f, d) for f, d in zip(files, dates) if d[0] < ymin + numyears - 1)  # noqa: E501
-        ymin, ymax = min(tup[0] for tup in dates), max(tup[1] for tup in dates)
-        print(f'  filtered: {ymin}-{ymax} ({len(files)} files)')
-        if dryrun:
-            print('  skipping (dry run)...')
-            continue
-        var = parts['variable']  # ignore other variables
-        input = ' '.join(f'-selname,{var} {file}' for file in files)
-        cdo.mergetime(input=input, output=str(tmp_merge), options=opts)
-        _check_output(tmp_merge)
-
-        # Take time averages
-        # NOTE: Here the radiative flux data can be detrended to improve sensitive
-        # residual energy budget and feedback calculations. This uses a lot of memory
-        # so should not bother with 3D constraint and circulation fields.
-        tmp_mean = dest / 'tmp_mean.nc'
-        filesteps = int(cdo.ntime(input=str(tmp_merge), options=opts)[0])
-        if numsteps > filesteps:
-            print(f'  warning: requested {numsteps} steps but only {filesteps} available')  # noqa: E501
-        if endyears:
-            t1, t2 = filesteps - numsteps + 1, filesteps  # endpoint inclusive
-        else:
-            t1, t2 = 1, numsteps
-        print(f'  timesteps: {t1}-{t2} ({(t2 - t1 + 1) / 12} years)')
-        input = f'-seltimestep,{t1},{t2} {tmp_mean}'
-        if detrend:
-            input = f'-detrend {input}'
-        if climate:  # monthly-mean climatology (use 'mean' not 'avg' to ignore NaNs)
-            cdo.ymonmean(input=input, output=str(tmp_mean), options=opts)
-        else:  # annual-mean time series
-            cdo.yearmonmean(input=input, output=str(tmp_mean), options=opts)
-        _check_output(tmp_mean)
-        os.rename(tmp_mean, output)
-
-    return outputs
+    return dests
