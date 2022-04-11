@@ -18,7 +18,7 @@ import subprocess  # noqa: F401
 # for some reason CSIRO-Mk3L-1-2 has only published abrupt data but not control data.
 # NOTE: Mark Zelinka CMIP6 is missing CAS-ESM2-0, FIO-ESM-2-0, ICON-ESM-LR, KIOST-ESM,
 # and MCM-UA-1-0 (older version also missed EC-Earth3-CC and GISS-E2-2-H but they were
-# recently added). However in search failed to find control run of IPSL-CM6A-LR-INCA
+# recently added). However in search, failed to find control run of IPSL-CM6A-LR-INCA
 # (tried ESGF website and seems it was removed, also checked that abrupt parent is
 # indeed the same model and searched the IPSL ESGF node), abrupt simulations of
 # EC-Earth3 (uses realization 'r8', verified that 'parent_variable_label' is 'r1i1p1f1',
@@ -37,8 +37,8 @@ constrain = True  # control data for constraints?
 circulation = True  # control and response data for implicit circulation stuff?
 feedbacks = True  # control and response data for feedbacks?
 explicit = True  # control and response data for explicit circulation stuff?
-download = True
-filter = False
+download = False
+filter = True
 process = False
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
@@ -176,47 +176,46 @@ if constrain:
     dicts.append(kw_constrain)
 if circulation:
     dicts.append(kw_circulation)
-if explicit:
-    dicts.append(kw_explicit)
 if feedbacks:
     dicts.append(kw_feedbacks)
+if explicit:
+    dicts.append(kw_explicit)
 if download:
+    unfiltered = []
     for kwargs in dicts:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
-        projects = ('CMIP5',) if kwargs is kw_circulation else projects
-        projects = () if kwargs is kw_constrain else projects
         for project in projects:
-            cmip_data.download_script(
+            script = cmip_data.download_script(
                 '~/scratch2' if project == 'CMIP5' else '~/scratch5',
                 project=project,
                 node='llnl',
-                username='lukelbd',
                 openid='https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd',
-                flagship=True,
+                username='lukelbd',
+                flagship_filter=True,
                 **kwargs,
             )
+            unfiltered.append(script)
 
 
 # Filter the resulting wget files
 # NOTE: The dashes are omitted from wget file names for clarity. So search CMIP5
 # for abrupt4xCO2 files rather than abrupt-4xCO2 as it appears in esgf search.
 if filter:
-    scripts = []
-    unknowns = []
+    filtered = []
     for kwargs in dicts:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
-            script, unknown = cmip_data.filter_script(
+            scripts = cmip_data.filter_script(
                 '~/scratch2' if project == 'CMIP5' else '~/scratch5',
                 project=project,
                 maxyears=150,
                 endyears=False,
                 facets_folder=['project', 'experiment', 'table'],
                 facets_intersect=['experiment'],  # include 'variable'?
+                flagship_filter=True,
                 **kwargs
             )
-            scripts.extend(script)
-            unknowns.extend(unknown)
+            filtered.extend(scripts)
 
 # Average and standardize the resulting files
 # TODO: Standardize relative integration times. Armour simply took final 30 years
@@ -229,7 +228,7 @@ if process:
                 '~/scratch2' if project == 'CMIP5' else '~/scratch5',
                 '~/data',
                 project=project,
-                maxyears=150,
+                numyears=150,
                 endyears=False,
                 **kwargs
             )
