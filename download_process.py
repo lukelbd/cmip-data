@@ -34,9 +34,9 @@ import subprocess  # noqa: F401
 # to provide a total of 5 models more than Mark Zelinka (57 instead of 52). Also note
 # CMCC-CM2-HR4 only published abrupt data but not control data so always ignored.
 constrain = True  # control data for constraints?
-circulation = True  # control and response data for implicit circulation stuff?
-feedbacks = True  # control and response data for feedbacks?
-explicit = True  # control and response data for explicit circulation stuff?
+circulation = False  # control and response data for implicit circulation stuff?
+feedbacks = False  # control and response data for feedbacks?
+explicit = False  # control and response data for explicit circulation stuff?
 download = False
 filter = True
 process = False
@@ -57,11 +57,11 @@ process = False
 # top-of-atmosphere and surface boundaries plus sensible heat flux then subtract latent
 # heat transport. To derive latent transport use both turbulent surface evaporation and
 # precipitation, where assumption is 1) water/snow/ice transport is neglible compared to
-# humidity transport (valid since vertically integrated humidity is almost always larger
+# humidity transport (valid since vertically integrated humidity is always larger
 # than vertically integrated water/snow/ice, should make plots to demonstrate), and
 # similarly 2) precipitation falls where it was formed (implying it equals the component
-# of vertically integrated latent heat release due to forming hydrometeors not balanced
-# by latent heat abosprtion of evaporating hydrometeors, should research literature
+# of vertically integrated latent heat released by forming hydrometeors not balanced
+# by latent heat absorbed by evaporating hydrometeors -- should research literature
 # on these assumptions). Armour et al. (2019) only mention falling snow but mistaken.
 # The LH flux convergence is then written dLH/dt = Lv * (pr - prsn) + Ls * prsn - hsls
 # where hsls is explicit or can be found with Lv * (evspsbl - sbl) + Ls * sbl (include
@@ -98,7 +98,7 @@ kw_constrain = {
         'hurs',  # near-surface relative humidity
         'huss',  # near-surface specific humidity
         'prw',  # vertically integrated water vapor path
-        'pfull',  # climate air pressure (for hybrid height sigma interpolation)
+        'pfull',  # model level pressure (provided only for hybrid height models)
         'ps',  # monthly surface pressure (for hybrid pressure sigma interpolation)
         # 'pfull',  # pressure at model full levels (use hybrid coords instead)
         # 'phalf',  # pressure at model half levels (use hybrid coords instead)
@@ -210,6 +210,7 @@ if filter:
                 project=project,
                 maxyears=150,
                 endyears=False,
+                overrides={'variable': 'pfull'},
                 facets_folder=['project', 'experiment', 'table'],
                 facets_intersect=['experiment'],  # include 'variable'?
                 flagship_filter=True,
