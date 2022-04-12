@@ -18,19 +18,6 @@ __all__ = [
     'filter_script',
 ]
 
-# Interpolate grid constants
-# NOTE: To determine whether pressure level interpolation is needed we compare zaxisdes
-# to this grid. Some grids use floats and have slight offsets while some use exact ints
-# so important to use np.isclose() rather than exact comparison.
-GRID_HORIZONTAL = ''
-GRID_VERTICAL = 100 * np.array(
-    [
-        1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150,
-        100, 70, 50, 30, 20, 10, 5, 1,
-    ]
-)
-
-
 # ESGF hosts for OpenID logon and pyesgf usage
 # Hosts are listed here: https://esgf.llnl.gov/nodes.html
 # LLNL: 11900116 hits for CMIP6 (best!)
@@ -48,10 +35,49 @@ HOST_URLS = {
     'nccs': 'esgf.nccs.nasa.gov',
 }
 
-# ESGF data nodes for downloading sorted by priority
-# Nodes and statuses are listed here: https://esgf-node.llnl.gov/status/
-# NOTE: Periodically update these lists as participating institutes change (ignore
-# esgf node and university department prefixes during sort). Last updated 2022-03-24.
+# ESGF data nodes sorted by order of download preference. This reduces download time
+# without inadvertantly missing files by restricting search to particular nodes. The
+# available nodes and statuses are listed here: https://esgf-node.llnl.gov/status/
+# NOTE: Previously we removed bad or down nodes but this is unreliable and has to be
+# updated regularly. Instead now prioritize local nodes over distant nodes and then
+# wget script automatically skips duplicate files after successful download.
+NODE_PRIORITIES = [
+    'ucar.edu',  # colorado
+    'anl.gov',  # illinois
+    'llnl.gov',  # california
+    'nccs.nasa.gov',  # maryland
+    'gfdl.noaa.gov',  # new jersey
+    'ec.gc.ca',  # canada
+    'ceda.ac.uk',  # uk
+    'ichec.ie',  # ireland
+    'ipsl.upmc.fr',  # france
+    'umr-cnrm.fr',  # france
+    'dkrz.de',  # germany
+    'dlr.de',  # germany
+    'dwd.de',  # germany
+    'pik-potsdam.de',  # germany
+    'dmi.dk',  # denmark
+    'nird.sigma2.no',  # norway
+    'liu.se',  # sweden
+    'csc.fi',  # finland
+    'cineca.it',  # italy
+    'cmcc.it',  # italy
+    'bsc.es',  # spain
+    'unican.es',  # spain
+    'nci.org.au',  # australia
+    'diasjp.net',  # japan
+    'snu.ac.kr',  # south korea
+    'pknu.ac.kr',  # south korea
+    'apcc21.org',  # south korea
+    'bcc.cma.cn',  # china
+    'camscma.cn',  # china
+    'fio.org.cn',  # china
+    'lasg.ac.cn',  # china
+    'tsinghua.edu.cn',  # china
+    'sinica.edu.tw',  # taiwan
+    'ru.ac.th',  # thailand
+    'tropmet.res.in',  # india
+]
 NODE_URLS = [
     'aims3.llnl.gov',
     'cmip.bcc.cma.cn',
@@ -103,49 +129,6 @@ NODE_URLS = [
     'noresg.nird.sigma2.no',
     'polaris.pknu.ac.kr',
     'vesg.ipsl.upmc.fr'
-]
-
-# ESGF data node domains sorted by order of download preference. This reduces download
-# time without inadvertantly missing files by restricting search to particular nodes.
-# NOTE: Previously we removed bad or down nodes but this is unreliable and has
-# to be updated regularly. Instead now prioritize local nodes over distant nodes and
-# then wget script automatically skips duplicate files after successful download.
-NODE_PRIORITIES = [
-    'ucar.edu',  # colorado
-    'anl.gov',  # illinois
-    'llnl.gov',  # california
-    'nccs.nasa.gov',  # maryland
-    'gfdl.noaa.gov',  # new jersey
-    'ec.gc.ca',  # canada
-    'ceda.ac.uk',  # uk
-    'ichec.ie',  # ireland
-    'ipsl.upmc.fr',  # france
-    'umr-cnrm.fr',  # france
-    'dkrz.de',  # germany
-    'dlr.de',  # germany
-    'dwd.de',  # germany
-    'pik-potsdam.de',  # germany
-    'dmi.dk',  # denmark
-    'nird.sigma2.no',  # norway
-    'liu.se',  # sweden
-    'csc.fi',  # finland
-    'cineca.it',  # italy
-    'cmcc.it',  # italy
-    'bsc.es',  # spain
-    'unican.es',  # spain
-    'nci.org.au',  # australia
-    'diasjp.net',  # japan
-    'snu.ac.kr',  # south korea
-    'pknu.ac.kr',  # south korea
-    'apcc21.org',  # south korea
-    'bcc.cma.cn',  # china
-    'camscma.cn',  # china
-    'fio.org.cn',  # china
-    'lasg.ac.cn',  # china
-    'tsinghua.edu.cn',  # china
-    'sinica.edu.tw',  # taiwan
-    'ru.ac.th',  # thailand
-    'tropmet.res.in',  # india
 ]
 
 # ESGF facets obtained with get_facet_options() for SearchContext(project='CMIP5')
@@ -268,7 +251,7 @@ _sort_lines = lambda lines: sorted(
 )
 
 
-def _parse_constraints(reverse=False, **constraints):
+def _parse_constraints(reverse=False, restrict=False, **constraints):
     """
     Standardize the constraints, accounting for facet aliases and option renames.
 
@@ -276,6 +259,8 @@ def _parse_constraints(reverse=False, **constraints):
     ----------
     reverse : bool, optional
         Whether to reverse translate facet aliases.
+    restrict : bool, optional
+        Whether to restrict to facets readable in script lines.
     **constraints
         The constraints.
     """
@@ -301,36 +286,14 @@ def _parse_constraints(reverse=False, **constraints):
         sorted(renames.get((project, opt), opt) for opt in constraints[facet])
         for facet in facets
     }
+    if not restrict:
+        pass
+    elif constraints.keys() - _line_parts.keys() not in (set(), set(('project',))):
+        raise ValueError(f'Facets {constraints.keys()} must be subset of: {_line_parts.keys()}')  # noqa: E501
     return project, constraints
 
 
-def _make_printer(prefix, **constraints):
-    """
-    Return a funcation that simultaneously prints information and records
-    the result in a log file named based on the input constraints.
-
-    Parameters
-    ----------
-    prefix : str
-        The log file prefix.
-    **constraints
-        The constraints.
-    """
-    name = prefix + '_' + _join_opts(constraints.values()) + '.log'
-    path = Path(__file__).parent.parent / 'logs' / name
-    if not path.parent.is_dir():
-        path.parent.mkdir()
-    if path.is_file():
-        print(f'Moving previous log to backup: {path}')
-        path.rename(str(path) + '.bak')
-    def _printer(*args, sep=' ', end='\n'):  # noqa: E306
-        print(*args, sep=sep, end=end)
-        with open(path, 'a') as f:
-            f.write(sep.join(map(str, args)) + end)
-    return _printer
-
-
-def _script_lines(arg, complement=False):
+def _parse_script(arg, complement=False):
     """
     Return the download lines of the wget scripts or their complement. The latter is
     used when constructing a single script from many scripts.
@@ -360,9 +323,9 @@ def _script_lines(arg, complement=False):
         return lines
 
 
-def _script_write(path, prefix, center, suffix, openid=None, **constraints):
+def _save_script(path, prefix, center, suffix, openid=None, **constraints):
     """
-    Write the wget script to the specified path. Lines are sorted first by model,
+    Save the wget script to the specified path. Lines are sorted first by model,
     second by variable, and third by node priority.
 
     Parameters
@@ -392,42 +355,107 @@ def _script_write(path, prefix, center, suffix, openid=None, **constraints):
     return path
 
 
-def compare_files(path='~/data', remove=False):
+def _generate_printer(prefix, **constraints):
     """
-    Compare the netcdf files in the directory to the netcdf files listed
-    in the wget scripts in the same directory.
+    Return a funcation that simultaneously prints information and records
+    the result in a log file named based on the input constraints.
 
     Parameters
     ----------
-    path : path-like
-        The path to be searched.
-    remove : bool, optional
-        Whether to remove detected missing files. Use this option with caution!
+    prefix : str
+        The log file prefix.
+    **constraints
+        The constraints.
     """
-    # NOTE: This is generally used to remove unnecessarily downloaded files as
-    # users refine their filtering or downloading steps.
-    path = Path(path).expanduser()
-    files_downloaded = {
-        file.name for file in path.glob('*.nc')
-    }
-    files_scripts = {
-        _line_file(line) for file in path.glob('wget*.sh')
-        for line in _script_lines(file, complement=False)
-    }
-    files_finished = sorted(files_downloaded & files_scripts)
-    files_missing = sorted(files_scripts - files_downloaded)
-    files_extra = sorted(files_downloaded - files_scripts)
-    print('Path:', path)
-    print('Finished files:', len(files_finished))
-    print('Missing files:', len(files_missing))
-    print('Extra files:', len(files_extra))
-    if remove:
-        response = input(f'Remove {len(files_extra)} files (y/[n])?').lower().strip()
-        if response[:1] == 'y':
-            print('Removing files...')
-            for file in files_extra:
-                os.remove(path / file)
-    return files_finished, files_missing, files_extra
+    name = prefix + '_' + _join_opts(constraints.values()) + '.log'
+    path = Path(__file__).parent.parent / 'logs' / name
+    if not path.parent.is_dir():
+        path.parent.mkdir()
+    if path.is_file():
+        print(f'Moving previous log to backup: {path}')
+        path.rename(str(path) + '.bak')
+    def _printer(*args, sep=' ', end='\n'):  # noqa: E306
+        print(*args, sep=sep, end=end)
+        with open(path, 'a') as f:
+            f.write(sep.join(map(str, args)) + end)
+    return _printer
+
+
+def _generate_database(
+    source, facets, project=None, flagship_detect=False, **constraints
+):
+    """
+    Return a database whose keys are facet options and whose values are
+    dictionaries mapping the remaining facet options to wget script lines.
+
+    Parameters
+    ----------
+    source : iterable
+        The input option dictionaries and corresponding values.
+    facets : str or sequence
+        The facets to use as group keys.
+    project : str, optional
+        The scalar project.
+    flagship_detect : bool, optional
+        Whether to categorize flagship and nonflagship.
+    **constraints
+        The constraints.
+    """
+    # NOTE: Since project is not included in script lines and file names we
+    # propagate it here. Note it is always used for folders and intersect groups.
+    database = {}
+    project = constraints.pop('project', None)
+    facets = (facets.split(',') if isinstance(facets, str) else facets)
+    facets = {facet: () for facet in facets}
+    _, facets = _parse_constraints(reverse=True, restrict=True, **facets)
+    key_facets = (*(facet for facet in _line_parts if facet not in facets),)
+    group_facets = ('project', *(facet for facet in _line_parts if facet in facets))
+    for opts, values in source:
+        if any(opt not in constraints.get(facet, (opt,)) for facet, opt in opts.items()):  # noqa: E501
+            continue  # useful during initial consolidation of script lines
+        opts = {'project': project, **opts}
+        if flagship_detect and 'flagship' not in (ensemble := opts['ensemble']):
+            key1, key2 = (project, opts['experiment'], opts['model']), (project, None, None)  # noqa: E501
+            try:
+                flagship = FLAGSHIP_ENSEMBLES.get(key1, FLAGSHIP_ENSEMBLES[key2])
+            except KeyError:
+                raise ValueError('Project CMIP5 or CMIP6 required for flaghip filtering.')  # noqa: E501
+            opts['ensemble'] = 'flagship' if ensemble == flagship else 'nonflagship'
+        group = tuple(opts[facet] for facet in group_facets)
+        data = database.setdefault(group, {})
+        key = tuple(opts[facet] for facet in key_facets)
+        if isinstance(values, str):
+            data.setdefault(key, []).append(values)
+        elif key not in data:
+            data[key] = list(values)
+        else:
+            raise RuntimeError(f'Facet data already present: {group}, {key}.')
+    return database, group_facets, key_facets
+
+
+def _summarize_database(database, group_facets, key_facets, message=None):
+    """
+    Print information about the database.
+
+    Parameters
+    ----------
+    database : dict
+        The database.
+    group_facets : str
+        The facets used as group keys.
+    key_facets : str
+        The remaining facets.
+    message : str
+        An additional message
+    """
+    if message:
+        print(f'{message}:')
+    for parent, group in database.items():
+        print(', '.join(f'{facet}: {opt}' for facet, opt in zip(group_facets, parent)))
+        options = tuple(sorted(set(opts)) for opts in zip(*group.keys()))
+        for facet, opts in zip(key_facets, options):
+            print(f'  {facet} ({len(opts)}): ' + ', '.join(map(str, opts)))
+    print()
 
 
 def search_connection(node='llnl', username=None, password=None):
@@ -457,6 +485,44 @@ def search_connection(node='llnl', username=None, password=None):
         lm.logon(username=username, password=password, hostname=host)
     url = f'https://{host}/esg-search'  # suffix is critical
     return SearchConnection(url, distrib=True)
+
+
+def compare_files(path='~/data', remove=False):
+    """
+    Compare the netcdf files in the directory to the netcdf files listed
+    in the wget scripts in the same directory.
+
+    Parameters
+    ----------
+    path : path-like
+        The path to be searched.
+    remove : bool, optional
+        Whether to remove detected missing files. Use this option with caution!
+    """
+    # NOTE: This is generally used to remove unnecessarily downloaded files as
+    # users refine their filtering or downloading steps.
+    path = Path(path).expanduser()
+    files_downloaded = {
+        file.name for file in path.glob('*.nc')
+    }
+    files_scripts = {
+        _line_file(line) for file in path.glob('wget*.sh')
+        for line in _parse_script(file, complement=False)
+    }
+    files_finished = sorted(files_downloaded & files_scripts)
+    files_missing = sorted(files_scripts - files_downloaded)
+    files_extra = sorted(files_downloaded - files_scripts)
+    print('Path:', path)
+    print('Finished files:', len(files_finished))
+    print('Missing files:', len(files_missing))
+    print('Extra files:', len(files_extra))
+    if remove:
+        response = input(f'Remove {len(files_extra)} files (y/[n])?').lower().strip()
+        if response[:1] == 'y':
+            print('Removing files...')
+            for file in files_extra:
+                os.remove(path / file)
+    return files_finished, files_missing, files_extra
 
 
 def download_script(
@@ -489,7 +555,7 @@ def download_script(
     # lowercase in cmip5 dataset ids, and cannot parse dataset ids directly because
     # they are unstandardized and differ significantly between cmip5 and cmip6.
     project, constraints = _parse_constraints(**constraints)
-    print = _make_printer('download', **constraints)
+    print = _generate_printer('download', **constraints)
     if flagship_filter:
         ensembles = [ensemble for (proj, _, _), ensemble in FLAGSHIP_ENSEMBLES.items() if proj == project]  # noqa: E501
         if ensembles:
@@ -551,21 +617,22 @@ def download_script(
         if script.count('\n') <= 1:  # just an error message
             print(message % 'empty!!!')
             continue
-        lines = _script_lines(script, complement=False)
+        lines = _parse_script(script, complement=False)
         print(message % f'{len(lines)} files')
         if not prefix and not suffix:
-            prefix, suffix = _script_lines(script, complement=True)
+            prefix, suffix = _parse_script(script, complement=True)
         center.extend(lines)
 
     # Create the script and return its path
     path = Path(path).expanduser() / 'unfiltered'
-    dest = _script_write(path, prefix, center, suffix, openid=openid, **constraints)
+    dest = _save_script(path, prefix, center, suffix, openid=openid, **constraints)
     return dest
 
 
 def filter_script(
     path='~/data', maxyears=50, endyears=False, overwrite=False,
-    facets_intersect=None, facets_folder=None, flagship_filter=False, **constraints
+    facets_intersect=None, facets_folder=None, flagship_filter=False, overrides=None,
+    **constraints
 ):
     """
     Filter the wget scripts to the input number of years for intersecting
@@ -587,90 +654,51 @@ def filter_script(
         The facets that should be grouped into unique folders.
     flagship_filter : bool, optional
         Whether to group ensembles according to flagship or nonflagship identity.
+    overrides : dict-like, optional
+        The constraints to always include in the output, ignoring the intersect filter.
     **constraints
         The constraints.
     """
-    # Helper functions for working with wget script line databases
-    # NOTE: Since _parse_constraints imposes a default project this will quetly enforces
-    # that 'intersect' and 'folder' facets include a project identifier (so the minimum
-    # folder indication is e.g. 'cmip5' or 'cmip6'). However since project is not
-    # included in script lines and file names we specially propagate it here.
+    # Read the file and group lines into dictionaries indexed by the facets we
+    # want to intersect and whose keys indicate the remaining facets, then find the
+    # intersection of these facets (e.g., 'ts_Amon_MODEL' for two experiment ids).
+    # NOTE: Since _parse_constraints imposes a default project this will quietly
+    # enforce that 'intersect' and 'folder' facets include a project identifier (so
+    # the minimum folder indication will be e.g. 'cmip5' or 'cmip6').
     # NOTE: To overwrite previous files this script can simply be called with
     # overwrite=True. Then the file is removed so the wget script can be called
     # without -U and thus still skip duplicate files from the same node. Note
     # that if a file is not in the ESGF script cache then the wget command itself
     # will skip files that already exist unless ESGF_WGET_OPTS includes -O.
-    def _parse_facets(**facets):  # noqa: E301
-        project, facets = _parse_constraints(reverse=True, **facets)
-        if facets.keys() - _line_parts.keys() not in (set(), set(('project',))):
-            raise ValueError(f'Facets {facets.keys()} must be subset of: {_line_parts.keys()}')  # noqa: E501
-        return project, facets
-    def _print_database(database, group_facets, key_facets, message=None):  # noqa: E301, E501
-        if message:
-            print(f'{message}:')
-        for parent, group in database.items():
-            print(', '.join(f'{facet}: {opt}' for facet, opt in zip(group_facets, parent)))  # noqa: E501
-            options = tuple(sorted(set(opts)) for opts in zip(*group.keys()))
-            print('\n'.join(f'  {facet} ({len(opts)}): ' + ', '.join(opts) for facet, opts in zip(key_facets, options)))  # noqa: E501
-        print()
-    def _generate_database(source, facets):  # noqa: E301
-        database = {}
-        facets = (facets.split(',') if isinstance(facets, str) else facets)
-        facets = {facet: () for facet in facets}
-        _, facets = _parse_facets(**facets)
-        key_facets = (*(facet for facet in _line_parts if facet not in facets),)
-        group_facets = ('project', *(facet for facet in _line_parts if facet in facets))
-        for opts, content in source:
-            if any(opt not in constraints.get(facet, (opt,)) for facet, opt in opts.items()):  # noqa: E501
-                continue  # useful during initial consolidation of script lines
-            opts = {'project': project, **opts}
-            if flagship_filter and 'flagship' not in (ensemble := opts['ensemble']):
-                key1, key2 = (project, opts['experiment'], opts['model']), (project, None, None)  # noqa: E501
-                try:
-                    flagship = FLAGSHIP_ENSEMBLES.get(key1, FLAGSHIP_ENSEMBLES[key2])
-                except KeyError:
-                    raise ValueError('Project CMIP5 or CMIP6 required for flaghip filtering.')  # noqa: E501
-                opts['ensemble'] = 'flagship' if ensemble == flagship else 'nonflagship'
-            group = tuple(opts[facet] for facet in group_facets)
-            data = database.setdefault(group, {})
-            key = tuple(opts[facet] for facet in key_facets)
-            if isinstance(content, str):
-                data.setdefault(key, []).append(content)
-            elif key not in data:
-                data[key] = list(content)
-            else:
-                raise RuntimeError(f'Facet data already present: {group}, {key}.')
-        return database, group_facets, key_facets
-
-    # Read the file and group lines into dictionaries indexed by the facets we
-    # want to intersect and whose keys indicate the remaining facets, then find the
-    # intersection of these facets (e.g., 'ts_Amon_MODEL' for two experiment ids).
-    # NOTE: Here we only constrain search to the project, which is otherwise not
-    # indicated in native wget script lines. Similar approach to process_files().
-    # NOTE: For some reason in CMIP5 have piControl EC-EARTH but abrupt4xCO2
-    # EC-Earth so ignore case when comparing. Seems that Mark Zelinka failed to
-    # do this! Otherwise available models are exactly the same as his results.
-    project, constraints = _parse_facets(**constraints)
-    print = _make_printer('filter', **constraints)
+    overrides = overrides or {}
+    _, overrides = _parse_constraints(reverse=True, restrict=True, **overrides)
+    project, constraints = _parse_constraints(reverse=True, restrict=True, **constraints)  # noqa: E501
+    print = _generate_printer('filter', **constraints)
     path = Path(path).expanduser() / 'unfiltered'
     files = list(path.glob(f'wget_{project.lower()}_*.sh'))
     print('Source file(s):')
     print('\n'.join(map(str, files)))
     print()
-    prefix, suffix = _script_lines(files[0], complement=True)
+    prefix, suffix = _parse_script(files[0], complement=True)
     source = [
         ({facet: func(line) for facet, func in _line_parts.items()}, line)
-        for file in files for line in _script_lines(file, complement=False)
+        for file in files for line in _parse_script(file, complement=False)
     ]
-    database, group_facets, key_facets = _generate_database(source, facets_intersect)
-    _print_database(database, group_facets, key_facets, message='Initial groups')
+    database, group_facets, key_facets = _generate_database(
+        source, facets_intersect, project=project, flagship_detect=flagship_filter,
+    )
+    _summarize_database(database, group_facets, key_facets, message='Initial groups')
     keys = set(tuple(database.values())[0].keys())
     keys = keys.intersection(*(set(group.keys()) for group in database.values()))
     database = {
-        group: {key: lines for key, lines in data.items() if key in keys}
+        group: {
+            key: lines for key, lines in data.items() if key in keys or any(
+                opt in overrides.get(facet, ()) for facet, opt in zip(key_facets, key)
+            )
+        }
         for group, data in database.items()
     }
-    _print_database(database, group_facets, key_facets, message='Intersect groups')
+    _summarize_database(database, group_facets, key_facets, message='Intersect groups')
 
     # Collect the facets into a dictionary whose keys are the facets unique to
     # each folder and whose values are dictionaries with keys indicating the remaining
@@ -682,14 +710,16 @@ def filter_script(
         for group, data in database.items() for key, lines in data.items()
     ]
     dests = []
-    database, group_facets, key_facets = _generate_database(source, facets_folder)
-    _print_database(database, group_facets, key_facets, message='Folder groups')
+    database, group_facets, key_facets = _generate_database(
+        source, facets_folder, project=project, flagship_detect=flagship_filter,
+    )
+    _summarize_database(database, group_facets, key_facets, message='Folder groups')
     for group, data in database.items():
         center = []  # wget script lines
         folder = path.parent / _join_opts((group,))
         parts = {facet: (opt,) for facet, opt in zip(group_facets, group)}
         parts.update({facet: opts for facet, opts in constraints.items() if facet not in group_facets})  # noqa: E501
-        _, parts = _parse_facets(**parts)
+        _, parts = _parse_constraints(reverse=True, restrict=True, **parts)
         print('Writing script:', ', '.join(group))
         for key, lines in data.items():
             print('  ' + ', '.join(key) + ':', end=' ')
@@ -713,6 +743,6 @@ def filter_script(
                     os.remove(output)
                 center.append(line)
             print()
-        dest = _script_write(folder, prefix, center, suffix, **parts)
+        dest = _save_script(folder, prefix, center, suffix, **parts)
         dests.append(dest)
     return dests
