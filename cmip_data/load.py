@@ -250,11 +250,13 @@ def combine_cam_kernels(
     return ds_mlev, ds_plev
 
 
-def load_cmip_tables():
+def load_cmip_tables(path='~/data'):
     """
     Load forcing-feedback data from each source. Return a dictionary of dataframes.
     """
-    path = DATA / 'cmip-tables'
+    path = Path(path).expanduser() / 'cmip-tables'
+    if not path.is_dir():
+        raise RuntimeError(f'Path {path!r} not found.')
     files = [file for ext in ('.txt', '.json') for file in path.glob('cmip*' + ext)]
     tables = {}
     for file in files:
@@ -298,23 +300,23 @@ def load_cmip_tables():
 
 
 def load_cmip_xsections(
-    name='ta', experiment='piControl', table='Amon', mode='latlev'
+    path='~/data', variable='ta', experiment='piControl', table='Amon', mode='latlev'
 ):
     """
     Load CMIP variables for each model. Return a dictionary of datasets.
     """
     # TODO: Support arbitrary multiple variables, experiments,
     # etc. rather than just multiple projects and models.
-    names = name
-    if isinstance(names, str):
-        names = (names,)
+    variables = variable
+    if isinstance(variables, str):
+        variables = (variables,)
     monthly, seasonal, annual = {}, {}, {}
     for project in ('CMIP5', 'CMIP6'):
         print(f'Project: {project}')
         path = DATA / f'{project.lower()}-{experiment}-{table}'
         if not path.is_dir():
             raise RuntimeError(f'Path {path!s} not found.')
-        files = sorted(file for name in names for file in path.glob(f'{name}_{table}_*_{experiment}_{project.lower()}.nc'))  # noqa: E501
+        files = sorted(file for var in variables for file in path.glob(f'{var}_{table}_*_{experiment}_{project.lower()}.nc'))  # noqa: E501
         models = tuple(file.name.split('_')[2] for file in files)
         print('Model:', end=' ')
         for i, model in enumerate(sorted(set(models))):
@@ -322,15 +324,14 @@ def load_cmip_xsections(
             ads = xr.Dataset()
             sds = xr.Dataset()
             mds = xr.Dataset()
-            mfiles = tuple(file for m, file in zip(models, files) if m == model)
-            mnames = tuple(file.name.split('_')[0] for file in mfiles)
+            filtered = tuple(file for m, file in zip(models, files) if m == model)
             messages = []
             print(model, end=' (')
-            for j, (name, file) in enumerate(zip(mnames, mfiles)):
+            for j, file in enumerate(filtered):
                 # Load data
-                name = file.name.split('_')[0]
+                var = file.name.split('_')[0]
                 ds = xr.open_dataset(file, use_cftime=True)
-                print(name, end='')
+                print(var, end='')
                 if any(str(t) == 'NaT' for t in ds.time.values):  # time reading error
                     messages.append('Invalid time data.')
                     continue
@@ -352,8 +353,8 @@ def load_cmip_xsections(
                     if 'bnds' in ds.dims:
                         ds = ds.isel(bnds=slice(None, None, -1))
                 ds = ds.climo.add_cell_measures(verbose=False)
-                da = ds[name].squeeze(drop=True)  # e.g. already averaged longitude
-                if name[:3] in ('clw', 'cli'):
+                da = ds[var].squeeze(drop=True)  # e.g. already averaged longitude
+                if var[:3] in ('clw', 'cli'):
                     if da.attrs['units'] == 'kg m-2':
                         raise RuntimeError('Unexpected units for cloud water.')
                 print('', da.attrs['units'], end='')
@@ -381,21 +382,21 @@ def load_cmip_xsections(
                         continue
                     elif da.name in ('hur', 'hus'):  # weighted average with cell_height
                         da = da.climo.average('lev', keep_attrs=True)
+                        pass
                     elif 'lev' in da.dims:  # surface level selection
                         sfc = da.coords['lev'].max(keep_attrs=True)
                         da = da.sel(lev=sfc.item())
-                        if any(name in ('hur', 'hus') for name in names):  # kludge
-                            lab = fr'{sfc.item():.0f}$\,${sfc.climo.units_label}'
-                            da.attrs['long_suffix'] = lab
-                            da = da.climo.replace_coords(lev=np.nan)
+                        lab = fr'{sfc.item():.0f}$\,${sfc.climo.units_label}'
+                        da.attrs['long_suffix'] = lab  # only if set(variables) & {'hur', 'hus'}?  # noqa: E501
+                        da = da.climo.replace_coords(lev=np.nan)
                 else:
                     raise RuntimeError(f'Invalid reduction mode {mode!r}.')
-                ads[name] = da.mean('time', keep_attrs=True)
-                sds[name] = da.groupby('time.season').mean('time', keep_attrs=True)
-                mds[name] = da.climo.replace_coords(time=da['time.month']).rename(time='month')  # noqa: E501
+                ads[var] = da.mean('time', keep_attrs=True)
+                sds[var] = da.groupby('time.season').mean('time', keep_attrs=True)
+                mds[var] = da.climo.replace_coords(time=da['time.month']).rename(time='month')  # noqa: E501
                 if 'lev_bnds' in sds:  # bugfix caused by groupby
                     sds['lev_bnds'] = sds['lev_bnds'].isel(season=0)
-                print('', end='' if j == len(mnames) - 1 else ', ')
+                print('', end='' if j == len(filtered) - 1 else ', ')
 
             # Save results
             if messages := set(messages):  # skipped critical file above
