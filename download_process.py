@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 """
-Fi
-e for downloading and merging relevant data.
+File for downloading and merging relevant data.
 """
 import cmip_data
-import subprocess  # noqa: F401
 
 # Global arguments
-# NOTE: Have 'intvadse' and 'intvq' for IPSL-CM6A-LR, CNRM-CM6-1, CNRM-CM6-1-HR, and
-# CNRM-ESM2-1, and 'vt' and 'vqint' for HadGEM3-GC31-LL and HadGEM3-GC31-MM. Incomplete:
-# ACCESS-CM2, ACCESS-CM1-5, MIROC-ES2L, MIROC-ES2H, IPSL-CM5A2-INCA, and UKESM1-0-LL.
-# NOTE: Have 'tauu' and 'tauv' for jet stream calculations, since time-vertical-zonal
-# mean tauu is balanced by eddy-flux convergence (integrated meridional wind is zero
+# NOTE: Here have 'intvadse' and 'intvaw' for IPSL-CM6A-LR, CNRM-CM6-1, CNRM-ESM2-1,
+# and CNRM-CM6-1-HR (last one was briefly unavailable). Have 'intvaw' for ACCESS-CM2,
+# ACCESS-CM1-5, MIROC-ES2L, and MIROC-ES2H, and 'intvadse' for IPSL-CM5A2-INCA. Have
+# control 'vt' and 'vqint' for HadGEM3-GC31-LL, HadGEM3-GC31-MM, and UKESM1-0-LL.
+# NOTE: Here 'tauu' and 'tauv' are for jet calculations, since time-vertical-zonal
+# mean tauu is balanced by eddy-momentum convergence (integrated meridional wind is zero
 # due to mass conservation) and tauv is balanced by Coriolis torque from zonal wind.
-# NOTE: Mark Zelinka CMIP5 is missing CNRM-CM5-2 (not sure why) and EC-Earth (probably
+# Pair with residual eddy-energy transport for 'storm track' and 'eddy jet' metrics.
+# NOTE: Mark Zelinka CMIP5 is missing CNRM-CM5-2 (not sure why) and EC-Earth (possibly
 # due to piControl using EC-EARTH), increasing ensemble members from 29 to 31. Also
 # for some reason CSIRO-Mk3L-1-2 has only published abrupt data but not control data.
+# Unlike CMIP6 there are no flagships with non-r1i1p1 variants.
 # NOTE: Mark Zelinka CMIP6 is missing CAS-ESM2-0, FIO-ESM-2-0, ICON-ESM-LR, KIOST-ESM,
 # and MCM-UA-1-0 (older version also missed EC-Earth3-CC and GISS-E2-2-H but they were
 # recently added). However in search, failed to find control run of IPSL-CM6A-LR-INCA
 # (tried ESGF website and seems it was removed, also checked that abrupt parent is
-# indeed the same model and searched the IPSL ESGF node), abrupt simulations of
+# indeed the same model and searched the IPSL ESGF node -- note CMCC-CM2-HR4 also only
+# published abrupt data so was ignored by Mark and ignored by us), abrupt simulations of
 # EC-Earth3 (uses realization 'r8', verified that 'parent_variable_label' is 'r1i1p1f1',
 # and note 'r3' is also available but the online interface downloads zero-byte files),
 # abrupt simulations of HadGEM3-GC31-LL and HadGEM3-GC31-MM (uses forcing 'f3', also
@@ -31,27 +33,26 @@ import subprocess  # noqa: F401
 # Searched around and seems there are no other missing non-'r1i1p1f1' simulation pairs.
 # In sum we added 5 models but missed 9 models for a total of 4 models fewer (48 instead
 # of 52). We can rectify everything but the IPSL model, plus add the extra MIROC model,
-# to provide a total of 5 models more than Mark Zelinka (57 instead of 52). Also note
-# CMCC-CM2-HR4 only published abrupt data but not control data so always ignored.
+# to provide a total of 5 models more than Mark Zelinka (57 instead of 52).
 constrain = True  # control data for constraints?
 circulation = False  # control and response data for implicit circulation stuff?
 feedbacks = False  # control and response data for feedbacks?
 explicit = False  # control and response data for explicit circulation stuff?
 download = False
-filter = True
-process = False
+filter = False
+process = True
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
 # NOTE: The abrupt and control radiation data is needed for 'local feedback parameter'
 # esimates, and control radiation data is needed for 'relaxation feedback parameter'
-# estimates. Then the 'ts', 'ta', 'hus', and (optional but nice to have) 'hur' is
-# needed for component feedaback breakdowns (after multiplying by radiative kernels to
-# get 'radiation due to parameter' then either regressing against surface temperature
-# or correlating with surface temperature). Note that because Clausius-Clapeyron is a
-# non-linear function of 't' and 'q', average relative humidity is not same as relative
-# humidity of average (should compare the two to see magnitude of disagreement for
-# sanity checks). Also note albedo is calculated from ratio of upwelling to downwelling
-# surface SW radiation rather than some sort of direct surface snow/ice measurement.
+# estimates. Then 'ts', 'ta', and 'hus' are needed for component feedaback breakdowns
+# (after multiplying by radiative kernels to get 'radiation due to parameter' then
+# either regressing against surface temperature or correlating with surface temp). Note
+# that because Clausius-Clapeyron is a non-linear function of 't' and 'q', average
+# relative humidity is not same as relative humidity of average, however neglect this
+# in e.g. relative humidity feedback breakdowns so will also ignore in climate averages.
+# Also note albedo is calculated from ratio of upwelling to downwelling surface SW
+# radiation rather than some sort of direct surface snow/ice measurement.
 # NOTE: The abrupt and control energetic and water data is also needed for 'moist/dry
 # static energy transport' esimates. To derive dry transport use radiation across
 # top-of-atmosphere and surface boundaries plus sensible heat flux then subtract latent
@@ -95,8 +96,6 @@ kw_constrain = {
         'cli',  # mass fraction cloud snow/ice
         'clwvi',  # vertically integrated condensed cloud water/snow/ice
         'clivi',  # vertically integrated condensed cloud snow/ice
-        'hurs',  # near-surface relative humidity
-        'huss',  # near-surface specific humidity
         'prw',  # vertically integrated water vapor path
         'pfull',  # model level pressure (provided only for hybrid height models)
         'ps',  # monthly surface pressure (for hybrid pressure sigma interpolation)
@@ -114,7 +113,6 @@ kw_circulation = {
         'prsn',  # snow/ice precipitation for transport (Ls gained, use to isolate Lv)
         'evspsbl',  # evaporation/transpiration/sublimation for transport (Lv+Ls lost)
         'sbl',  # sublimation for transport (Ls lost, use to isolate Lv)
-        'gs',  # geopotential height for circulation
         'ua',  # zonal wind for circulation
         'va',  # meridional wind for circulation
         'uas',  # surface wind for circulation
@@ -122,6 +120,7 @@ kw_circulation = {
         'psl',  # sea-level pressure for circulation
         'tauu',  # surface friction for circulation (indicates eddy jet strength)
         'tauv',  # surface friction for circulation (indicates zonal jet strength)
+        'zg',  # geopotential height for circulation
     ]
 }
 kw_feedbacks = {
@@ -131,7 +130,7 @@ kw_feedbacks = {
         'ta',  # air temperature for kernels
         'ts',  # surface temperature for kernels
         'hus',  # specific humidity for kernels
-        'hur',  # relative humidity for kernels
+        'huss',  # near-surface specific humidity for consistency
         'rsdt',  # downwelling SW TOA (identical to solar constant)
         'rlut',  # upwelling LW TOA
         'rsut',  # upwelling SW TOA
@@ -185,8 +184,10 @@ if download:
     for kwargs in dicts:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
+            folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
+            # folder = '~/scratch2' if project == 'CMIP5' or kwargs['table'] == 'Emon' else '~/scratch5'  # noqa: E501
             script = cmip_data.download_script(
-                '~/scratch2' if project == 'CMIP5' else '~/scratch5',
+                folder,
                 project=project,
                 node='llnl',
                 openid='https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd',
@@ -205,12 +206,23 @@ if filter:
     for kwargs in dicts:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
+            folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
+            # folder = '~/scratch2' if project == 'CMIP5' or kwargs['table'] == 'Emon' else '~/scratch5'  # noqa: E501
+            skip_models = (
+                'FGOALS-g2', 'FGOALS-g3', 'E3SM-1-1', 'E3SM-1-1-ECA',
+                'IPSL-CM5A2', 'IPSL-CM5A2-INCA', 'IPSL-CM6A-LR', 'IPSL-CM6A-LR-INCA',
+            )
+            skip_variables = kw_constrain['variable']
             scripts = cmip_data.filter_script(
-                '~/scratch2' if project == 'CMIP5' else '~/scratch5',
+                folder,
                 project=project,
                 maxyears=150,
                 endyears=False,
-                overrides={'variable': 'pfull'},
+                always_include={'variable': 'pfull'},  # i.e. bypass intersection
+                always_exclude=(
+                    {'variable': 'pfull', 'model': skip_models},
+                    {'variable': skip_variables, 'experiment': 'abrupt-4xCO2'},
+                ),
                 facets_folder=['project', 'experiment', 'table'],
                 facets_intersect=['experiment'],  # include 'variable'?
                 flagship_filter=True,
@@ -225,11 +237,28 @@ if process:
     for kwargs in dicts:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
-            cmip_data.process_files(
-                '~/scratch2' if project == 'CMIP5' else '~/scratch5',
-                '~/data',
-                project=project,
-                numyears=150,
-                endyears=False,
-                **kwargs
-            )
+            folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
+            # folder = '~/scratch2' if project == 'CMIP5' or kwargs['table'] == 'Emon' else '~/scratch5'  # noqa: E501
+            experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
+            for experiment, years in experiments.items():
+                kw = {**kwargs, 'experiment': experiment}
+                cmip_data.process_files(
+                    folder,
+                    project=project,
+                    climate=True,
+                    overwrite=False,
+                    dryrun=False,
+                    years=years,
+                    **kw,
+                )
+            experiments = ('abrupt-4xCO2',) if kwargs is kw_feedbacks else ()
+            for experiment in experiments:
+                kw = {**kwargs, 'experiment': experiment}
+                cmip_data.process_files(
+                    folder,
+                    project=project,
+                    climate=False,
+                    overwrite=False,
+                    dryrun=False,
+                    years=150,
+                )
