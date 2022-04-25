@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
 Download and filter datasets using the ESGF python API.
-Convenient wrappers for python APIs to download CMIP data.
 """
-import os
+import builtins
 import re
 from pathlib import Path
 
-import numpy as np
 from pyesgf.logon import LogonManager
 from pyesgf.search import SearchConnection
 
@@ -219,20 +217,24 @@ _join_opts = lambda options: '_'.join(
 )
 
 # Helper functions for parsing script lines
-# NOTE: Netcdf names are: <variable_id>_<table_id>_<source_id>_<experiment_id>...
-# ..._<member_id>_[<grid_label>[_<time_range>]].nc where grid labels are new in
-# cmip6 (see https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json).
+# NOTE: Netcdf names are <variable_id>_<table_id>_<source_id>_<experiment_id>...
+# ..._<member_id>_[<grid_label>[_<start_date>-<end_date>[-<climate_indicator>]]].nc
+# where grid labels are only in cmip6 and climate indicator is used for e.g. pfull.
+# See: https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json
 _line_file = lambda line: line.split()[0].strip("'")
 _line_node = lambda line: line.split()[1].strip("'")
 _line_date = lambda line: line.split('_')[-1].split('.')[0]
-_line_range = lambda line: tuple(int(s[:4]) for s in _line_date(line).split('-')[:2])
+_line_years = lambda line: tuple(int(s[:4]) for s in _line_date(line).split('-')[:2])
 _line_parts = {
     'model': lambda line: line.split('_')[2],
     'experiment': lambda line: line.split('_')[3],
     'ensemble': lambda line: line.split('_')[4],
     'table': lambda line: line.split('_')[1],
     'variable': lambda line: line.split('_')[0].strip("'"),
-    'grid': lambda line: s if (s := line.split('_')[5].split('.')[0])[0] == 'g' else 'g'
+    'grid': lambda line: (
+        'g' if len(s := line.split('_')) < 6 else
+        g if (g := s[5].split('.')[0])[0] == 'g' else 'g'
+    )
 }
 
 # Helper functions for managing lists and databases of script lines
@@ -293,6 +295,33 @@ def _parse_constraints(reverse=False, restrict=False, **constraints):
     return project, constraints
 
 
+def _parse_overrides(overrides=None, project=None):
+    """
+    Standardize the override(s) and return a function that tests against them.
+
+    Parameters
+    ----------
+    overrides : sequence or mapping
+        The constraint override(s).
+    project : str, optional
+        The scalar project used for parsing.
+    """
+    overrides = overrides or ()
+    overrides = (overrides,) if isinstance(overrides, dict) else tuple(overrides)
+    constraints = []
+    for override in overrides:
+        _, override = _parse_constraints(
+            reverse=True, restrict=True, project=project, **override
+        )
+        override.pop('project', None)
+        constraints.append(override)
+    print('override!', constraints)
+    return lambda parts: any(
+        override and all(parts[facet] in opts for facet, opts in override.items())
+        for override in constraints
+    )
+
+
 def _parse_script(arg, complement=False):
     """
     Return the download lines of the wget scripts or their complement. The latter is
@@ -323,7 +352,9 @@ def _parse_script(arg, complement=False):
         return lines
 
 
-def _save_script(path, prefix, center, suffix, openid=None, **constraints):
+def _save_script(
+    path, prefix, center, suffix, openid=None, printer=None, **constraints
+):
     """
     Save the wget script to the specified path. Lines are sorted first by model,
     second by variable, and third by node priority.
@@ -336,12 +367,14 @@ def _save_script(path, prefix, center, suffix, openid=None, **constraints):
         The script parts. The center is sorted.
     openid : str, optional
         The openid to be hardcoded in the file.
+    printer : callable, optional
+        The print function.
     **constraints
         The constraints.
     """
+    print = printer or builtins.print
     path = Path(path).expanduser()
-    if not path.is_dir():
-        os.mkdir(path)
+    path.mkdir(exist_ok=True)
     name = _join_opts(constraints.values())
     path = path / ('wget_' + name + '.sh')
     script = ''.join((*prefix, *_sort_lines(center), *suffix))
@@ -349,13 +382,13 @@ def _save_script(path, prefix, center, suffix, openid=None, **constraints):
         script = re.sub('openId=\n', f'openId={openid!r}\n', script)
     with open(path, 'w') as f:
         f.write(script)
-    os.chmod(path, 0o755)
+    path.chmod(0o755)
     ntotal, nunique = len(center), len(set(map(_line_file, center)))
     print(f'Output script ({ntotal} total files, {nunique} unique files): {path}\n')  # noqa: E501
     return path
 
 
-def _generate_printer(prefix, **constraints):
+def _generate_printer(prefix, backup=False, **constraints):
     """
     Return a funcation that simultaneously prints information and records
     the result in a log file named based on the input constraints.
@@ -364,16 +397,21 @@ def _generate_printer(prefix, **constraints):
     ----------
     prefix : str
         The log file prefix.
+    backup : bool, optional
+        Whether to backup existing files.
     **constraints
         The constraints.
     """
     name = prefix + '_' + _join_opts(constraints.values()) + '.log'
     path = Path(__file__).parent.parent / 'logs' / name
-    if not path.parent.is_dir():
-        path.parent.mkdir()
+    path.parent.mkdir(exist_ok=True)
     if path.is_file():
-        print(f'Moving previous log to backup: {path}')
-        path.rename(str(path) + '.bak')
+        if backup:
+            print(f'Moving previous log to backup: {path}')
+            path.rename(str(path) + '.bak')
+        else:
+            print(f'Removing previous log: {path}')
+            path.unlink(missing_ok=True)
     def _printer(*args, sep=' ', end='\n'):  # noqa: E306
         print(*args, sep=sep, end=end)
         with open(path, 'a') as f:
@@ -381,9 +419,7 @@ def _generate_printer(prefix, **constraints):
     return _printer
 
 
-def _generate_database(
-    source, facets, project=None, flagship_detect=False, **constraints
-):
+def _generate_database(source, facets, project=None, flagship_detect=False):
     """
     Return a database whose keys are facet options and whose values are
     dictionaries mapping the remaining facet options to wget script lines.
@@ -398,32 +434,27 @@ def _generate_database(
         The scalar project.
     flagship_detect : bool, optional
         Whether to categorize flagship and nonflagship.
-    **constraints
-        The constraints.
     """
     # NOTE: Since project is not included in script lines and file names we
     # propagate it here. Note it is always used for folders and intersect groups.
     database = {}
-    project = constraints.pop('project', None)
     facets = (facets.split(',') if isinstance(facets, str) else facets)
     facets = {facet: () for facet in facets}
     _, facets = _parse_constraints(reverse=True, restrict=True, **facets)
     key_facets = (*(facet for facet in _line_parts if facet not in facets),)
     group_facets = ('project', *(facet for facet in _line_parts if facet in facets))
-    for opts, values in source:
-        if any(opt not in constraints.get(facet, (opt,)) for facet, opt in opts.items()):  # noqa: E501
-            continue  # useful during initial consolidation of script lines
-        opts = {'project': project, **opts}
-        if flagship_detect and 'flagship' not in (ensemble := opts['ensemble']):
-            key1, key2 = (project, opts['experiment'], opts['model']), (project, None, None)  # noqa: E501
+    for parts, values in source:
+        parts = {'project': project, **parts}
+        if flagship_detect and 'flagship' not in (ensemble := parts['ensemble']):
+            key1, key2 = (project, parts['experiment'], parts['model']), (project, None, None)  # noqa: E501
             try:
                 flagship = FLAGSHIP_ENSEMBLES.get(key1, FLAGSHIP_ENSEMBLES[key2])
             except KeyError:
                 raise ValueError('Project CMIP5 or CMIP6 required for flaghip filtering.')  # noqa: E501
-            opts['ensemble'] = 'flagship' if ensemble == flagship else 'nonflagship'
-        group = tuple(opts[facet] for facet in group_facets)
+            parts['ensemble'] = 'flagship' if ensemble == flagship else 'nonflagship'
+        group = tuple(parts[facet] for facet in group_facets)
         data = database.setdefault(group, {})
-        key = tuple(opts[facet] for facet in key_facets)
+        key = tuple(parts[facet] for facet in key_facets)
         if isinstance(values, str):
             data.setdefault(key, []).append(values)
         elif key not in data:
@@ -433,7 +464,7 @@ def _generate_database(
     return database, group_facets, key_facets
 
 
-def _summarize_database(database, group_facets, key_facets, message=None):
+def _summarize_database(database, group_facets, key_facets, printer=None, message=None):
     """
     Print information about the database.
 
@@ -445,9 +476,12 @@ def _summarize_database(database, group_facets, key_facets, message=None):
         The facets used as group keys.
     key_facets : str
         The remaining facets.
+    printer : callable, optional
+        The print function.
     message : str
         An additional message
     """
+    print = printer or builtins.print
     if message:
         print(f'{message}:')
     for parent, group in database.items():
@@ -501,9 +535,21 @@ def compare_files(path='~/data', remove=False):
     """
     # NOTE: This is generally used to remove unnecessarily downloaded files as
     # users refine their filtering or downloading steps.
+    def count_facets(files, facets):
+        counts = {'total': len(files)}
+        for facet in facets:
+            for file in files:
+                opt = _line_parts[facet](str(file))
+                counts.setdefault(opt, 0)
+                counts[opt] += 1
+        return ', '.join(f'{opt} {count}' for opt, count in counts.items())
     path = Path(path).expanduser()
+    files_all = sorted((*path.glob('*.nc'), *path.glob('*.nc4'), *path.glob('*.nc3')))
     files_downloaded = {
-        file.name for file in path.glob('*.nc')
+        file.name for file in files_all
+        if file.stat().st_size > 0
+        or print(f'Warning: Removing empty download file {file.name!r}')
+        or file.unlink()
     }
     files_scripts = {
         _line_file(line) for file in path.glob('wget*.sh')
@@ -513,15 +559,16 @@ def compare_files(path='~/data', remove=False):
     files_missing = sorted(files_scripts - files_downloaded)
     files_extra = sorted(files_downloaded - files_scripts)
     print('Path:', path)
-    print('Finished files:', len(files_finished))
-    print('Missing files:', len(files_missing))
-    print('Extra files:', len(files_extra))
-    if remove:
+    print('Finished files:', count_facets(files_finished, ()))
+    print('Missing files:', count_facets(files_missing, ('model', 'variable')))
+    print('Extra files:', count_facets(files_extra, ('model', 'variable')))
+    if remove and files_extra:
         response = input(f'Remove {len(files_extra)} files (y/[n])?').lower().strip()
         if response[:1] == 'y':
-            print('Removing files...')
             for file in files_extra:
-                os.remove(path / file)
+                print(f'Removing file: {file}')
+                file = path / file
+                file.unlink()
     return files_finished, files_missing, files_extra
 
 
@@ -625,14 +672,16 @@ def download_script(
 
     # Create the script and return its path
     path = Path(path).expanduser() / 'unfiltered'
-    dest = _save_script(path, prefix, center, suffix, openid=openid, **constraints)
+    dest = _save_script(
+        path, prefix, center, suffix, openid=openid, printer=print, **constraints
+    )
     return dest
 
 
 def filter_script(
     path='~/data', maxyears=50, endyears=False, overwrite=False,
-    facets_intersect=None, facets_folder=None, flagship_filter=False, overrides=None,
-    **constraints
+    facets_intersect=None, facets_folder=None, flagship_filter=False,
+    always_include=None, always_exclude=None, **constraints
 ):
     """
     Filter the wget scripts to the input number of years for intersecting
@@ -654,8 +703,10 @@ def filter_script(
         The facets that should be grouped into unique folders.
     flagship_filter : bool, optional
         Whether to group ensembles according to flagship or nonflagship identity.
-    overrides : dict-like, optional
-        The constraints to always include in the output, ignoring the intersect filter.
+    always_include : dict-like, optional
+        The constraints to always include in the output, ignoring the filters.
+    always_exclude : dict-like, optional
+        The constraints to always exclude from the output, ignoring the filters.
     **constraints
         The constraints.
     """
@@ -670,9 +721,9 @@ def filter_script(
     # without -U and thus still skip duplicate files from the same node. Note
     # that if a file is not in the ESGF script cache then the wget command itself
     # will skip files that already exist unless ESGF_WGET_OPTS includes -O.
-    overrides = overrides or {}
-    _, overrides = _parse_constraints(reverse=True, restrict=True, **overrides)
     project, constraints = _parse_constraints(reverse=True, restrict=True, **constraints)  # noqa: E501
+    always_include = _parse_overrides(always_include, project=project)
+    always_exclude = _parse_overrides(always_exclude, project=project)
     print = _generate_printer('filter', **constraints)
     path = Path(path).expanduser() / 'unfiltered'
     files = list(path.glob(f'wget_{project.lower()}_*.sh'))
@@ -681,24 +732,30 @@ def filter_script(
     print()
     prefix, suffix = _parse_script(files[0], complement=True)
     source = [
-        ({facet: func(line) for facet, func in _line_parts.items()}, line)
+        (parts, line)
         for file in files for line in _parse_script(file, complement=False)
+        if (parts := {facet: func(line) for facet, func in _line_parts.items()})
+        if not any(opt not in constraints.get(facet, (opt,)) for facet, opt in parts.items())  # noqa: E501
     ]
     database, group_facets, key_facets = _generate_database(
         source, facets_intersect, project=project, flagship_detect=flagship_filter,
     )
-    _summarize_database(database, group_facets, key_facets, message='Initial groups')
+    _summarize_database(
+        database, group_facets, key_facets, printer=print, message='Initial groups'
+    )
     keys = set(tuple(database.values())[0].keys())
     keys = keys.intersection(*(set(group.keys()) for group in database.values()))
     database = {
         group: {
-            key: lines for key, lines in data.items() if key in keys or any(
-                opt in overrides.get(facet, ()) for facet, opt in zip(key_facets, key)
-            )
+            key: lines for key, lines in data.items()
+            if (parts := dict(zip((*group_facets, *key_facets), (*group, *key))))
+            and not always_exclude(parts) and (key in keys or always_include(parts))
         }
         for group, data in database.items()
     }
-    _summarize_database(database, group_facets, key_facets, message='Intersect groups')
+    _summarize_database(
+        database, group_facets, key_facets, printer=print, message='Intersect groups'
+    )
 
     # Collect the facets into a dictionary whose keys are the facets unique to
     # each folder and whose values are dictionaries with keys indicating the remaining
@@ -713,7 +770,9 @@ def filter_script(
     database, group_facets, key_facets = _generate_database(
         source, facets_folder, project=project, flagship_detect=flagship_filter,
     )
-    _summarize_database(database, group_facets, key_facets, message='Folder groups')
+    _summarize_database(
+        database, group_facets, key_facets, printer=print, message='Folder groups'
+    )
     for group, data in database.items():
         center = []  # wget script lines
         folder = path.parent / _join_opts((group,))
@@ -724,8 +783,8 @@ def filter_script(
         for key, lines in data.items():
             print('  ' + ', '.join(key) + ':', end=' ')
             years = (
-                min((y for y, _ in map(_line_range, lines)), default=+10000),
-                max((y for _, y in map(_line_range, lines)), default=-10000),
+                min((y for y, _ in map(_line_years, lines)), default=+10000),
+                max((y for _, y in map(_line_years, lines)), default=-10000),
             )
             print('initial', '-'.join(map(str, years)), end=' ')
             if endyears:
@@ -734,15 +793,17 @@ def filter_script(
                 years = (years[0], int(min(years[1], years[0] + maxyears - 1)))
             print('final', '-'.join(map(str, years)), end=' ')
             for line in lines:
-                ys = _line_range(line)
+                ys = _line_years(line)
                 if ys[1] < years[0] or ys[0] > years[1]:
                     continue
                 output = folder / _line_file(line)
                 if output.is_file() and (overwrite or output.stat().st_size == 0):
-                    print('removed {output.name}', end=' ')
-                    os.remove(output)
+                    print('removed {output.name!r}', end=' ')
+                    output.unlink()
                 center.append(line)
             print()
-        dest = _save_script(folder, prefix, center, suffix, **parts)
+        dest = _save_script(
+            folder, prefix, center, suffix, printer=print, **parts
+        )
         dests.append(dest)
     return dests
