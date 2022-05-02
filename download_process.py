@@ -35,12 +35,12 @@ import cmip_data
 # of 52). We can rectify everything but the IPSL model, plus add the extra MIROC model,
 # to provide a total of 5 models more than Mark Zelinka (57 instead of 52).
 constrain = True  # control data for constraints?
-circulation = False  # control and response data for implicit circulation stuff?
-feedbacks = False  # control and response data for feedbacks?
-explicit = False  # control and response data for explicit circulation stuff?
+circulation = True  # control and response data for implicit circulation stuff?
+feedbacks = True  # control and response data for feedbacks?
+explicit = True  # control and response data for explicit circulation stuff?
 download = False
-filter = False
-process = True
+filter = True
+process = False
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
 # NOTE: The abrupt and control radiation data is needed for 'local feedback parameter'
@@ -168,8 +168,8 @@ kw_explicit = {
 
 
 # Download the wget files
-# TODO: Standardize input to wget filter? Could select particular facets
-# to standardize then pass arbitrary subsequent facets forward.
+# NOTE: Facets and options supplied to constrain filter are standardized between
+# cmip5 and cmip6 synonyms. So can loop through both projects with about keywords.
 dicts = []
 if constrain:
     dicts.append(kw_constrain)
@@ -185,7 +185,6 @@ if download:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
             folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
-            # folder = '~/scratch2' if project == 'CMIP5' or kwargs['table'] == 'Emon' else '~/scratch5'  # noqa: E501
             script = cmip_data.download_script(
                 folder,
                 project=project,
@@ -199,20 +198,21 @@ if download:
 
 
 # Filter the resulting wget files
-# NOTE: The dashes are omitted from wget file names for clarity. So search CMIP5
-# for abrupt4xCO2 files rather than abrupt-4xCO2 as it appears in esgf search.
+# NOTE: Here only want to bother downloading constraint data with an equivalent
+# abrupt simulation (indicating feedbacks are available) but don't actually want to
+# download this data so use the exclude fitler to avoid it. Also don't want abrupt
+# pfull data since not always available. And need to include control pfull data from
+# other tables/experiments (see process.py comments) so use always_include.
 if filter:
     filtered = []
     for kwargs in dicts:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
             folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
-            # folder = '~/scratch2' if project == 'CMIP5' or kwargs['table'] == 'Emon' else '~/scratch5'  # noqa: E501
-            skip_models = (
+            skip_pfull_models = (
                 'FGOALS-g2', 'FGOALS-g3', 'E3SM-1-1', 'E3SM-1-1-ECA',
                 'IPSL-CM5A2', 'IPSL-CM5A2-INCA', 'IPSL-CM6A-LR', 'IPSL-CM6A-LR-INCA',
             )
-            skip_variables = kw_constrain['variable']
             scripts = cmip_data.filter_script(
                 folder,
                 project=project,
@@ -220,8 +220,8 @@ if filter:
                 endyears=False,
                 always_include={'variable': 'pfull'},  # i.e. bypass intersection
                 always_exclude=(
-                    {'variable': 'pfull', 'model': skip_models},
-                    {'variable': skip_variables, 'experiment': 'abrupt-4xCO2'},
+                    {'variable': 'pfull', 'model': skip_pfull_models},
+                    {'variable': kw_constrain['variable'], 'experiment': 'abrupt-4xCO2'}
                 ),
                 facets_folder=['project', 'experiment', 'table'],
                 facets_intersect=['experiment'],  # include 'variable'?
@@ -231,15 +231,18 @@ if filter:
             filtered.extend(scripts)
 
 # Average and standardize the resulting files
-# TODO: Standardize relative integration times. Armour simply took final 30 years
-# of 150 year simulations and we repeat because that is all the protocol requires.
+# NOTE: Here follow Armour et al. 2019 methodology of taking difference between final
+# 30 years of the 150 years required by the DECK abrupt-4xco2 experiment protocol. Also
+# again exclude constraint data from processing (pfull is excluded in process_files).
+# See: https://pcmdi.llnl.gov/CMIP6/Guide/dataUsers.html
 if process:
     for kwargs in dicts:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
             folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
-            # folder = '~/scratch2' if project == 'CMIP5' or kwargs['table'] == 'Emon' else '~/scratch5'  # noqa: E501
             experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
+            if kwargs is kw_constrain:
+                del experiments['abrupt-4xCO2']
             for experiment, years in experiments.items():
                 kw = {**kwargs, 'experiment': experiment}
                 cmip_data.process_files(
