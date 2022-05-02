@@ -2,24 +2,13 @@
 """
 Process and standardize datasets downloaded from ESGF.
 """
-# NOTE: Use 'conda install cdo' and 'conda install nco' for the command-line
-# tools. Use 'conda install python-cdo' and 'conda install pynco' (or 'pip
-# install cdo' and 'pip install pycdo') for only the python bindings. Note for
-# some reason cdo returns lists while nco returns strings with newlines.
-# NOTE: Again cdo is faster and easier to use than nco. Compare 'time ncremap -a
-# conserve -G latlon=36,72 tmp.nc tmp_nco.nc' to 'time cdo remapcon,r72x36 tmp.nc
-# tmp_cdo.nc'. Also can use '-t 8' for nco and '-P 8' for cdo for parallelization but
-# still makes no difference (note real time speedup is marginal and user time should
-# increase significantly, consistent with ncparallel results). The only exception
-# seems to be attribute and name management for which nco is usually faster.
 import builtins
 import os
 import re
 import shutil
-import signal
 import warnings
-import threading
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -27,7 +16,13 @@ from cdo import Cdo, CDOException  # noqa: F401
 from nco import Nco, NCOException  # noqa: F401
 from nco.custom import Atted, Rename
 
-from .download import _generate_printer, _line_parts, _line_years, _parse_constraints
+from .download import (
+    _glob_files,
+    _init_printer,
+    _line_parts,
+    _line_years,
+    _parse_constraints,
+)
 
 __all__ = [
     'process_files',
@@ -38,6 +33,27 @@ __all__ = [
     'standardize_vertical',
 ]
 
+# Initialize cdo and nco bindings
+# NOTE: Use 'conda install cdo' and 'conda install nco' for the command-line
+# tools. Use 'conda install python-cdo' and 'conda install pynco' (or 'pip
+# install cdo' and 'pip install pynco') for only the python bindings. Note for
+# some reason cdo returns lists while nco returns strings with newlines, and for
+# the signal catch fix must install from github with subdirectory using pip install
+# 'git+https://github.com/lukelbd/cdo-bindings@fix-signals#subdirectory=python'.
+# Also should use 'pip install git+https://github.com/nco/pynco.git' to fix Rename
+# issue (although currently use prn_option() for debugging help anyway).
+# NOTE: This requires cdo > 2.0.0 or cdo <= 1.9.1 (had trouble installing recent
+# cdo in base environments so try uninstalling libgfortran4, libgfortran5, and
+# libgfortran-ng then re-installing cdo and the other packages removed by that
+# action). In cdo 1.9.9 ran into weird bug where the delname line before ap2pl caused
+# infinite hang for ap2pl. Also again note cdo is faster and easier to use than nco.
+# Compare 'time ncremap -a conserve -G latlon=36,72 tmp.nc tmp_nco.nc' to 'time cdo
+# remapcon,r72x36 tmp.nc tmp_cdo.nc'. Also can use '-t 8' for nco and '-P 8' for cdo
+# for parallelization but still makes no difference (note real time speedup is
+# marginal and user time should increase significantly, consistent with ncparallel
+# results). The only exception seems to be attribute and name management.
+cdo = Cdo(env={**os.environ, 'CDO_TIMESTAT_DATE': 'first'}, options=['-s'])
+nco = Nco()  # overwrite is default, and see https://github.com/nco/pynco/issues/56
 
 # Horizontal grid constants
 # NOTE: Lowest resolution in CMIP5 models is 64 latitudes 128 longitudes (also still
@@ -109,39 +125,6 @@ GRID_SPEC = 'r72x36'  # 5.0 resolution
 VERT_LEVS = 100 * np.array(
     [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10, 5, 1]  # noqa: E501
 )
-
-
-def _init_bindings(reset=False):
-    """
-    Initialize the bindings if not already present.
-
-    Parameters
-    ----------
-    reset : bool, optional
-        Whether to reset the bindings.
-    """
-    # NOTE: Instantiating cdo registers a primitive signal handler that annoyingly
-    # suppresses kill and keyboard interrupt signals. This kludge fixes it without
-    # removing the original temp file unloading functionality.
-    def _cdo_handler(handler):
-        def _handle_signal(*args, **kwargs):
-            CDO.tempStore.__del__()
-            handler(*args, **kwargs)
-        return _handle_signal
-    if reset or any(s not in globals() for s in ('CDO', 'NCO')):
-        global CDO
-        global NCO
-        print('Initializing cdo and nco bindings.')
-        if update := threading.current_thread() is threading.main_thread():
-            sigint = signal.getsignal(signal.SIGINT)
-            sigterm = signal.getsignal(signal.SIGTERM)
-            sigsegv = signal.getsignal(signal.SIGSEGV)
-        NCO = Nco()
-        CDO = Cdo(env={**os.environ, 'CDO_TIMESTAT_DATE': 'first'})
-        if update:
-            signal.signal(signal.SIGINT, _cdo_handler(sigint))
-            signal.signal(signal.SIGTERM, _cdo_handler(sigterm))
-            signal.signal(signal.SIGSEGV, _cdo_handler(sigsegv))
 
 
 def _parse_args(years=150, climate=True, detrend=False, skipna=False, **kwargs):
@@ -231,22 +214,28 @@ def _parse_ncdump(path):
     # Also try to match e.g. 'time = UNLIMITED // (100 currently)' dimension sizes
     # and trim e.g. '1.e+20f' numeric type indicator suffixes in attribute values.
     # See: https://docs.unidata.ucar.edu/nug/current/_c_d_l.html#cdl_data_types
-    _init_bindings()
     path = Path(path).expanduser()
-    info = NCO.ncks(input=str(path), options=['--cdl', '-m']).decode()
-    regex_dim = re.compile(r'\n\s*(\w+) = [^0-9]*([0-9]+)')
-    regex_var = re.compile(r'\n\s*(char|byte|short|int|long|float|real|double) (\w+)\(')  # noqa: F401, E501
-    regex_att = re.compile(r'([-+]?[0-9._]+(?:[eE][-+]?[0-9_]+)?(?=[cbsilfrd])?|".*?(?<!\\)")')  # noqa: E501
+    info = nco.ncks(input=str(path), options=['--cdl', '-m']).decode()
+    regex_dim = re.compile(
+        r'\n\s*(\w+) = [^0-9]*([0-9]+)'
+    )
+    regex_var = re.compile(
+        r'\n\s*(?:char|byte|short|int|long|float|real|double) (\w+)\s*(?:\((.*)\))?\s*;'
+    )
+    regex_att = re.compile(
+        r'([-+]?[0-9._]+(?:[eE][-+]?[0-9_]+)?(?=[cbsilfrd])?|".*?(?<!\\)")'
+    )
     sizes = {m.group(1): m.group(2) for m in regex_dim.finditer(info)}
+    names = {m.group(1): (*s.split(','),) if (s := m.group(2)) else () for m in regex_var.finditer(info)}  # noqa: E501
     attrs = {}
-    for name in ('', *(m.group(2) for m in regex_var.finditer(info))):
+    for name in ('', *names):  # include global attributes with empty variable prefix
         regex_key = re.compile(rf'\n\s*{name}:(\w+) = (.*?)\s*;(?=\n)')
         attrs[name] = {
             m.group(1): tup[0] if len(tup) == 1 else tup
             for m in regex_key.finditer(info)
             if (tup := tuple(eval(m.group(1)) for m in regex_att.finditer(m.group(2))))  # noqa: E501
         }
-    return info, sizes, attrs
+    return info, sizes, names, attrs
 
 
 def _output_check(path, printer):
@@ -260,8 +249,13 @@ def _output_check(path, printer):
     """
     print = printer or builtins.print
     if not path.is_file() or path.stat().st_size == 0:
+        message = f'Failed to create output file: {path}.'
         path.unlink(missing_ok=True)
-        raise RuntimeError(f'Failed to create output file: {path}.')
+        tmps = sorted(path.parent.glob(path.name + '.pid*.nc*.tmp'))  # nco commands
+        message += f' Removed {len(tmps)} temporary nco files.' if tmps else ''
+        for tmp in tmps:
+            tmp.unlink(missing_ok=True)
+        raise RuntimeError(message)
     print(f'Created output file {path.name!r}.')
 
 
@@ -303,15 +297,15 @@ def compare_tables(path='~/data', variable='ta'):
     variable : str, optional
         The variable to use for file globbing.
     """
-    _init_bindings()
     path = Path(path).expanduser()
     grids, zaxes = {}, {}
-    for file in sorted(path.glob(f'{variable}_*.nc')):
+    files, _ = _glob_files(path, variable + '_*')
+    for file in files:
         key = '_'.join(file.name.split('_')[:5])
         if key in grids or key in zaxes:
             continue
         try:
-            grid, zaxis = CDO.griddes(input=str(file)), CDO.zaxisdes(input=str(file))
+            grid, zaxis = cdo.griddes(input=str(file)), cdo.zaxisdes(input=str(file))
         except CDOException:
             print(f'Warning: Failed to read file {file}.')  # message already printed
             continue
@@ -366,10 +360,11 @@ def process_files(
     # indicated in native netcdf filenames. Similar approach to filter_script().
     suffix, kwtime, constraints = _parse_args(**kwargs)
     project, constraints = _parse_constraints(reverse=True, **constraints)
-    print = printer or _generate_printer('process', **constraints)
+    project = project.lower()
+    print = printer or _init_printer('process', **constraints)
     path = Path(path).expanduser()
     dest = Path(dest).expanduser()
-    files = sorted(path.glob(f'{project.lower()}*/*.nc'))
+    files, _ = _glob_files(path, project + '*/*')
     if constraints.keys() - _line_parts.keys() != set(('project',)):
         raise ValueError(f'Input constraints {constraints.keys()} must be subset of: {_line_parts.keys()}')  # noqa: E501
     if not files:
@@ -377,6 +372,8 @@ def process_files(
     database = {}
     for file in files:
         opts = {facet: func(file.name) for facet, func in _line_parts.items()}
+        if opts['variable'] == 'pfull':  # only ever used for interpolation
+            continue
         if any(opt not in constraints.get(facet, (opt,)) for facet, opt in opts.items()):  # noqa: E501
             continue
         if file.stat().st_size == 0:
@@ -397,7 +394,7 @@ def process_files(
     constants.mkdir(exist_ok=True)
     kwargs = {'overwrite': overwrite, 'printer': print}
     for key, files in database.items():
-        # Configure names
+        # Standardize time and dependencies
         folder = dest / files[0].parent.name
         folder.mkdir(exist_ok=True)
         parts = dict(zip(_line_parts, key))
@@ -409,44 +406,34 @@ def process_files(
         output = _output_name(folder, stem, suffix)
         outputs.append(output)
         print('Output:', '/'.join((output.parent.name, output.name)))
-        def _cleanup_temps(message=None, error=False):  # noqa: E301
-            temps = (time, deps, hori, vert)
-            removed = any(temp.is_file() for temp in temps)
-            for temp in temps:
-                temp.unlink(missing_ok=True)
-            if output.is_file() and output.stat().st_size == 0:
-                output.unlink()
-            if error:
-                traceback.print_exc()  # includes exceptions during handling
-            removed = removed and 'Removed intermediate files.'
-            message = '\n'.join(s for s in (message, removed) if s)
-            print(message)
-            print()
-
-        # Repair files and merge times
-        uptodate = lambda output, *inputs: (
-            output.is_file() and output.stat().st_size > 0
-            and all(input.stat().st_mtime <= output.stat().st_mtime for input in inputs)
+        exception = lambda error: (
+            ' '.join(traceback.format_exception(None, error, error.__traceback__))
         )
         try:
             repair_files(*files, dryrun=dryrun, printer=print)
-        except Exception:
-            _cleanup_temps('Warning: Failed to standardize attributes.', error=True)
+        except Exception as error:
+            print(exception(error))
+            print('Warning: Failed to standardize attributes.\n')
             continue
-        if not overwrite and uptodate(output, *files):
-            _cleanup_temps('Skipping (up to date)...')
-            continue
+        updated = not overwrite and output.is_file() and (
+            all(file.stat().st_mtime <= output.stat().st_mtime for file in files)
+        )
+        dryrun = dryrun or updated  # always want time information for e.g. warnings
         try:
             standardize_time(*files, dryrun=dryrun, output=time, **kwtime, **kwargs)
-        except Exception:
-            _cleanup_temps('Warning: Failed to standardize temporally.', error=True)
+        except Exception as error:
+            print(exception(error))
+            print('Warning: Failed to standardize temporally.\n')
+            continue
+        if updated:
+            print('Skipping (up to date)...\n')
             continue
         if dryrun:
-            _cleanup_temps('Skipping (dry run)...')
+            print('Skipping (dry run)...\n')
             continue
 
         # Standardize horizontal grid and vertical levels
-        info, sizes, attrs = _parse_ncdump(files[0])
+        info, sizes, names, attrs = _parse_ncdump(files[0])
         ps = _output_name(constants, 'ps', parts['model'])
         pfull = _output_name(constants, 'pfull', parts['model'])
         weights = _output_name(constants, 'gencon', parts['model'])
@@ -458,35 +445,44 @@ def process_files(
         else:
             try:
                 standardize_dependencies(time, deps, **kwdeps, **kwargs)
-            except Exception:
-                _cleanup_temps('Warning: Failed to standardize dependencies.', error=True)  # noqa: E501
+            except Exception as error:
+                print(exception(error))
+                print('Warning: Failed to standardize dependencies.\n')
                 continue
         if not vertical or 'lev' not in attrs:
             deps.replace(vert)
         else:
             try:
                 standardize_vertical(deps, vert, **kwvert, **kwargs)
-            except Exception:
-                _cleanup_temps('Warning: Failed to standardize vertically.', error=True)
+            except Exception as error:
+                print(exception(error))
+                print('Warning: Failed to standardize vertically.\n')
                 continue
         if not horizontal:
             vert.replace(hori)
         else:
             try:
                 standardize_horizontal(vert, hori, **kwhori, **kwargs)
-            except Exception:
-                _cleanup_temps('Warning: Failed to standardize horizontally.', error=True)  # noqa: E501
+            except Exception as error:
+                print(exception(error))
+                print('Warning: Failed to standardize horizontally.\n')
                 continue
         hori.replace(output)
         _output_check(output, print)
-        _cleanup_temps()
+        hori.unlink(missing_ok=True)
+        vert.unlink(missing_ok=True)
+        deps.unlink(missing_ok=True)
+        time.unlink(missing_ok=True)
+        today = datetime.today().strftime('%Y-%m-%dT%H:%M:%S')  # date +%FT%T
+        print(f'Processing completed: {today}')
+        print('Removed temporary files.\n')
     return outputs
 
 
 def repair_files(*paths, dryrun=False, printer=None):
     """
-    Repair the metadata on the input files. Requires that the input name
-    matches the standard cmip naming scheme.
+    Repair the metadata on the input files in preparation for vertical
+    and horizontal standardization using `cdo`.
 
     Parameters
     ----------
@@ -497,109 +493,115 @@ def repair_files(*paths, dryrun=False, printer=None):
     printer : callable, optional
         The print function.
     """
+    # Declare attribute edits for converting pure sigma coordinates to hybrid and for
+    # handling non-standard hybrid pressure coordinates using 'ap' instead of 'a * p0'.
+    # NOTE: For cdo to successfully parse hybrid coordinates need vertices. So
+    # critical to include 'lev:bounds = "lev_bnds"' and have "lev_bnds" attrs
+    # that point to the "a_bnds", "b_bnds" hybrid level interfaces.
     print = printer or builtins.print
     pure_sigma = 'atmosphere_sigma_coordinate'
-    hybrid_height = 'atmosphere_hybrid_height_coordinate'
     hybrid_pressure = 'atmosphere_hybrid_sigma_pressure_coordinate'
+    hybrid_pressure_atted = []
+    for name in ('lev', 'lev_bnds'):
+        end = '_bnds' if '_' in name else ''
+        bnd = ' bounds' if '_' in name else ''
+        idx = '+1/2' if '_' in name else ''
+        hybrid_pressure_atted.extend(
+            att.prn_option() for att in (
+                Atted('overwrite', 'long_name', name, f'atmospheric model level{bnd}'),  # noqa: E501
+                Atted('overwrite', 'standard_name', name, hybrid_pressure),
+                Atted('overwrite', 'formula', name, 'p = ap + b*ps'),
+                Atted('overwrite', 'formula_terms', name, f'ap: ap{end} b: b{end} ps: ps'),  # noqa: E501
+            )
+        )
+        hybrid_pressure_atted.extend(
+            att.prn_option().replace('" "', '') for term in ('b', 'ap') for att in (
+                Atted('delete', ' ', f'{term}{end}'),  # remove all attributes
+                Atted('overwrite', 'long_name', f'{term}{end}', f'vertical coordinate formula term: {term}(k{idx})'),  # noqa: E501
+            )
+        )
+
+    # Declare attribute removals for interpreting hybrid height coordinates as a
+    # generalized height coordinate in preparation for cdo ap2pl pressure interpolation.
+    # NOTE: The cdo ap2pl operator standard also requires long_name="generalized height"
+    # but this causes issues when applying setzaxis so delay this attribute edit until
+    # standardize_dependencies. See: https://code.mpimet.mpg.de/issues/10692
+    # NOTE: Using -ensavg with pfull files with disagreeing time_bnds or
+    # climatology_bnds can create duplicate bounds variables, and -merge can cause
+    # issues merging with parent files (incorrect 'reserved variable zaxistype' error).
+    hybrid_height = 'atmosphere_hybrid_height_coordinate'
+    hybrid_height_atted = [
+        att.prn_option() for name in ('lev', 'lev_bnds') for att in (
+            Atted('overwrite', 'standard_name', name, 'height'),
+            Atted('delete', 'long_name', name),
+            Atted('delete', 'units', name),
+            Atted('delete', 'formula', name),
+            Atted('delete', 'formula_terms', name),
+        )
+    ]
+    hybrid_height_atted_extra = [
+        att.prn_option() for att in (
+            Atted('delete', 'climatology', 'time'),
+            Atted('delete', 'bounds', 'time'),  # prevents clean merge
+        )
+    ]
+
     print(f'Checking {len(paths)} files for required repairs.')
     for path in paths:
-        # Repair misspelled attribute names (found with GFDL data).
-        # NOTE: Leading 'dot' tells ncrename to only apply the rename if the specified
-        # attribute is found. Use ncks --cdl -m (i.e. ncdump -h) for parsing.
-        # NOTE: The pynco module is under 'nco' umbrella on github however very seldom
-        # updated. Requires specifying overwrite, output same as input, and printing
-        # rename option or else get endless hanging or an nco.ncrename error.
+        # Make the simplest generalized attribute and variable repairs
+        # NOTE: The leading 'dot' tells ncrename to look for attributes on
+        # all variables and only apply the rename if the attribute is found.
+        # NOTE: Missing vertical level axis and formula terms attributes cause cdo to
+        # detect vertical coordinates as separate grids, resulting in nebulous sounding
+        # error message before vertical interpolation methods can get farther along.
         path = Path(path).expanduser()
-        info, sizes, attrs = _parse_ncdump(path)
-        if any('formula_term' in kw for kw in attrs.values()):
-            rename = Rename('a', {'.formula_term': 'formula_terms'}).prn_option()
+        info, sizes, names, attrs = _parse_ncdump(path)
+        lev_std = attrs.get('lev', {}).get('standard_name', '')
+        lev_bnds_key = attrs.get('lev', {}).get('bounds', 'lev_bnds')
+        lev_bnds_std = attrs.get(lev_bnds_key, {}).get('standard_name', '')
+        lev_bnds_formula = attrs.get(lev_bnds_key, {}).get('formula_terms', '')
+        var_extra = ('average_T1', 'average_T2', 'average_DT')
+        if any(s in attrs for s in var_extra):
             print(
-                'Warning: Repairing GFDL-like misspelling of formula_terms '
-                + f'attribute(s) for {path.name!r}:', rename
+                'Warning: Repairing GFDL-like inclusion of unnecessary '
+                f'variable(s) for {path.name!r}:', *var_extra
             )
             if not dryrun:
-                NCO.ncrename(input=str(path), output=str(path), options=['-O', rename])
-        if 'presnivs' in sizes or 'presnivs' in attrs:
-            renames = [
+                remove = ['-x', '-v', ','.join(var_extra)]
+                nco.ncks(input=str(path), output=str(path), options=remove)
+        if any('formula_term' in kw for kw in attrs.values()):
+            rename = [Rename('a', {'.formula_term': 'formula_terms'}).prn_option()]
+            print(
+                'Warning: Repairing GFDL-like misspelling of formula_terms '
+                + f'attribute(s) for {path.name!r}:', *rename
+            )
+            if not dryrun:
+                nco.ncrename(input=str(path), output=str(path), options=rename)
+        if 'presnivs' in sizes:
+            rename = [
                 Rename(c, {'presnivs': 'lev'}).prn_option()
                 for c, src in (('d', sizes), ('v', attrs)) if 'presnivs' in src
             ]
             print(
                 'Warning: Repairing IPSL-like non-standard vertical axis name '
-                + f'presnivs for {path.name!r}:', *renames
+                + f'presnivs for {path.name!r}:', *rename
             )
             if not dryrun:
-                NCO.ncrename(input=str(path), output=str(path), options=['-O', *renames])  # noqa: E501
-
-        # Handle CESM2 models to that necessary attributes are on coordinate
-        # center variables rather than just coordinate bounds.
-        # NOTE: These models also sometimes have issues where levels are inverted
-        # but that is handled inside standardize_time() below.
-        lev = attrs.get('lev', {}).get('standard_name', '')
-        lev_bnds = attrs.get('lev_bnds', {}).get('standard_name', '')
-        if lev != hybrid_pressure and lev_bnds == hybrid_pressure:  # CESM handling
-            atted = [
-                Atted('overwrite', key, 'lev', new).prn_option()
-                for key, old in attrs['lev_bnds'].items()
-                if (new := old.replace(' bounds', '').replace('_bnds', ''))
-            ]
+                nco.ncrename(input=str(path), output=str(path), options=rename)
+        if 'lev' in attrs and attrs['lev'].get('axis', '') != 'Z':
+            atted = [Atted('overwrite', 'axis', 'lev', 'Z').prn_option()]
             print(
-                'Warning: Repairing CESM-like hybrid coordinates with missing level '
-                + f'center attributes for {path.name!r}:', ', '.join(atted)
+                'Warning: Repairing CNRM-like missing level variable axis '
+                + f'attribute for {path.name!r}:', *atted
             )
             if not dryrun:
-                NCO.ncatted(input=str(path), output=str(path), options=['-O', *atted])
-
-        # Declare standard attributes for hybrid coordinates with constant
-        # 'ap' pressure unit levels rather than the 'a' * 'p0' convention.
-        # NOTE: For cdo to successfully parse hybrid coordinates need vertices. So
-        # critical to include 'lev:bounds = "lev_bnds"' and have "lev_bnds" attrs
-        # that point to the "a_bnds", "b_bnds" hybrid level interfaces.
-        atted = []
-        for name in ('lev', 'lev_bnds'):
-            end = '_bnds' if '_' in name else ''
-            bnd = ' bounds' if '_' in name else ''
-            idx = '+1/2' if '_' in name else ''
-            atted.extend(
-                att.prn_option() for att in (
-                    Atted('overwrite', 'long_name', name, f'atmospheric model level{bnd}'),  # noqa: E501
-                    Atted('overwrite', 'standard_name', name, hybrid_pressure),
-                    Atted('overwrite', 'formula', name, 'p = ap + b*ps'),
-                    Atted('overwrite', 'formula_terms', name, f'ap: ap{end} b: b{end} ps: ps'),  # noqa: E501
-                )
-            )
-            atted.extend(
-                att.prn_option().replace('" "', '') for term in ('b', 'ap') for att in (
-                    Atted('delete', ' ', f'{term}{end}'),  # remove all attributes
-                    Atted('overwrite', 'long_name', f'{term}{end}', f'vertical coordinate formula term: {term}(k{idx})'),  # noqa: E501
-                )
-            )
-
-        # Handle IPSL models with weird extra dimension on coordinates.
-        # NOTE: Here only the hybrid coordinates used 'klevp1' so can delete it. Also
-        # probably would cause issues with remapping functions. For manual alternative
-        # to make_bounds see: https://stackoverflow.com/a/36680196/4970632
-        if 'klevp1' in attrs:  # IPSL handling
-            math = repr(
-                'b[$lev] = 0.5 * (b(1:) + b(:-2)); '
-                'ap[$lev] = 0.5 * (ap(1:) + ap(:-2)); '
-                'b_bnds[$lev, $bnds] = 0.5 * (b_bnds(:, 1:) + b_bnds(:, :-2)); '
-                'ap_bnds[$lev, $bnds] = 0.5 * (ap_bnds(:, 1:) + ap_bnds(:, :-2)); '
-                'lev_bnds = make_bounds(lev, $bnds, "lev_bnds"); '
-            )
-            print(
-                'Warning: Repairing IPSL-like hybrid coordinates with unusual missing '
-                + f'attributes for {path.name!r}:', math, ', '.join(atted)
-            )
-            if not dryrun:
-                NCO.ncap2(input=str(path), output=str(path), options=['-O', '-s', math])
-                NCO.ncatted(input=str(path), output=str(path), options=['-O', *atted])
-                NCO.ncks(input=str(path), output=str(path), options=['-O', '-x', '-v', 'klevp1'])  # noqa: E501
+                nco.ncatted(input=str(path), output=str(path), options=atted)
 
         # Handle FGOALS models with pure sigma coordinates. Currently cdo cannot
         # handle them so translate attributes so they are recdgnized as hybrid.
         # See: https://code.mpimet.mpg.de/boards/1/topics/167
-        if 'ptop' in attrs or any(s == pure_sigma for s in (lev, lev_bnds)):
+        if 'ptop' in attrs or any(s == pure_sigma for s in (lev_std, lev_bnds_std)):
+            atted = hybrid_pressure_atted
             math = repr(
                 'b[$lev] = lev; '
                 'ap[$lev] = (1 - lev) * ptop; '
@@ -611,37 +613,126 @@ def repair_files(*paths, dryrun=False, printer=None):
                 f'pressure coordinates for {path.name!r}:', math, ',', ', '.join(atted)
             )
             if not dryrun:
-                NCO.ncap2(input=str(path), output=str(path), options=['-O', '-s', math])
-                NCO.ncatted(input=str(path), output=str(path), options=['-O', *atted])
-                NCO.ncks(input=str(path), output=str(path), options=['-O', '-x', '-v', 'ptop'])  # noqa: E501
+                nco.ncap2(input=str(path), output=str(path), options=['-s', math])
+                nco.ncatted(input=str(path), output=str(path), options=atted)
+                nco.ncks(input=str(path), output=str(path), options=['-x', '-v', 'ptop'])  # noqa: E501
+
+        # Handle CESM2 models with necessary attributes on only
+        # coordinate bounds variables rather than coordinate centers.
+        # NOTE: These models also sometimes have issues where levels are inverted
+        # but that is handled inside standardize_time() below.
+        if lev_std != hybrid_pressure and lev_bnds_std == hybrid_pressure:
+            atted = [
+                Atted('overwrite', key, 'lev', new).prn_option()
+                for key, old in attrs[lev_bnds_key].items()
+                if (new := old.replace(' bounds', '').replace('_bnds', ''))
+            ]
+            print(
+                'Warning: Repairing CESM-like hybrid coordinates with missing level '
+                + f'center attributes for {path.name!r}:', ', '.join(atted)
+            )
+            if not dryrun:
+                nco.ncatted(input=str(path), output=str(path), options=atted)
+
+        # Handle CNRM models with hybrid coordinate boundaries permuted and a
+        # lev_bounds formula_terms pointing incorrectly to the actual variables.
+        # NOTE: Previously tried ncpdq for permutations but was insanely slow
+        # and would eventualy fail due to some memory allocation error. For
+        # some reason ncap2 permute (while slow) does not implode this way.
+        if all(s in attrs and s not in lev_bnds_formula for s in ('ap_bnds', 'b_bnds')):
+            math = repr(
+                'b_bnds = b_bnds.permute($lev, $bnds); '
+                'ap_bnds = ap_bnds.permute($lev, $bnds); '
+                f'{lev_bnds_key}@formula_terms = "ap: ap_bnds b: b_bnds ps: ps"; '
+            )
+            print(
+                'Warning: Repairing CNRM-like incorrect formula terms attribute '
+                f'for {path.name!r}: ', math,
+            )
+            if not dryrun:
+                nco.ncap2(input=str(path), output=str(path), options=['-s', math])
+
+        # Handle IPSL models with weird extra dimension on coordinates.
+        # NOTE: Here only the hybrid coordinates used 'klevp1' so can delete it. Also
+        # probably would cause issues with remapping functions. For manual alternative
+        # to make_bounds see: https://stackoverflow.com/a/36680196/4970632
+        # NOTE: Critical that lev_bnds bounds dimension order matches hybrid vertical
+        # coordinate bounds order (although dummy bounds variable names can differ).
+        # Verified this is only an issue for IPSL-CM6A using following:
+        # for f in cmip[56]-picontrol-amon/cl_Amon*; do m=$(echo $f | cut -d_ -f3);
+        # [[ " ${models[*]} " =~ " $m "  ]] && continue || models+=("$m"); echo "$m:";
+        # ncinfo "$f" | grep -E '(ap_bnds|a_bnds|b_bnds|lev_bnds)\('; done; unset models
+        if 'klevp1' in attrs:  # IPSL handling
+            atted = hybrid_pressure_atted
+            math = repr(
+                'b[$lev] = 0.5 * (b(1:) + b(:-2)); '
+                'ap[$lev] = 0.5 * (ap(1:) + ap(:-2)); '
+                '*b_tmp = b_bnds.permute($klevp1, $bnds); '
+                '*ap_tmp = ap_bnds.permute($klevp1, $bnds); '
+                'b_bnds[$lev, $bnds] = 0.5 * (b_tmp(1:, :) + b_tmp(:-2, :)); '
+                'ap_bnds[$lev, $bnds] = 0.5 * (ap_tmp(1:, :) + ap_tmp(:-2, :)); '
+                'lev_bnds = make_bounds(lev, $bnds, "lev_bnds"); '
+            )
+            print(
+                'Warning: Repairing IPSL-like hybrid coordinates with unusual missing '
+                + f'attributes for {path.name!r}:', math, ', '.join(atted)
+            )
+            if not dryrun:
+                nco.ncap2(input=str(path), output=str(path), options=['-s', math])
+                nco.ncatted(input=str(path), output=str(path), options=atted)
+                nco.ncks(input=str(path), output=str(path), options=['-x', '-v', 'klevp1'])  # noqa: E501
 
         # Handle hybrid height coordinates for cdo compatibility. Must remove
         # coordinate information and rely on pressure levels intsead.
-        atted = []
-        if 'orog' in attrs or any(s == hybrid_height for s in (lev, lev_bnds)):
-            atted.extend((
-                att.prn_option() for name in ('lev', 'lev_bnds') for att in (
-                    Atted('delete', 'units', name),
-                    Atted('delete', 'formula', name),
-                    Atted('delete', 'formula_terms', name),
-                    Atted('delete', 'long_name', name),
-                    Atted('overwrite', 'standard_name', name, 'height'),
-                )
-            ))
-            atted.extend((
-                att.prn_option() for att in (() if 'pfull' not in attrs else (
-                    Atted('delete', 'bounds', 'time'),
-                    Atted('delete', 'climatology', 'time'),  # not a CF standard
-                ))
-            ))
+        # NOTE: For consistency, could stop deleting orography and delay until after
+        # interpolating as with hybrid pressure file surface pressure. ...or maybe this
+        # makes sense as way to signify that these files are modified and intended
+        # for interpolation to pressure levels rather than height levels.
+        if 'orog' in attrs or any(s == hybrid_height for s in (lev_std, lev_bnds_std)):
+            atted = hybrid_height_atted
+            atted += hybrid_height_atted_extra if 'pfull' in attrs else []
             print(
                 'Warning: Converting ACCESS-like hybrid height coordinates to '
                 f'generalized height coordinates for {path.name!r}:', ', '.join(atted)
             )
             if not dryrun:
-                vars = 'a,a_bnds,b,b_bnds,orog,climatology_bnds'
-                NCO.ncatted(input=str(path), output=str(path), options=['-O', *atted])
-                NCO.ncks(input=str(path), output=str(path), options=['-O', '-x', '-v', vars])  # noqa: E501
+                var_extra = ('a', 'b', 'a_bnds', 'b_bnds', 'orog')
+                var_extra += ('time_bnds', 'climatology_bnds') if 'pfull' in attrs else ()  # noqa: E501
+                remove = ['-x', '-v', ','.join(var_extra)]
+                nco.ncatted(input=str(path), output=str(path), options=atted)
+                nco.ncks(input=str(path), output=str(path), options=remove)
+
+        # Handle MCM-UA-1-0 models with messed up longitude/latitude bounds that have
+        # non-global coverage and cause error when generating weights with 'cdo gencon'.
+        # Also remove unneeded 'areacella' that most likely contains incorrect weights
+        # (seems all other files reference this in cell_measures but excludes variable).
+        # This is the only horitontal interpolation-related correction required.
+        # NOTE: Verified only this model uses 'longitude' and 'latitude' (although can
+        # use either full name or abbreviated for matching bounds). Try the following:
+        # for f in cmip[56]-picontrol-amon/cl_Amon*; do m=$(echo $f | cut -d_ -f3);
+        # [[ " ${models[*]} " =~ " $m "  ]] && continue || models+=("$m");
+        # echo "$m: "$(ncdimlist "$f" | tail -n +2 | xargs); done; unset models
+        lon_bnds = attrs.get('longitude', {}).get('bounds', None)
+        lat_bnds = attrs.get('latitude', {}).get('bounds', None)
+        if (
+            lon_bnds and lat_bnds and 'longitude' in sizes and 'latitude' in sizes
+            and any('bounds_status' not in attrs[s] for s in ('longitude', 'latitude'))
+        ):
+            math = repr(
+                f'{lon_bnds}(-1, 1) = {lon_bnds}(0, 0) + 360.0; '
+                f'{lat_bnds}(0, 0) = -90.0; '
+                f'{lat_bnds}(-1, 1) = 90.0; '
+                f'longitude@bounds_status = "repaired"; '
+                f'latitude@bounds_status = "repaired"; '
+            )
+            print(
+                'Warning: Converting MCM-UA-like issue with non-global longitude and '
+                f'latitude bounds for {path.name!r}: ', math
+            )
+            if not dryrun:  # first flag required because is member of cell_measures
+                remove = ['-C', '-x', '-v', 'areacella']
+                nco.ncap2(input=str(path), output=str(path), options=['-s', math])
+                nco.ncks(input=str(path), output=str(path), options=remove)
 
 
 def standardize_time(
@@ -681,7 +772,6 @@ def standardize_time(
     # NOTE: Some models use e.g. file_200012-200911.nc instead of file_200001-200912.nc
     # so 'selyear' could add a few extra months... but not worth worrying about. There
     # is also endpoint inclusive file_200001-201001.nc but seems only for HadGEM3 pfull.
-    _init_bindings()
     print = printer or builtins.print
     suffix, kwtime, unknown = _parse_args(**kwargs)
     paths = [Path(file).expanduser() for file in paths]
@@ -703,21 +793,18 @@ def standardize_time(
     print(f'Initial year range: {ymin}-{ymax} ({len(years)} files)')
     yrel = kwtime.pop('years')
     ymin, ymax = ymin + yrel[0], ymin + yrel[1] - 1  # e.g. (0, 50) is 49 years
+    filt = lambda line: not re.search('(warning|error)', line)  # ignore messages
     inputs = []
     for ys, path in zip(years, paths):
-        levs = np.array(())
+        levs = []
         if 'CESM' in path.name:  # slow so only use where this is known problem
-            levs = np.array(' '.join(CDO.showlevel(input=str(path))).split(), dtype=float)  # noqa: E501
-        if invert := ('-invertlev' if np.any(levs < 0) else ''):  # any(()) is False
+            levs = ' '.join(filter(filt, cdo.showlevel(input=str(path)))).split()
+        if invert := ('-invertlev' if np.any(np.array(levs, dtype=float) < 0) else ''):
             print(f'Warning: Found negative levels for {path.name!r}. Inverting axis.')
         if ys[0] > ymax or ys[1] < ymin:
             continue
-        elif ys[1] > ymax:
-            selyear = f'-selyear,{ys[0]}/{ymax}'
-        elif ys[0] < ymin:
-            selyear = f'-selyear,{ymin}/{ys[1]}'
-        else:
-            selyear = ''
+        y0, y1 = min((ys[1], ymax)), max((ys[0], ymin))
+        selyear = '' if (y0, y1) == (ymin, ymax) else f'-selyear,{y0}/{y1}'
         inputs.append(f'{selyear} {invert} {path}')
     print(f'Filtered year range: {ymin}-{ymax} ({len(inputs)} files)')
     if dryrun:
@@ -734,7 +821,7 @@ def standardize_time(
     method = method if kwtime.pop('climate') else 'copy'
     input = f'{detrend}-mergetime [ {input} ]'
     print(f'Merging {len(inputs)} files with {method} {detrend}-mergetime.')
-    getattr(CDO, method)(input=str(input), output=str(output))
+    getattr(cdo, method)(input=str(input), output=str(output))
     _output_check(output, print)
     return output
 
@@ -776,7 +863,6 @@ def standardize_dependencies(
     # Initial stuff
     # NOTE: Data passed to this function should already have had its attributes
     # modified using repair_files(). This just adds or removes dependencies.
-    _init_bindings()
     print = printer or builtins.print
     ps = _output_name(ps, suffix='ps', parent=path)
     pfull = _output_name(pfull, suffix='pfull', parent=path)
@@ -797,9 +883,9 @@ def standardize_dependencies(
         'generalized_height': {'ps': ps, 'pfull': pfull},
         'pressure': {},
     }
-    tables = _parse_desc(CDO.zaxisdes(input=str(path)))
+    tables = _parse_desc(cdo.zaxisdes(input=str(path)))
     tables = [kw for kw in tables if kw['zaxistype'] != 'surface']
-    names = ' '.join(CDO.showname(input=str(path))).split()
+    names = ' '.join(cdo.showname(input=str(path))).split()
     axis = ', '.join(table['zaxistype'] for table in tables)
     if len(tables) != 1:
         raise NotImplementedError(f'Missing or ambiguous vertical axis {axis!r} for {path.name!r}.')  # noqa: E501
@@ -817,35 +903,28 @@ def standardize_dependencies(
     # (note applying -setzaxis,axis to pfull, whether or not the zaxistype coordinate
     # was changed, also triggers duplicate level issue). Solution is to apply long_name
     # on-the-fly before ap2pl. See: https://code.mpimet.mpg.de/issues/10692
-    merge = []
-    attrs = []
+    atted, merge = [], ''
     for name, file in dependencies[axis].items():
         if name in names:
-            print(f'File {path.name!r} already has dependency {name!r}.')
             continue
+        merge = f'{merge} {file}'
         if rebuild or (not file.is_file() or file.stat().st_size == 0):
             print(f'Generating pressure dependency file {file.name!r}.')
-            glob = f'{name}_*{model}_*.nc' if model else f'{name}_*.nc'
-            input = ' '.join(f'-ymonmean {f}' for f in search.glob(glob))
-            if not input:
+            glob = f'{name}_*{model}_*' if model else f'{name}_*'
+            files, _ = _glob_files(search, glob)
+            if not files:
                 raise ValueError(f'Glob pattern {glob!r} returned no results.')
-            print(f'Averaging {len(files)} files with ensavg -ymonmean.')
-            repair_files(*search.glob(glob), printer=print)
-            CDO.ensavg(input=input, output=str(file))
+            input = ' '.join(f'-ymonavg -selname,{name} {f}' for f in files)
+            repair_files(*files, printer=print)
+            print(f'Averaging {len(files)} files with ensavg -ymonavg.')
+            cdo.ensavg(input=input, output=str(file))
             _output_check(file, print)
-        if name != 'pfull':
-            merge.append(str(file))
-            pass
-        else:
+        if name == 'pfull':
             text = file.parent / (file.stem + '.txt')
-            data = '\n'.join(CDO.zaxisdes(input=str(file)))
+            data = '\n'.join(cdo.zaxisdes(input=str(file)))
             open(text, 'w').write(data)
-            merge.append(f'{file} -setzaxis,{text}')  # applied to original file
-            attrs.extend((
-                'lev@long_name="generalized height"',
-                'lev@standard_name="height"',
-                'lev@units=',
-            ))
+            merge = f'{merge} -setzaxis,{text}'  # applied to original file
+            atted = [Atted('overwrite', 'long_name', 'lev', 'generalized height').prn_option()]  # noqa: E501
 
     # Merge the dependencies
     # NOTE: Tried applying long_name as part of the chain before ap2pl but seems axis
@@ -855,9 +934,11 @@ def standardize_dependencies(
         print(f'File {path.name!r} already has required dependencies.')
         shutil.copy(path, output)
     else:
-        attrs, merge = ','.join(attrs), ' '.join(merge)
-        print(f'Adding pressure dependencies with {attrs} -merge {merge}.')
-        CDO.setattribute(attrs, input=f'-merge {merge} {path}', output=str(output))
+        print(f'Adding pressure dependencies with -merge {merge}.')
+        cdo.merge(input=f'{merge} {path}', output=str(output))
+        if atted:
+            print('Preparing attributes for interpolation with:', *atted)
+            nco.ncatted(input=str(output), output=str(output), options=atted)
         _output_check(output, print)
     return output
 
@@ -884,7 +965,6 @@ def standardize_vertical(path, output=None, overwrite=False, printer=None):
     coordinates and model level pressure to interpolate hybrid height coordinates.
     """
     # Initial stuff
-    _init_bindings()
     print = printer or builtins.print
     path = Path(path).expanduser()
     output = _output_name(output, suffix='standard-vertical', parent=path)
@@ -904,7 +984,7 @@ def standardize_vertical(path, output=None, overwrite=False, printer=None):
         'generalized_height': '-ap2pl,%s -invertlev',
         'pressure': '-intlevel,%s',
     }
-    tables = _parse_desc(CDO.zaxisdes(input=str(path)))
+    tables = _parse_desc(cdo.zaxisdes(input=str(path)))
     tables = [kw for kw in tables if kw['zaxistype'] != 'surface']
     axis = ', '.join(table['zaxistype'] for table in tables)
     if len(tables) != 1:
@@ -916,6 +996,9 @@ def standardize_vertical(path, output=None, overwrite=False, printer=None):
     print('Destination vertical levels:', ', '.join(map(str, VERT_LEVS.flat)))
 
     # Interpolate to pressure levels with cdo
+    # NOTE: removing unneeded variables by leading chain with -delname,ps,orog,pfull
+    # seemed to cause cdo > 1.9.1 and cdo < 2.0.0 to hang indefinitely. Not sure
+    # why and not worth issuing bug report but make sure cdo is up to date.
     # NOTE: Currently only some obscure extended monthly data and the core cloud
     # variables are output on model levels. Otherwise data is on pressure levels.
     # Avoid interpolation by selecting same pressure levels as standard output.
@@ -929,9 +1012,9 @@ def standardize_vertical(path, output=None, overwrite=False, printer=None):
     else:
         method = methods[axis] % ','.join(map(str, VERT_LEVS.flat))
         print(f'Vertically interpolating with method {method}.')
-        CDO.delname('ps,orog', input=f'{method} {path}', output=str(output))
+        cdo.delname('ps,orog,pfull', input=f'{method} {path}', output=str(output))
     _output_check(output, print)
-    tables = _parse_desc(CDO.zaxisdes(input=str(output)))
+    tables = _parse_desc(cdo.zaxisdes(input=str(output)))
     axis = ', '.join(table['zaxistype'] for table in tables)
     if axis != 'pressure' or not np.all(np.isclose(tables[0]['levels'], VERT_LEVS)):
         levels = ', '.join(map(str, tables[0]['levels'].flat))
@@ -971,7 +1054,6 @@ def standardize_horizontal(
     Paper: https://doi.org/10.1175/1520-0493(1999)127%3C2204:FASOCR%3E2.0.CO;2
     """
     # Initial stuff
-    _init_bindings()
     method = method or 'con'
     method = method if method[:3] == 'gen' else 'gen' + method
     print = printer or builtins.print
@@ -985,7 +1067,7 @@ def standardize_horizontal(
     # Parse input horizontal grid
     # NOTE: Sometimes cdo detects dummy 'generic' grids of size 1 or 2 indicating
     # scalar quantities or bounds. Try to ignore these grids.
-    result = CDO.griddes(input=str(path))
+    result = cdo.griddes(input=str(path))
     tables = [kw for kw in _parse_desc(result) if kw['gridsize'] > 2]
     if not tables:
         raise NotImplementedError(f'Missing horizontal grid for {path.name!r}.')
@@ -1008,9 +1090,9 @@ def standardize_horizontal(
     else:
         if rebuild or not weights.is_file() or weights.stat().st_size == 0:
             print(f'Generating destination grid weights {weights.name!r}.')
-            getattr(CDO, method)(GRID_SPEC, input=str(path), output=str(weights))
+            getattr(cdo, method)(GRID_SPEC, input=str(path), output=str(weights))
             _output_check(weights, print)
         print(f'Horizontally interpolating with grid weights {weights.name!r}.')
-        CDO.remap(f'{GRID_SPEC},{weights}', input=str(path), output=str(output))
+        cdo.remap(f'{GRID_SPEC},{weights}', input=str(path), output=str(output))
         _output_check(output, print)
     return output
