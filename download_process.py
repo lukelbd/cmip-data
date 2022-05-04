@@ -6,9 +6,9 @@ import cmip_data
 
 # Global arguments
 # NOTE: Here have 'intvadse' and 'intvaw' for IPSL-CM6A-LR, CNRM-CM6-1, CNRM-ESM2-1,
-# and CNRM-CM6-1-HR (last one was briefly unavailable). Have 'intvaw' for ACCESS-CM2,
-# ACCESS-CM1-5, MIROC-ES2L, and MIROC-ES2H, and 'intvadse' for IPSL-CM5A2-INCA. Have
-# control 'vt' and 'vqint' for HadGEM3-GC31-LL, HadGEM3-GC31-MM, and UKESM1-0-LL.
+# and CNRM-CM6-1-HR (last one was briefly unavailable). Have only 'intvaw' for
+# ACCESS-CM2, ACCESS-CM1-5, and MIROC-ES2L, and only 'intvadse' for IPSL-CM5A2-INCA.
+# Have control 'vt' and 'vqint' for HadGEM3-GC31-LL, HadGEM3-GC31-MM, and UKESM1-0-LL.
 # NOTE: Here 'tauu' and 'tauv' are for jet calculations, since time-vertical-zonal
 # mean tauu is balanced by eddy-momentum convergence (integrated meridional wind is zero
 # due to mass conservation) and tauv is balanced by Coriolis torque from zonal wind.
@@ -29,18 +29,19 @@ import cmip_data
 # verified that 'parent_variable_label' is 'r1i1p1'), and both control and abrupt
 # simulations of CNRM-CM6-1, CNRM-CM6-1-HR, CNRM-ESM2-1, MIROC-ES2L, and UKESM1-0-LL
 # (uses forcing 'f2', and in contrast with HADGEM3 models the control forcing is also
-# 'f2'). There is also a MIROC-ES2H model that uses 'f2' but Mark seems to have missed.
+# 'f2'). There is also a MIROC-ES2H model that uses 'f2' that initially seems missed by
+# Mark but actually only provides single year of data for all variables (super weird).
 # Searched around and seems there are no other missing non-'r1i1p1f1' simulation pairs.
-# In sum we added 5 models but missed 9 models for a total of 4 models fewer (48 instead
-# of 52). We can rectify everything but the IPSL model, plus add the extra MIROC model,
-# to provide a total of 5 models more than Mark Zelinka (57 instead of 52).
+# In sum we added 5 models but missed 9 models for a total of 4 models fewer (47 instead
+# of 52). We can rectify everything but the IPSL model to provide a total of 4 models
+# more than Mark Zelinka (56 instead of 52).
 constrain = True  # control data for constraints?
 circulation = True  # control and response data for implicit circulation stuff?
 feedbacks = True  # control and response data for feedbacks?
 explicit = True  # control and response data for explicit circulation stuff?
 download = False
-filter = True
-process = False
+filter = False
+process = True
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
 # NOTE: The abrupt and control radiation data is needed for 'local feedback parameter'
@@ -209,9 +210,18 @@ if filter:
         projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
         for project in projects:
             folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
-            skip_pfull_models = (
-                'FGOALS-g2', 'FGOALS-g3', 'E3SM-1-1', 'E3SM-1-1-ECA',
-                'IPSL-CM5A2', 'IPSL-CM5A2-INCA', 'IPSL-CM6A-LR', 'IPSL-CM6A-LR-INCA',
+            models_skip = (
+                'MIROC-ES2H',  # only provides single year of data
+            )
+            models_skip_pfull = (
+                'FGOALS-g2',  # sigma coordinates treated as hybrid
+                'FGOALS-g3',  # sigma coordinates treated as hybrid
+                'E3SM-1-1',  # does not have abrupt simulation
+                'E3SM-1-1-ECA',  # does not have abrupt simulation
+                'IPSL-CM5A2',  # special hybrid coordinates interpolated
+                'IPSL-CM5A2-INCA',  # special hybrid coordinates interpolated
+                'IPSL-CM6A-LR',  # special hybrid coordinates interpolated
+                'IPSL-CM6A-LR-INCA',  # special hybrid coordinates interpolated
             )
             scripts = cmip_data.filter_script(
                 folder,
@@ -220,7 +230,8 @@ if filter:
                 endyears=False,
                 always_include={'variable': 'pfull'},  # i.e. bypass intersection
                 always_exclude=(
-                    {'variable': 'pfull', 'model': skip_pfull_models},
+                    {'model': models_skip},
+                    {'variable': 'pfull', 'model': models_skip_pfull},
                     {'variable': kw_constrain['variable'], 'experiment': 'abrupt-4xCO2'}
                 ),
                 facets_folder=['project', 'experiment', 'table'],
@@ -254,8 +265,10 @@ if process:
                     years=years,
                     **kw,
                 )
-            experiments = ('abrupt-4xCO2',) if kwargs is kw_feedbacks else ()
-            for experiment in experiments:
+            experiments = {'abrupt-4xCO2': 150}
+            if kwargs is not kw_feedbacks:
+                experiments.clear()
+            for experiment, years in experiments.items():
                 kw = {**kwargs, 'experiment': experiment}
                 cmip_data.process_files(
                     folder,
@@ -263,5 +276,6 @@ if process:
                     climate=False,
                     overwrite=False,
                     dryrun=False,
-                    years=150,
+                    years=years,
+                    **kw,
                 )
