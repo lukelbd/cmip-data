@@ -361,7 +361,7 @@ def process_files(
     suffix, kwtime, constraints = _parse_args(**kwargs)
     project, constraints = _parse_constraints(reverse=True, **constraints)
     project = project.lower()
-    print = printer or _init_printer('process', **constraints)
+    print = printer or _init_printer('process', suffix, **constraints)
     path = Path(path).expanduser()
     dest = Path(dest).expanduser()
     files, _ = _glob_files(path, project + '*/*')
@@ -418,9 +418,8 @@ def process_files(
         updated = not overwrite and output.is_file() and (
             all(file.stat().st_mtime <= output.stat().st_mtime for file in files)
         )
-        dryrun = dryrun or updated  # always want time information for e.g. warnings
         try:
-            standardize_time(*files, dryrun=dryrun, output=time, **kwtime, **kwargs)
+            standardize_time(*files, dryrun=dryrun or updated, output=time, **kwtime, **kwargs)  # noqa: E501
         except Exception as error:
             print(exception(error))
             print('Warning: Failed to standardize temporally.\n')
@@ -610,7 +609,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             )
             print(
                 'Warning: Converting FGOALS-like sigma coordinates to hybrid sigma '
-                f'pressure coordinates for {path.name!r}:', math, ',', ', '.join(atted)
+                f'pressure coordinates for {path.name!r}:', math, ',', ' '.join(atted)
             )
             if not dryrun:
                 nco.ncap2(input=str(path), output=str(path), options=['-s', math])
@@ -629,7 +628,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             ]
             print(
                 'Warning: Repairing CESM-like hybrid coordinates with missing level '
-                + f'center attributes for {path.name!r}:', ', '.join(atted)
+                + f'center attributes for {path.name!r}:', ' '.join(atted)
             )
             if not dryrun:
                 nco.ncatted(input=str(path), output=str(path), options=atted)
@@ -675,7 +674,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             )
             print(
                 'Warning: Repairing IPSL-like hybrid coordinates with unusual missing '
-                + f'attributes for {path.name!r}:', math, ', '.join(atted)
+                + f'attributes for {path.name!r}:', math, ' '.join(atted)
             )
             if not dryrun:
                 nco.ncap2(input=str(path), output=str(path), options=['-s', math])
@@ -693,7 +692,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             atted += hybrid_height_atted_extra if 'pfull' in attrs else []
             print(
                 'Warning: Converting ACCESS-like hybrid height coordinates to '
-                f'generalized height coordinates for {path.name!r}:', ', '.join(atted)
+                f'generalized height coordinates for {path.name!r}:', ' '.join(atted)
             )
             if not dryrun:
                 var_extra = ('a', 'b', 'a_bnds', 'b_bnds', 'orog')
@@ -772,6 +771,11 @@ def standardize_time(
     # NOTE: Some models use e.g. file_200012-200911.nc instead of file_200001-200912.nc
     # so 'selyear' could add a few extra months... but not worth worrying about. There
     # is also endpoint inclusive file_200001-201001.nc but seems only for HadGEM3 pfull.
+    # NOTE: FIO-ESM-2-0 control psl returned 300-399 and 400-499 in addition to 301-400
+    # and 401-500, CASESM2=0 rsus retruned 001-600 control and 001-167 abrupt in
+    # addition to standard 001-550, and MIROC-ES2H returned just a single 1850 file
+    # for most variables. Can remove MIROC in filter_wgets with always_exclude but
+    # others have to be handled manually after calling download scripts.
     print = printer or builtins.print
     suffix, kwtime, unknown = _parse_args(**kwargs)
     paths = [Path(file).expanduser() for file in paths]
@@ -784,7 +788,7 @@ def standardize_time(
         print(f'Output file already exists: {output.name!r}.')
         return output
 
-    # Filter input times
+    # Filter input times and print warning if time coverage is partial
     # NOTE: This includes kludge for individual CESM2-WACCM-FV2 files with incorrect
     # (negative) levels. Must invert or else cdo averages upper with lower levels.
     # After invert cdo raises a level mismatch warning but results will be correct.
@@ -793,24 +797,44 @@ def standardize_time(
     print(f'Initial year range: {ymin}-{ymax} ({len(years)} files)')
     yrel = kwtime.pop('years')
     ymin, ymax = ymin + yrel[0], ymin + yrel[1] - 1  # e.g. (0, 50) is 49 years
-    filt = lambda line: not re.search('(warning|error)', line)  # ignore messages
-    inputs = []
+    ignore = lambda line: not re.search('(warning|error)', line)  # ignore messages
+    inputs, ranges = [], []
     for ys, path in zip(years, paths):
         levs = []
         if 'CESM' in path.name:  # slow so only use where this is known problem
-            levs = ' '.join(filter(filt, cdo.showlevel(input=str(path)))).split()
+            levs = ' '.join(filter(ignore, cdo.showlevel(input=str(path)))).split()
         if invert := ('-invertlev' if np.any(np.array(levs, dtype=float) < 0) else ''):
-            print(f'Warning: Found negative levels for {path.name!r}. Inverting axis.')
+            dryrun or print(f'Warning: Inverting level axis for {path.name!r}.')
         if ys[0] > ymax or ys[1] < ymin:
             continue
-        y0, y1 = min((ys[1], ymax)), max((ys[0], ymin))
-        selyear = '' if (y0, y1) == (ymin, ymax) else f'-selyear,{y0}/{y1}'
-        inputs.append(f'{selyear} {invert} {path}')
+        y0, y1 = max((ys[0], ymin)), min((ys[1], ymax))
+        for range_ in ranges:
+            if range_[0] in (y1, y1 + 1):
+                range_[0] = y0  # prepend to existing distinct range
+                break
+            if range_[1] in (y0, y0 - 1):
+                range_[1] = y1  # append to existing distinct time range
+                break
+        else:
+            ranges.append([y0, y1])
+        string = '' if (y0, y1) == (ymin, ymax) else f'-selyear,{y0}/{y1}'
+        inputs.append(f'{string} {invert} {path}')
     print(f'Filtered year range: {ymin}-{ymax} ({len(inputs)} files)')
+    if not inputs:
+        message = f'No files found within requested range: {ymin}-{ymax}'
+        if dryrun:
+            print(f'Warning: {message}')
+        else:
+            raise RuntimeError(message)
+    if len(ranges) > 1 or ranges and ranges[0] != [ymin, ymax]:
+        ranges = ', '.join('-'.join(map(str, range_)) for range_ in ranges)
+        message = f'Full year range not available from file ranges: {ranges}'
+        if dryrun:
+            print(f'Warning: {message}')
+        else:
+            raise RuntimeError(message)
     if dryrun:
         return  # only print time information
-    if not inputs:
-        raise ValueError(f'No files found within requested range: {ymin}-{ymax}')
     input = ' '.join(inputs)
 
     # Take time averages
