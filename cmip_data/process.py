@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Process and standardize datasets downloaded from ESGF.
+Process groups of files downloaded from ESGF.
 """
 import builtins
+import copy
 import os
 import re
 import shutil
-import warnings
 import traceback
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -16,22 +17,28 @@ from cdo import Cdo, CDOException  # noqa: F401
 from nco import Nco, NCOException  # noqa: F401
 from nco.custom import Atted, Rename
 
-from .download import (
+from .facets import (
+    _file_parts,
     _glob_files,
-    _init_printer,
-    _line_parts,
-    _line_years,
+    _item_dates,
+    _item_years,
     _parse_constraints,
+    FacetPrinter,
+    FacetDatabase,
+    FACETS_FOLDER,
+    FACETS_SUMMARY,
 )
 
 __all__ = [
     'process_files',
     'repair_files',
-    'standardize_dependencies',
-    'standardize_time',
     'standardize_horizontal',
     'standardize_vertical',
+    'standardize_time',
+    'summarize_grids',
+    'summarize_processed',
 ]
+
 
 # Initialize cdo and nco bindings
 # NOTE: Use 'conda install cdo' and 'conda install nco' for the command-line
@@ -55,26 +62,7 @@ __all__ = [
 cdo = Cdo(env={**os.environ, 'CDO_TIMESTAT_DATE': 'first'}, options=['-s'])
 nco = Nco()  # overwrite is default, and see https://github.com/nco/pynco/issues/56
 
-# Horizontal grid constants
-# NOTE: Lowest resolution in CMIP5 models is 64 latitudes 128 longitudes (also still
-# used by BCC-ESM1 in CMIP6) and grids are mix of regular lon-lat and guassian (assume
-# that former was interpolated). Select regular grid spacing with similar resolution but
-# not coarser than necessary. See Horizontal grids->Grid description->Predefined grids
-# for details. Also use the following bash code to summarize resolutions:
-# unset models; for f in ts_Amon*; do
-#   model=$(echo $f | cut -d_ -f3)
-#   [[ " ${models[*]} " =~ " $model " ]] && continue || models+=("$model")
-#   echo "$model:" && ncdims $f | grep -E 'lat|lon' | tr -s ' ' | xargs
-# done
-GRID_SPEC = 'r360x180'  # 1.0 resolution
-GRID_SPEC = 'r180x90'  # 2.0 resolution
-GRID_SPEC = 'r144x72'  # 2.5 resolution
-GRID_SPEC = 'r72x36'  # 5.0 resolution
-
 # Vertical grid constants
-# NOTE: Some models use floats and ahve slight offsets for standard pressure levels
-# while others use integer, so important to use np.isclose() when comparing. Note all
-# pressure level models use Pa and are ordered with decreasing pressure.
 # NOTE: Some models have missing 'bounds' attribute which causes 'cdo ngrids' to
 # report two grids rather than one (single point grid for 'a_bnds' and 'b_bnds'
 # variables) so must add attribute before standardization.
@@ -91,12 +79,11 @@ GRID_SPEC = 'r72x36'  # 5.0 resolution
 # cmip5-picontrol-amon/cl_Amon_FGOALS-g2_piControl_r1i1p1_020101-021012.nc
 # cmip6-picontrol-amon/cl_Amon_FGOALS-g3_piControl_r1i1p1f1_gn_020001-020912.nc
 # NOTE: Some models have zaxistype 'generic' and longname 'hybrid height coordinates'
-# and require 'pfull' for vertical interpolation. This consists of ACCESS, KACE, UKESM,
-# and HadGEM. Annoyingly, the CMIP5 versions only provide 'pfull' for picontrol not
-# abrupt-4xco2, so have to manually copy to folder. Similarly, HadGEM only provides
-# 'pfull' for control-1950 and UKESM only provides 'pfull' for AERmon instead of Amon
-# so we manually obtained wget scripts using the online interface. Also have to manually
-# remove 'pfull' for sigma coordinate FGOALS-g3 which is not needed. Relevant files:
+# and require 'pfull' for vertical interpolation. These consist of ACCESS, KACE, UKESM,
+# and HadGEM. Since CMIP5 only provides 'pfull' for control experiments we use these
+# even for forced experiments. Also HadGEM only provides 'pfull' for control-1950 and
+# UKESM only provides 'pfull' for AERmon instead of Amon so we manually obtained wget
+# scripts using the online interface (see also the filter command). Relevant files:
 # cmip5-picontrol-amon/cl_Amon_ACCESS1-0_piControl_r1i1p1_030001-032412.nc
 # cmip5-picontrol-amon/cl_Amon_ACCESS1-3_piControl_r1i1p1_025001-027412.nc
 # cmip6-picontrol-amon/cl_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_095001-096912.nc
@@ -126,17 +113,82 @@ VERT_LEVS = 100 * np.array(
     [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10, 5, 1]  # noqa: E501
 )
 
+# Horizontal grid constants
+# NOTE: Lowest resolution in CMIP5 models is 64 latitudes 128 longitudes (also still
+# used by BCC-ESM1 in CMIP6) and grids are mix of regular lon-lat and guassian (assume
+# that former was interpolated). Select regular grid spacing with similar resolution but
+# not coarser than necessary. See Horizontal grids->Grid description->Predefined grids
+# for details. Also use the following bash code to summarize resolutions:
+# unset models; for f in ts_Amon*; do
+#   model=$(echo $f | cut -d_ -f3)
+#   [[ " ${models[*]} " =~ " $model " ]] && continue || models+=("$model")
+#   echo "$model:" && ncdims $f | grep -E 'lat|lon' | tr -s ' ' | xargs
+# done
+GRID_SPEC = 'r360x180'  # 1.0 resolution
+GRID_SPEC = 'r180x90'  # 2.0 resolution
+GRID_SPEC = 'r144x72'  # 2.5 resolution
+GRID_SPEC = 'r72x36'  # 5.0 resolution
 
-def _parse_args(years=150, climate=True, detrend=False, skipna=False, **kwargs):
+
+def _output_check(path, printer):
+    """
+    Check that the output file exists.
+
+    Parameters
+    ----------
+    path : path-like
+        The netcdf path.
+    """
+    print = printer or builtins.print
+    if not path.is_file() or path.stat().st_size == 0:
+        message = f'Failed to create output file: {path}.'
+        path.unlink(missing_ok=True)
+        tmps = sorted(path.parent.glob(path.name + '.pid*.nc*.tmp'))  # nco commands
+        message += f' Removed {len(tmps)} temporary nco files.' if tmps else ''
+        for tmp in tmps:
+            tmp.unlink(missing_ok=True)
+        raise RuntimeError(message)
+    print(f'Created output file {path.name!r}.')
+
+
+def _output_path(path=None, *parts):
+    """
+    Generate an output path from an input path.
+
+    Parameters
+    ----------
+    path : path-like
+        The input path.
+    *parts : str optional
+        The underscore-separated components to use for the default path.
+    """
+    if path:
+        path = Path(path).expanduser()
+    else:
+        path = Path()
+    if path.is_dir():
+        parts = tuple(filter(None, parts))  # delete empty components
+        if parts:
+            path = path / ('_'.join(parts) + '.nc')
+        else:
+            raise ValueError('Path was not provided and default parts are missing.')
+    return path
+
+
+def _parse_time(
+    years=150, climate=True, nodrift=False, skipna=False, **constraints
+):
     """
     Parse variables related to time standardization and create a file name suffix.
 
     Parameters
     ----------
+    constraints : bool, optional
+        Whether to allow constraint keyword arguments.
     **kwargs
         See `standardize_time` for details.
     """
-    # NOTE: File format is e.g. 'file_0000-1000-climate-notrend.nc'. Each modeling
+    # NOTE: File format is e.g. 'file_0000-1000-climate-nodrift.nc'. Each modeling
     # center uses different date schemes for experiments so years must be relative.
     # Similar to 'file_standard-grid.nc' and 'file_standard-levs.nc' used below.
     if not np.iterable(years):
@@ -147,54 +199,20 @@ def _parse_args(years=150, climate=True, detrend=False, skipna=False, **kwargs):
     name = '-'.join((
         f'{year1:04d}-{year2:04d}',
         ('series', 'climate')[climate],
-        *(('notrend',) if detrend else ()),
+        *(('nodrift',) if nodrift else ('nodrift',) if nodrift else ()),
     ))
-    kw = {
+    kwargs = {
         'years': years,
         'climate': climate,
-        'detrend': detrend,
+        'nodrift': nodrift,
         'skipna': skipna,
     }
-    return name, kw, kwargs
-
-
-def _parse_desc(data):
-    """
-    Convert the cdo grid or zaxis description(s) into a dictionary.
-
-    Parameters
-    ----------
-    data : str or list
-        The cdo grid or zaxis data file (or result of `cdo.griddes` or `cdo.zaxisdes`).
-    """
-    # NOTE: All cdo descriptions are formatted with block comment headers i.e.
-    # '#\n# [Axis|Grid] 1\n#\n...', then scalar items appearing after the equal sign
-    # on the same line and only arrays formatted on multiple lines.
-    tables = []
-    string = data if isinstance(data, str) else '\n'.join(data)
-    regex_tables = re.compile(r'(?:\A|\n)(?:#.*\n)?([^#][\s\S]*?)(?:\Z|\n#)')
-    regex_items = re.compile(r'(?:\A|\n)(\w*)\s*=\s*([\s\S]*?(?=\Z|\n.*=))')
-    regex_str = re.compile(r'\A".*?"\Z')  # note strings sometimes have no quotations
-    for m in regex_tables.finditer(string):
-        content = m.group(1)
-        tables.append(table := {})
-        for m in regex_items.finditer(content):
-            key, value = m.groups()
-            if regex_str.match(value):
-                table[key] = eval(value)
-            else:
-                value = [s.strip() for s in value.split()]
-                for dtype in (int, float, str):
-                    try:
-                        value = np.array(value, dtype=dtype)
-                    except ValueError:
-                        continue
-                    else:
-                        table[key] = value.item() if value.size == 1 else value
-                    break
-                else:
-                    warnings.warn(f'Ignoring unexpected data pair {key} = {value!r}.')
-    return tables
+    if constraints.pop('constraints', False):
+        return name, kwargs, *_parse_constraints(**constraints)
+    elif not constraints:
+        return name, kwargs
+    else:
+        raise TypeError(f'Unexpected keyword argument(s): {kwargs}')
 
 
 def _parse_ncdump(path):
@@ -238,90 +256,52 @@ def _parse_ncdump(path):
     return info, sizes, names, attrs
 
 
-def _output_check(path, printer):
+def _parse_ncgrids(data):
     """
-    Check that the output file exists.
+    Convert the cdo grid or zaxis description(s) into a dictionary.
 
     Parameters
     ----------
-    path : path-like
-        The netcdf path.
+    data : str or list
+        The cdo grid or zaxis data file (or result of `cdo.griddes` or `cdo.zaxisdes`).
     """
-    print = printer or builtins.print
-    if not path.is_file() or path.stat().st_size == 0:
-        message = f'Failed to create output file: {path}.'
-        path.unlink(missing_ok=True)
-        tmps = sorted(path.parent.glob(path.name + '.pid*.nc*.tmp'))  # nco commands
-        message += f' Removed {len(tmps)} temporary nco files.' if tmps else ''
-        for tmp in tmps:
-            tmp.unlink(missing_ok=True)
-        raise RuntimeError(message)
-    print(f'Created output file {path.name!r}.')
-
-
-def _output_name(path=None, stem=None, suffix=None, parent='~/data.nc'):
-    """
-    Generate a path from an input path.
-
-    Parameters
-    ----------
-    path : path-like
-        The input path.
-    stem, suffix : str optional
-        The stem and suffix to use for default values.
-    parent : path-like, optional
-        The reference file to use for default values.
-    """
-    parent = Path(parent).expanduser()
-    if path:
-        path = Path(path).expanduser()
-    else:
-        path = parent.parent
-    if path.is_dir():
-        suffix = suffix or 'copy'
-        stem = stem or parent.stem
-        name = stem + '_' + suffix + '.nc'
-        path = path / name
-    return path
-
-
-def compare_tables(path='~/data', variable='ta'):
-    """
-    Print descriptions of horizontal grids and vertical levels
-    for cmip files in the specified paths.
-
-    Parameters
-    ----------
-    path : str, optional
-        The path.
-    variable : str, optional
-        The variable to use for file globbing.
-    """
-    path = Path(path).expanduser()
-    grids, zaxes = {}, {}
-    files, _ = _glob_files(path, variable + '_*')
-    for file in files:
-        key = '_'.join(file.name.split('_')[:5])
-        if key in grids or key in zaxes:
-            continue
-        try:
-            grid, zaxis = cdo.griddes(input=str(file)), cdo.zaxisdes(input=str(file))
-        except CDOException:
-            print(f'Warning: Failed to read file {file}.')  # message already printed
-            continue
-        grid, zaxis = map(_parse_desc, (grid, zaxis))
-        grids[key], zaxes[key] = grid, zaxis
-        print(f'\n{file.name}:')
-        for table in (*grid, *zaxis):
-            print(', '.join(f'{k}: {v}' for k, v in table.items() if not isinstance(v, np.ndarray)))  # noqa: E501
-            if table in zaxis and 'vctsize' not in table and table['size'] > 1:
-                warnings.warn('Vertical axis does not have vertices.')
+    # NOTE: All cdo descriptions are formatted with block comment headers i.e.
+    # '#\n# [Axis|Grid] 1\n#\n...', then scalar items appearing after the equal sign
+    # on the same line and only arrays formatted on multiple lines.
+    grids = []
+    string = data if isinstance(data, str) else '\n'.join(data)
+    regex_tables = re.compile(r'(?:\A|\n)(?:#.*\n)?([^#][\s\S]*?)(?:\Z|\n#)')
+    regex_items = re.compile(r'(?:\A|\n)(\w*)\s*=\s*([\s\S]*?(?=\Z|\n.*=))')
+    regex_str = re.compile(r'\A".*?"\Z')  # note strings sometimes have no quotations
+    for m in regex_tables.finditer(string):
+        content = m.group(1)
+        grids.append(grid := {})
+        for m in regex_items.finditer(content):
+            key, value = m.groups()
+            if regex_str.match(value):
+                grid[key] = eval(value)
+            else:
+                value = [s.strip() for s in value.split()]
+                for dtype in (int, float, str):
+                    try:
+                        value = np.array(value, dtype=dtype)
+                    except ValueError:
+                        continue
+                    else:
+                        grid[key] = value.item() if value.size == 1 else value
+                    break
+                else:
+                    warnings.warn(f'Ignoring unexpected data pair {key} = {value!r}.')
+    return grids
 
 
 def process_files(
-    path='~/data',
-    dest='~/data',
-    dependencies=True,
+    *paths,
+    output='~/data',
+    constants='~/data',
+    facets=None,
+    flagship_translate=False,
+    method=None,
     vertical=True,
     horizontal=True,
     overwrite=False,
@@ -334,19 +314,25 @@ def process_files(
 
     Parameters
     ----------
-    path : path-like
-        The input path for the raw data.
-    dest : path-like, optional
+    *paths : path-like
+        The input path(s) for the raw data.
+    output : path-like, optional
         The output directory for the averaged and standardized data.
+    constants : path-like, optional
+        The output directory for constants.
+    facets : str, optional
+        The facets for grouping into output folders.
+    flagship_translate : bool, optional
+        Whether to group ensembles according to flagship or nonflagship identity.
     dependencies : bool, optional
         Whether to automatically add pressure dependencies.
     vertical : bool, optional
         Whether to standardize vertical levels.
     horizontal : bool, optional
         Whether to standardize horizontal grid.
-    overwrite : bool, optional
+    overwrite : bool, default: True
         Whether to overwrite existing files or skip them.
-    printer : callable, optional
+    printer : callable, default: `print`
         The print function.
     dryrun : bool, optional
         Whether to only print time information and exit.
@@ -358,54 +344,48 @@ def process_files(
     # Find files and restrict to unique constraints
     # NOTE: Here we only constrain search to the project, which is otherwise not
     # indicated in native netcdf filenames. Similar approach to filter_script().
-    suffix, kwtime, constraints = _parse_args(**kwargs)
-    project, constraints = _parse_constraints(reverse=True, **constraints)
-    project = project.lower()
-    print = printer or _init_printer('process', suffix, **constraints)
-    path = Path(path).expanduser()
-    dest = Path(dest).expanduser()
-    files, _ = _glob_files(path, project + '*/*')
-    if constraints.keys() - _line_parts.keys() != set(('project',)):
-        raise ValueError(f'Input constraints {constraints.keys()} must be subset of: {_line_parts.keys()}')  # noqa: E501
-    if not files:
-        raise FileNotFoundError(f'Pattern {project}*/*.nc in directory {path} returned no netcdf files.')  # noqa: E501
-    database = {}
-    for file in files:
-        opts = {facet: func(file.name) for facet, func in _line_parts.items()}
-        if opts['variable'] == 'pfull':  # only ever used for interpolation
-            continue
-        if any(opt not in constraints.get(facet, (opt,)) for facet, opt in opts.items()):  # noqa: E501
-            continue
-        if file.stat().st_size == 0:
-            print(f'Warning: Removing empty input file {file.name!r}.')
-            file.unlink()
-            continue
-        key = tuple(opts.values())
-        database.setdefault(key, []).append(file)
+    method = kwargs.pop('method', None)
+    dates, kwargs, project, constraints = _parse_time(constraints=True, **kwargs)
+    print = printer or FacetPrinter('process', dates, **constraints)
+    files, _ = _glob_files(*paths, project=project)
+    facets = facets or FACETS_FOLDER
+    database = FacetDatabase(
+        files, facets, flagship_translate=flagship_translate, **constraints
+    )
+    constants = Path(constants).expanduser() / 'cmip-constants'
+    output = Path(output).expanduser()
 
     # Initialize cdo and process files.
     # NOTE: Here perform horizontal interpolation before vertical interpolation because
     # latter adds NaNs and extrapolated data so should delay that step until very end.
-    print('Input files:', sum(len(files) for files in database.values()), end=', ')
-    print(', '.join(f'{key}: ' + ' '.join(opts) for key, opts in constraints.items()))
-    print()
-    outputs = []
-    constants = dest / 'cmip-constants'
-    constants.mkdir(exist_ok=True)
-    kwargs = {'overwrite': overwrite, 'printer': print}
-    for key, files in database.items():
-        # Standardize time and dependencies
-        folder = dest / files[0].parent.name
+    print(
+        f'Input files ({len(database)}):',
+        *(f'{key}: ' + ' '.join(opts) for key, opts in database._constraints.items()),
+        sep='\n', end='\n\n',
+    )
+    outs = []
+    for files in database:
+        # Initial stuff
+        folder = output / files[0].parent.name
         folder.mkdir(exist_ok=True)
-        parts = dict(zip(_line_parts, key))
+        model = _file_parts['model'](files[0])
+        variable = _file_parts['variable'](files[0])
+        if variable == 'pfull':
+            continue
         stem = '_'.join(files[0].name.split('_')[:-1])
-        time = _output_name(folder, stem, 'standard-time')
-        deps = _output_name(folder, stem, 'standard-deps')
-        vert = _output_name(folder, stem, 'standard-vertical')
-        hori = _output_name(folder, stem, 'standard-horizontal')
-        output = _output_name(folder, stem, suffix)
-        outputs.append(output)
-        print('Output:', '/'.join((output.parent.name, output.name)))
+        time = _output_path(folder, stem, 'standard-time')
+        deps = _output_path(folder, stem, 'standard-deps')
+        vert = _output_path(folder, stem, 'standard-vertical')
+        hori = _output_path(folder, stem, 'standard-horizontal')
+        out = _output_path(folder, stem, dates)
+        outs.append(out)
+        kwtime = {'offset': constants, 'slope': constants, 'variable': variable, **kwargs}  # noqa: E501
+        kwvert = {'ps': constants, 'pfull': constants, 'search': files[0].parent}
+        kwhori = {'method': method, 'weights': constants}
+        kw = {'overwrite': overwrite, 'printer': print, 'model': model}
+        print('Output:', '/'.join((out.parent.name, out.name)))
+
+        # Repair files and standardize time
         exception = lambda error: (
             ' '.join(traceback.format_exception(None, error, error.__traceback__))
         )
@@ -415,11 +395,11 @@ def process_files(
             print(exception(error))
             print('Warning: Failed to standardize attributes.\n')
             continue
-        updated = not overwrite and output.is_file() and (
-            all(file.stat().st_mtime <= output.stat().st_mtime for file in files)
+        updated = not overwrite and out.is_file() and (
+            all(file.stat().st_mtime <= out.stat().st_mtime for file in files)
         )
         try:
-            standardize_time(*files, dryrun=dryrun or updated, output=time, **kwtime, **kwargs)  # noqa: E501
+            standardize_time(*files, output=time, dryrun=dryrun or updated, **kwtime, **kw)  # noqa: E501
         except Exception as error:
             print(exception(error))
             print('Warning: Failed to standardize temporally.\n')
@@ -433,26 +413,12 @@ def process_files(
 
         # Standardize horizontal grid and vertical levels
         info, sizes, names, attrs = _parse_ncdump(files[0])
-        ps = _output_name(constants, 'ps', parts['model'])
-        pfull = _output_name(constants, 'pfull', parts['model'])
-        weights = _output_name(constants, 'gencon', parts['model'])
-        kwdeps = {'ps': ps, 'pfull': pfull, 'model': parts['model'], 'search': files[0].parent}  # noqa: E501
-        kwhori = {'weights': weights}
-        kwvert = {}
-        if not dependencies or 'lev' not in attrs:
-            time.replace(deps)
-        else:
-            try:
-                standardize_dependencies(time, deps, **kwdeps, **kwargs)
-            except Exception as error:
-                print(exception(error))
-                print('Warning: Failed to standardize dependencies.\n')
-                continue
+        constants.mkdir(exist_ok=True)
         if not vertical or 'lev' not in attrs:
-            deps.replace(vert)
+            time.replace(vert)
         else:
             try:
-                standardize_vertical(deps, vert, **kwvert, **kwargs)
+                standardize_vertical(time, output=vert, **kwvert, **kw)
             except Exception as error:
                 print(exception(error))
                 print('Warning: Failed to standardize vertically.\n')
@@ -461,13 +427,13 @@ def process_files(
             vert.replace(hori)
         else:
             try:
-                standardize_horizontal(vert, hori, **kwhori, **kwargs)
+                standardize_horizontal(vert, output=hori, **kwhori, **kw)
             except Exception as error:
                 print(exception(error))
                 print('Warning: Failed to standardize horizontally.\n')
                 continue
-        hori.replace(output)
-        _output_check(output, print)
+        hori.replace(out)
+        _output_check(out, print)
         hori.unlink(missing_ok=True)
         vert.unlink(missing_ok=True)
         deps.unlink(missing_ok=True)
@@ -475,7 +441,7 @@ def process_files(
         today = datetime.today().strftime('%Y-%m-%dT%H:%M:%S')  # date +%FT%T
         print(f'Processing completed: {today}')
         print('Removed temporary files.\n')
-    return outputs
+    return outs
 
 
 def repair_files(*paths, dryrun=False, printer=None):
@@ -489,7 +455,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         The input path(s).
     dryrun : bool, default: False
         Whether to only print command information and exit.
-    printer : callable, optional
+    printer : callable, default: `print`
         The print function.
     """
     # Declare attribute edits for converting pure sigma coordinates to hybrid and for
@@ -523,9 +489,9 @@ def repair_files(*paths, dryrun=False, printer=None):
     # Declare attribute removals for interpreting hybrid height coordinates as a
     # generalized height coordinate in preparation for cdo ap2pl pressure interpolation.
     # NOTE: The cdo ap2pl operator standard also requires long_name="generalized height"
-    # but this causes issues when applying setzaxis so delay this attribute edit until
-    # standardize_dependencies. See: https://code.mpimet.mpg.de/issues/10692
-    # NOTE: Using -ensavg with pfull files with disagreeing time_bnds or
+    # but this causes issues when applying setzaxis so currently delay this attribute
+    # edit until standardize_vertical. See: https://code.mpimet.mpg.de/issues/10692
+    # NOTE: Using -mergetime with pfull files with disagreeing time_bnds or
     # climatology_bnds can create duplicate bounds variables, and -merge can cause
     # issues merging with parent files (incorrect 'reserved variable zaxistype' error).
     hybrid_height = 'atmosphere_hybrid_height_coordinate'
@@ -737,14 +703,25 @@ def repair_files(*paths, dryrun=False, printer=None):
 def standardize_time(
     *paths,
     output=None,
+    dryrun=False,
+    offset=None,
+    slope=None,
+    variable=None,
+    model=None,
+    rebuild=False,
+    allow_incomplete=True,
     overwrite=False,
     printer=None,
-    dryrun=False,
     **kwargs
 ):
     """
     Create a standardized monthly climatology or annual mean time series from
     the input files. Uses `cdo.mergetime` and optionally `cdo.ymonmean`.
+
+    Note
+    ----
+    This requires an `offset` and `slope` file when drift correcting the data.
+    If they do not exist, they are created from the current file.
 
     Parameters
     ----------
@@ -754,60 +731,89 @@ def standardize_time(
         The output name and/or location.
     years : int or 2-tuple, default: 150
         The years to use relative to the start of the simulation.
-    climate : bool, optional
+    climate : bool, default: True
         Whether to create a monthly-mean climatology or a time series.
-    detrend : bool, default: False
-        Whether to detrend input data. Used with feedback and budget calculations.
+    nodrift : bool, default: False
+        Whether to drift correct the time series using the control data.
+    offset, slope : path-like, optional
+        The location or name for the offset and slope data needed for `nodrift`.
+    variable, model : str, optional
+        The variable and model to sue in the default offset and slope names.
+    rebuild : path-like, default: False
+        Whether to rebuild the offset and slope files.
     skipna : bool, default: False
         Whether to ignore NaNs.
-    overwrite : bool, optional
-        Whether to overwrite existing files or skip them.
-    printer : callable, optional
-        The print function.
     dryrun : bool, default: False
         Whether to only print time information and exit.
+    allow_incomplete : default: True
+        Whether to allow incomplete time periods.
+    overwrite : bool, default: False
+        Whether to overwrite existing files or skip them.
+    printer : callable, default: `print`
+        The print function.
     """
     # Initial stuff
-    # NOTE: Some models use e.g. file_200012-200911.nc instead of file_200001-200912.nc
-    # so 'selyear' could add a few extra months... but not worth worrying about. There
+    # NOTE: Some models use e.g. file_200012-201011.nc instead of file_200001-200912.nc
+    # so 'selyear' could end up removing a year... but not worth worrying about. There
     # is also endpoint inclusive file_200001-201001.nc but seems only for HadGEM3 pfull.
-    # NOTE: FIO-ESM-2-0 control psl returned 300-399 and 400-499 in addition to 301-400
-    # and 401-500, CASESM2=0 rsus retruned 001-600 control and 001-167 abrupt in
-    # addition to standard 001-550, and MIROC-ES2H returned just a single 1850 file
-    # for most variables. Can remove MIROC in filter_wgets with always_exclude but
-    # others have to be handled manually after calling download scripts.
     print = printer or builtins.print
-    suffix, kwtime, unknown = _parse_args(**kwargs)
+    dates, kwtime = _parse_time(**kwargs)
     paths = [Path(file).expanduser() for file in paths]
-    output = _output_name(output, suffix=suffix, parent=paths[0])
+    output = _output_path(output or paths[0].parent, paths[0].stem, dates)
     if not paths:
         raise TypeError('Input files passed as positional arguments are required.')
-    if unknown:
-        raise TypeError(f'Unexpected keyword argument(s): {unknown}')
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
         return output
 
-    # Filter input times and print warning if time coverage is partial
+    # Filter input files for requested year range
     # NOTE: This includes kludge for individual CESM2-WACCM-FV2 files with incorrect
     # (negative) levels. Must invert or else cdo averages upper with lower levels.
     # After invert cdo raises a level mismatch warning but results will be correct.
-    years = tuple(_line_years(path.name) for path in paths)
+    years = tuple(map(_item_years, paths))
     ymin, ymax = min(ys[0] for ys in years), max(ys[1] for ys in years)
     print(f'Initial year range: {ymin}-{ymax} ({len(years)} files)')
-    yrel = kwtime.pop('years')
-    ymin, ymax = ymin + yrel[0], ymin + yrel[1] - 1  # e.g. (0, 50) is 49 years
+    rmin, rmax = kwtime.pop('years')  # relative years
+    ymin, ymax = ymin + rmin, ymin + rmax - 1  # e.g. (0, 50) is 49 years
     ignore = lambda line: not re.search('(warning|error)', line)  # ignore messages
-    inputs, ranges = [], []
+    inputs = {}
     for ys, path in zip(years, paths):
         levs = []
         if 'CESM' in path.name:  # slow so only use where this is known problem
             levs = ' '.join(filter(ignore, cdo.showlevel(input=str(path)))).split()
-        if invert := ('-invertlev' if np.any(np.array(levs, dtype=float) < 0) else ''):
+        if invert := ('-invertlev ' if np.any(np.array(levs, dtype=float) < 0) else ''):
             dryrun or print(f'Warning: Inverting level axis for {path.name!r}.')
         if ys[0] > ymax or ys[1] < ymin:
             continue
         y0, y1 = max((ys[0], ymin)), min((ys[1], ymax))
+        string = '' if (ys[0], ys[1]) == (ymin, ymax) else f'-selyear,{y0}/{y1} '
+        inputs[f'{string}{invert}{path}'] = (y0, y1)
+    print(f'Filtered year range: {ymin}-{ymax} ({len(inputs)} files)')
+    if not inputs:
+        message = f'No files found within requested range: {ymin}-{ymax}'
+        if dryrun:
+            print(f'Warning: {message}')
+        else:
+            raise RuntimeError(message)
+
+    # Fitler intersecting ranges and print warning for incomplete range
+    # NOTE: FIO-ESM-2-0 control psl returned 300-399 and 400-499 in addition to 301-400
+    # and 401-500, CAS-ESM2-0 rsus returned 001-600 control and 001-167 abrupt in
+    # addition to standard 001-550 and 001-150, and GFDL-CM4 abrupt returned 000-010
+    # in addition to 000-100. The below block should handle these situations.
+    ranges = []
+    for input, (y0, y1) in tuple(inputs.items()):
+        for other, (z0, z1) in tuple(inputs.items()):
+            if input == other or input not in inputs:
+                continue  # e.g. already deleted
+            message = f'Skipping file years {y0}-{y1} in presence of %s file years {z0}-{z1}.'  # noqa: E501
+            if z0 <= y0 <= y1 <= z1:
+                print('Warning: ' + message % 'superset')
+                del inputs[input]
+            if y1 - y0 > 1 and y0 == z0 - 1 and y1 == z1 - 1:
+                print('Warning: ' + message % 'offset-by-one')
+                del inputs[input]
+    for y0, y1 in inputs.values():
         for range_ in ranges:
             if range_[0] in (y1, y1 + 1):
                 range_[0] = y0  # prepend to existing distinct range
@@ -817,157 +823,87 @@ def standardize_time(
                 break
         else:
             ranges.append([y0, y1])
-        string = '' if (y0, y1) == (ymin, ymax) else f'-selyear,{y0}/{y1}'
-        inputs.append(f'{string} {invert} {path}')
-    print(f'Filtered year range: {ymin}-{ymax} ({len(inputs)} files)')
-    if not inputs:
-        message = f'No files found within requested range: {ymin}-{ymax}'
-        if dryrun:
-            print(f'Warning: {message}')
-        else:
-            raise RuntimeError(message)
     if len(ranges) > 1 or ranges and ranges[0] != [ymin, ymax]:
         ranges = ', '.join('-'.join(map(str, range_)) for range_ in ranges)
-        message = f'Full year range not available from file ranges: {ranges}'
-        if dryrun:
+        message = f'Full year range not available from file years: {ranges}'
+        if dryrun or allow_incomplete:
             print(f'Warning: {message}')
         else:
             raise RuntimeError(message)
     if dryrun:
         return  # only print time information
-    input = ' '.join(inputs)
 
-    # Take time averages
-    # NOTE: Here data can be detrended to improve sensitive residual energy budget and
-    # feedback calculations. This uses a lot of memory so don't bother with 3D fields.
-    detrend = '-detrend ' if kwtime.pop('detrend') else ''
-    method = 'ymonmean' if kwtime.pop('skipna') else 'ymonavg'
-    method = method if kwtime.pop('climate') else 'copy'
-    input = f'{detrend}-mergetime [ {input} ]'
-    print(f'Merging {len(inputs)} files with {method} {detrend}-mergetime.')
-    getattr(cdo, method)(input=str(input), output=str(output))
+    # Generate trend files for drift correction
+    # NOTE: Important to use annual averages rather than monthly averages to help
+    # reduce probability of spurious trends and for consistency with prevailing
+    # literature recommendation. Then simply scale slopes by 12 (see py notebook).
+    input = '[ ' + ' '.join(input for input in inputs) + ' ]'
+    equal = 'equal=false'  # account for different days in month
+    enlarge = f'-enlarge,{paths[0]}'
+    average = 'ymonmean' if kwtime.pop('skipna') else 'ymonavg'
+    if not kwtime.pop('nodrift'):
+        method = 'mergetime'
+        prefix = ''
+        arg = None
+        if kwtime.pop('climate'):
+            method = average
+            prefix = '-mergetime '
+            arg = None
+    else:
+        offset = _output_path(offset or paths[0].parent, variable, model, 'offset')
+        slope = _output_path(slope or paths[0].parent, variable, model, 'slope')
+        method = 'subtrend'
+        prefix = (
+            f'{enlarge} {offset} {enlarge} -divc,12 {slope} '
+            f'-add {enlarge} [ -add {offset} -mulc,{rmin} {slope} ] -mergetime '
+        )
+        arg = equal
+        if kwtime.pop('climate'):
+            method = average
+            prefix = f'-subtrend,{equal} {prefix}'
+            arg = None
+        if rebuild or any(
+            not file.is_file() or file.stat().st_size == 0
+            for file in (offset, slope)
+        ):
+            print(f'Generating trend files {offset.name!r} and {slope.name!r}.')
+            names = tuple(path.name for path in paths)
+            trend = '[ ' + ' '.join(f'-fldmean -yearmonmean {input}' for input in inputs) + ' ]'  # noqa: E501
+            if any('control' not in name.lower() for name in names):
+                raise ValueError('Cannot rebuild drift correction files from paths.')
+            descrip = re.sub(r'/\S*/', '', f'-mergetime {trend}')
+            print(f'Calling trend with {descrip}.')
+            cdo.trend(equal, input=f'-mergetime {trend}', output=f'{offset} {slope}')
+            _output_check(offset, print)
+            _output_check(slope, print)
+
+    # Consolidate times and apply drift corrections
+    # NOTE: Cannot simply use 'detrend' for drift corrections because that also
+    # removes mean and we want to *add* trends from the starting point (i.e. instead
+    # of data(i) - (a + b * t(i)) want data(i) - ((a + b * t(i)) - (a + b * t(0)).
+    # Testing revealed that cdo uses time step indices rather than actual time
+    # values, so we simply need the detrended data plus the offset parameter. Also
+    # important to add missing slope rise due to e.g. removing subtracting trend from
+    # an abrupt climatology starting after the control run branch time at year 0.
+    descrip = re.sub(r'/\S*/', '', f'{method} {prefix}{input}')
+    print(f'Merging {len(inputs)} files with {descrip}.')
+    args = (arg,) if arg else ()
+    getattr(cdo, method)(*args, input=f'{prefix}{input}', output=str(output))
     _output_check(output, print)
     return output
 
 
-def standardize_dependencies(
+def standardize_vertical(
     path,
     output=None,
     ps=None,
     pfull=None,
     model=None,
-    rebuild=None,
     search=None,
+    rebuild=None,
     overwrite=False,
-    printer=None,
+    printer=None
 ):
-    """
-    Create a file with surface pressure and model level pressure appended for
-    subsequent invocation of `cdo.ap2pl` and save the average pressure data.
-
-    Parameters
-    ----------
-    path : path-like
-        The input file.
-    output : path-like, optional
-        The output file.
-    ps, pfull : path-like, optional
-        The reference surface and model level pressure names.
-    model : str, optional
-        The model to use when searching for pressure data.
-    search : path-like, optional
-        The reference path to use when searching for pressure data.
-    rebuild : path-like, optional
-        Whether to rebuild the dependency files.
-    overwrite : bool, optional
-        Whether to overwrite existing files or skip them.
-    printer : callable, optional
-        The print function.
-    """
-    # Initial stuff
-    # NOTE: Data passed to this function should already have had its attributes
-    # modified using repair_files(). This just adds or removes dependencies.
-    print = printer or builtins.print
-    ps = _output_name(ps, suffix='ps', parent=path)
-    pfull = _output_name(pfull, suffix='pfull', parent=path)
-    output = _output_name(output, suffix='standard-dependencies', parent=path)
-    path = Path(path).expanduser()
-    search = Path(search).expanduser() if search else path.parent
-    if not overwrite and output.is_file() and output.stat().st_size > 0:
-        print(f'Output file already exists: {output.name!r}.')
-        return output
-
-    # Parse input dependencies
-    # NOTE: The height interpolation scheme needs surface pressure not just model level
-    # pressure, and then must use setzaxis to prevent disagreement due to decimal lev
-    # differences between different model level files (see below).
-    dependencies = {
-        'hybrid': {'ps': ps},
-        'generic': {'ps': ps, 'pfull': pfull},
-        'generalized_height': {'ps': ps, 'pfull': pfull},
-        'pressure': {},
-    }
-    tables = _parse_desc(cdo.zaxisdes(input=str(path)))
-    tables = [kw for kw in tables if kw['zaxistype'] != 'surface']
-    names = ' '.join(cdo.showname(input=str(path))).split()
-    axis = ', '.join(table['zaxistype'] for table in tables)
-    if len(tables) != 1:
-        raise NotImplementedError(f'Missing or ambiguous vertical axis {axis!r} for {path.name!r}.')  # noqa: E501
-    if axis not in dependencies:
-        raise NotImplementedError(f'Cannot manage vertical axis dependencies {axis!r} for {path.name!r}.')  # noqa: E501
-
-    # Generate the dependencies
-    # NOTE: Even though 'pfull' has 'clim' suffix some modeling centers provide time
-    # averages and should have no time dimension. So must use timavg as well. And ignore
-    # table, experiment, and enesemble due to limited availability (see top of file).
-    # NOTE: Even though 'long_name="generalized height"' required for ap2pl it triggers
-    # error when naively applying the resulting zaxisdes to another file using setzaxis,
-    # so tried manually changing the zaxistype from 'generalized_height' to 'height'.
-    # However this triggered another issue where 'cdo merge' produced duplicate levels
-    # (note applying -setzaxis,axis to pfull, whether or not the zaxistype coordinate
-    # was changed, also triggers duplicate level issue). Solution is to apply long_name
-    # on-the-fly before ap2pl. See: https://code.mpimet.mpg.de/issues/10692
-    atted, merge = [], ''
-    for name, file in dependencies[axis].items():
-        if name in names:
-            continue
-        merge = f'{merge} {file}'
-        if rebuild or (not file.is_file() or file.stat().st_size == 0):
-            print(f'Generating pressure dependency file {file.name!r}.')
-            glob = f'{name}_*{model}_*' if model else f'{name}_*'
-            files, _ = _glob_files(search, glob)
-            if not files:
-                raise ValueError(f'Glob pattern {glob!r} returned no results.')
-            input = ' '.join(f'-ymonavg -selname,{name} {f}' for f in files)
-            repair_files(*files, printer=print)
-            print(f'Averaging {len(files)} files with ensavg -ymonavg.')
-            cdo.ensavg(input=input, output=str(file))
-            _output_check(file, print)
-        if name == 'pfull':
-            text = file.parent / (file.stem + '.txt')
-            data = '\n'.join(cdo.zaxisdes(input=str(file)))
-            open(text, 'w').write(data)
-            merge = f'{merge} -setzaxis,{text}'  # applied to original file
-            atted = [Atted('overwrite', 'long_name', 'lev', 'generalized height').prn_option()]  # noqa: E501
-
-    # Merge the dependencies
-    # NOTE: Tried applying long_name as part of the chain before ap2pl but seems axis
-    # is deciphered before stepping through chain so this fails. Instead apply
-    # attribute here. Also cdo cannot apply to 'lev_bnds' (says variable not found).
-    if not merge:
-        print(f'File {path.name!r} already has required dependencies.')
-        shutil.copy(path, output)
-    else:
-        print(f'Adding pressure dependencies with -merge {merge}.')
-        cdo.merge(input=f'{merge} {path}', output=str(output))
-        if atted:
-            print('Preparing attributes for interpolation with:', *atted)
-            nco.ncatted(input=str(output), output=str(output), options=atted)
-        _output_check(output, print)
-    return output
-
-
-def standardize_vertical(path, output=None, overwrite=False, printer=None):
     """
     Create a file on standardized pressure levels from the input file with
     arbitrary vertical axis. Uses  `cdo.intlevel`, `cdo.ml2pl`, or `cdo.ap2pl`.
@@ -978,9 +914,17 @@ def standardize_vertical(path, output=None, overwrite=False, printer=None):
         The input file.
     output : path-like, optional
         The output name and/or location.
-    overwrite : bool, optional
+    ps, pfull : path-like, optional
+        The reference surface and model level pressure paths.
+    model : str, optional
+        The model to use when searching for pressure data.
+    search : path-like, optional
+        The folder path to use when searching for pressure data.
+    rebuild : path-like, default: False
+        Whether to rebuild the dependency files.
+    overwrite : bool, default: True
         Whether to overwrite existing files or skip them.
-    printer : callable, optional
+    printer : callable, default: `print`
         The print function.
 
     Important
@@ -991,7 +935,8 @@ def standardize_vertical(path, output=None, overwrite=False, printer=None):
     # Initial stuff
     print = printer or builtins.print
     path = Path(path).expanduser()
-    output = _output_name(output, suffix='standard-vertical', parent=path)
+    output = _output_path(output or path.parent, path.stem, 'standard-vertical')
+    temp = output.parent / (output.stem + '-temp' + output.suffix)
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
         return output
@@ -1003,52 +948,126 @@ def standardize_vertical(path, output=None, overwrite=False, printer=None):
     # NOTE: For some reason long_name='generalized height' required for ap2pl detection
     # but fails with setzaxis and trying to modify the zaxistype causes subsequent
     # merges to fail. See: https://code.mpimet.mpg.de/issues/10692
-    methods = {
-        'hybrid': '-ml2pl,%s',
-        'generalized_height': '-ap2pl,%s -invertlev',
-        'pressure': '-intlevel,%s',
+    ps = _output_path(ps or path.parent, 'ps', model, 'climate')
+    pfull = _output_path(pfull or path.parent, 'pfull', model, 'climate')
+    options = {
+        'pressure': ('-intlevel,%s', {}),
+        'hybrid': ('-ml2pl,%s', {'ps': ps}),
+        'generic': (opts := ('-ap2pl,%s -invertlev', {'ps': ps, 'pfull': pfull})),
+        'generalized_height': opts,
     }
-    tables = _parse_desc(cdo.zaxisdes(input=str(path)))
-    tables = [kw for kw in tables if kw['zaxistype'] != 'surface']
-    axis = ', '.join(table['zaxistype'] for table in tables)
-    if len(tables) != 1:
+    grids = _parse_ncgrids(cdo.zaxisdes(input=str(path)))
+    grids = [kw for kw in grids if kw['zaxistype'] != 'surface']
+    names = ' '.join(cdo.showname(input=str(path))).split()
+    axis = ', '.join(grid['zaxistype'] for grid in grids)
+    if len(grids) != 1:
         raise NotImplementedError(f'Missing or ambiguous vertical axis {axis!r} for {path.name!r}.')  # noqa: E501
-    if axis not in methods:
+    if axis not in options:
         raise NotImplementedError(f'Cannot interpolate vertical axis {axis!r} for {path.name!r}.')  # noqa: E501
-    string = ', '.join(f'{k}: {v}' for k, v in tables[0].items() if not isinstance(v, np.ndarray))  # noqa: E501
+    string = ', '.join(f'{k}: {v}' for k, v in grids[0].items() if not isinstance(v, np.ndarray))  # noqa: E501
     print('Current vertical levels:', string)
     print('Destination vertical levels:', ', '.join(map(str, VERT_LEVS.flat)))
 
-    # Interpolate to pressure levels with cdo
-    # NOTE: removing unneeded variables by leading chain with -delname,ps,orog,pfull
+    # Generate the dependencies
+    # NOTE: Ignore table, experiment, and ensemble because we have to use use
+    # arbitrary control-like experiments with monthly time frequency for the pfull
+    # data due to limited availability (e.g. some cmip6 models have only AERmon
+    # instead of Amon and control-1950 instead of piControl, and cmip5 models have
+    # only piControl data instead of abrupt4xCO2). See top of file for details.
+    # NOTE: Previously used -ensavg [ -ymonavg input1.nc ... -ymonavg input2.nc ] but
+    # this reduced 12 months to 1 month for single file input... or maybe behavior is
+    # attribute dependent because seems to only do this for cmip5 files only. Now use
+    # -ymonavg -mergetime [ input1.nc ... input2.nc ] as with normal climate files.
+    # Note the -merge or e.g. -ap2pl commands could fail when trying to combine climate
+    # pfull data with time series of model level data... but so far no need for that.
+    # NOTE: Even though 'long_name="generalized height"' is required for ap2pl it
+    # triggers error when naively applying setzaxis to another file using the resulting
+    # zaxisdes file. Tried manually changing the zaxistype from 'generalized_height'
+    # to 'height' but this triggered another issue where 'cdo merge' produced duplicate
+    # levels (note applying -setzaxis,axis to pfull, whether or not the zaxistype
+    # coordinate was changed, also triggers duplicate level issue). Solution is to
+    # update long_name *after* the merge. See: https://code.mpimet.mpg.de/issues/10692
+    atted, merge = [], ''
+    method, dependencies = options[axis]
+    for name, dependency in dependencies.items():
+        if name in names:  # already present in file
+            continue
+        text = dependency.parent / f'{dependency.stem}.txt'
+        merge = f'{merge} {dependency}'
+        if rebuild or not dependency.is_file() or dependency.stat().st_size == 0:
+            print(f'Generating pressure dependency file {dependency.name!r}.')
+            pattern = '_'.join(f'{part}_*' for part in (name, model) if part)
+            search = Path(search).expanduser() if search else path.parent
+            files, _ = _glob_files(search, pattern=pattern)
+            if not files:
+                raise ValueError(f'Glob pattern {pattern!r} returned no results.')
+            input = '[ ' + ' '.join(f'-selname,{name} {file}' for file in files) + ' ]'
+            repair_files(*files, printer=print)
+            descrip = re.sub(r'/\S*/', '', f'-ymonavg -mergetime {input}')
+            print(f'Averaging {len(files)} files with {descrip}.')
+            cdo.ymonavg(input=f'-mergetime {input}', output=str(dependency))
+            _output_check(dependency, print)
+        if name == 'pfull' and (not text.is_file() or text.stat().st_size == 0):
+            data = '\n'.join(cdo.zaxisdes(input=str(dependency)))
+            open(text, 'w').write(data)
+            merge = f'{merge} -setzaxis,{text}'  # applied to original file
+            atted = [Atted('overwrite', 'long_name', 'lev', 'generalized height').prn_option()]  # noqa: E501
+
+    # Interpolate to pressure levels
+    # NOTE: Tried applying long_name as part of the chain before ap2pl but seems axis
+    # is deciphered before stepping through chain so this fails. Instead apply
+    # attribute here. Also cdo cannot apply to 'lev_bnds' (says variable not found).
+    # NOTE: Removing unneeded variables by leading chain with -delname,ps,orog,pfull
     # seemed to cause cdo > 1.9.1 and cdo < 2.0.0 to hang indefinitely. Not sure
     # why and not worth issuing bug report but make sure cdo is up to date.
-    # NOTE: Currently only some obscure extended monthly data and the core cloud
-    # variables are output on model levels. Otherwise data is on pressure levels.
-    # Avoid interpolation by selecting same pressure levels as standard output.
-    # NOTE: All sigma and hybrid sigma pressure coordinate models include 'ps' in every
-    # nc file, and all hybrid height coordinate models include 'orog' in every nc file.
-    # In former case this is sufficient for pressure interpolation but in latter case
-    # need to add separately provided 'pfull'. Rely on process_files to append this.
-    if axis == 'pressure' and np.all(np.isclose(tables[0]['levels'], VERT_LEVS)):
-        print(f'File {path.name!r} is already on standard vertical levels.')
-        shutil.copy(path, output)
+    if not merge:
+        print(f'File {path.name!r} already has required dependencies.')
+        shutil.copy(path, temp)
     else:
-        method = methods[axis] % ','.join(map(str, VERT_LEVS.flat))
+        descrip = re.sub(r'/\S*/', '', f'-merge {merge}')
+        print(f'Adding pressure dependencies with {descrip}.')
+        cdo.merge(input=f'{merge} {path}', output=str(temp))
+        if atted:
+            print('Preparing attributes for interpolation with:', *atted)
+            nco.ncatted(input=str(temp), output=str(temp), options=atted)  # noqa: E501
+        _output_check(temp, print)
+    if axis == 'pressure' and np.all(np.isclose(grids[0]['levels'], VERT_LEVS)):
+        print(f'File {path.name!r} is already on standard vertical levels.')
+        temp.rename(output)
+    else:
+        method = method % ','.join(map(str, VERT_LEVS.flat))
         print(f'Vertically interpolating with method {method}.')
-        cdo.delname('ps,orog,pfull', input=f'{method} {path}', output=str(output))
-    _output_check(output, print)
-    tables = _parse_desc(cdo.zaxisdes(input=str(output)))
-    axis = ', '.join(table['zaxistype'] for table in tables)
-    if axis != 'pressure' or not np.all(np.isclose(tables[0]['levels'], VERT_LEVS)):
-        levels = ', '.join(map(str, tables[0]['levels'].flat))
+        cdo.delname(  # missing variables causes warning not error
+            'ps,orog,pfull',
+            input=f'{method} {temp}',
+            output=str(output),
+            options='-P 8',
+        )
+        _output_check(output, print)
+        temp.unlink(missing_ok=True)
+
+    # Verify that interpolation was successful
+    # NOTE: Some models use floats and have slight offsets for standard pressure levels
+    # while others use integer, so important to use np.isclose() when comparing. Note
+    # all pressure level models use Pa and are ordered with decreasing pressure.
+    grids = _parse_ncgrids(cdo.zaxisdes(input=str(output)))
+    axis = ', '.join(grid['zaxistype'] for grid in grids)
+    if axis != 'pressure' or not np.all(np.isclose(grids[0]['levels'], VERT_LEVS)):
+        levels = ', '.join(map(str, grids[0]['levels'].flat))
         output.unlink(missing_ok=True)
         raise RuntimeError(f'Incorrect output axis {axis!r} or levels {levels}.')
     return output
 
 
 def standardize_horizontal(
-    path, output=None, method=None, weights=None, rebuild=False, overwrite=False, printer=None  # noqa: E501
+    path,
+    output=None,
+    method=None,
+    weights=None,
+    model=None,
+    rebuild=False,
+    overwrite=False,
+    printer=None
 ):
     """
     Create a file on a standardized horizontal grid from the input file
@@ -1064,11 +1083,13 @@ def standardize_horizontal(
         The `cdo` remapping command suffix.
     weights : path-like, optional
         The location or name for weights data.
+    model : str, optional
+        The model to use in the default weights name.
     rebuild : bool, optional
         Whether to rebuild the weight files.
-    overwrite : bool, optional
+    overwrite : bool, default: True
         Whether to overwrite existing files or skip them.
-    printer : callable, optional
+    printer : callable, default: `print`
         The print function.
 
     Note
@@ -1082,8 +1103,7 @@ def standardize_horizontal(
     method = method if method[:3] == 'gen' else 'gen' + method
     print = printer or builtins.print
     path = Path(path).expanduser()
-    weights = _output_name(weights, suffix=method, parent=path)
-    output = _output_name(output, suffix='standard-horizontal', parent=path)
+    output = _output_path(output or path.parent, path.stem, 'standard-horizontal')
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
         return output
@@ -1092,31 +1112,135 @@ def standardize_horizontal(
     # NOTE: Sometimes cdo detects dummy 'generic' grids of size 1 or 2 indicating
     # scalar quantities or bounds. Try to ignore these grids.
     result = cdo.griddes(input=str(path))
-    tables = [kw for kw in _parse_desc(result) if kw['gridsize'] > 2]
-    if not tables:
+    grids = [kw for kw in _parse_ncgrids(result) if kw['gridsize'] > 2]
+    if not grids:
         raise NotImplementedError(f'Missing horizontal grid for {path.name!r}.')
-    if len(tables) > 1:
-        raise NotImplementedError(f'Ambiguous horizontal grids for {path.name!r}: ', ', '.join(table['gridtype'] for table in tables))  # noqa: E501
-    table = tables[0]
-    string = ', '.join(f'{k}: {v}' for k, v in table.items() if not isinstance(v, np.ndarray))  # noqa: E501
+    if len(grids) > 1:
+        raise NotImplementedError(f'Ambiguous horizontal grids for {path.name!r}: ', ', '.join(grid['gridtype'] for grid in grids))  # noqa: E501
+    grid = grids[0]
+    string = ', '.join(f'{k}: {v}' for k, v in grid.items() if not isinstance(v, np.ndarray))  # noqa: E501
     print('Current horizontal grid:', string)
     print('Destination horizontal grid:', GRID_SPEC)
 
-    # Generate weights and interpolate
+    # Generate weights
+    # NOTE: Grids for same model but different variables are sometimes different
+    # most likely due to underlying staggered grids. Account for this by including
+    # grid indicator suffix in the default weight file name.
+    grid_spec = grid.get('gridtype', 'unknown')[:1] or 'u'
+    if 'xsize' in grid and 'ysize' in grid:
+        grid_spec += 'x'.join(str(grid[s]) for s in ('xsize', 'ysize'))
+    else:
+        grid_spec += str(grid.get('gridsize', 'XXX'))
+    weights = _output_path(weights or path.parent, method, model, grid_spec)
+    if rebuild or not weights.is_file() or weights.stat().st_size == 0:
+        print(f'Generating destination grid weights {weights.name!r}.')
+        getattr(cdo, method)(
+            GRID_SPEC,
+            input=str(path),
+            output=str(weights),
+            options='-P 8',
+        )
+        _output_check(weights, print)
+
+    # Interpolate to horizontal grid
     # NOTE: Unlike vertical standardization there are fewer pitfalls here (e.g.
     # variables getting silently skipped). So testing output griddes not necessary.
-    opts = ('gridtype', 'xfirst', 'yfirst', 'xsize', 'ysize')
-    key_current = tuple(table.get(key, None) for key in opts)
+    opts = ('gridtype', 'xstart', 'ystart', 'xsize', 'ysize')
+    key_current = tuple(grid.get(key, None) for key in opts)
     key_destination = ('lonlat', 0, -90, *map(int, GRID_SPEC[1:].split('x')))
     if key_current == key_destination:
         print(f'File {path.name!r} is already on destination grid.')
         shutil.copy(path, output)
     else:
-        if rebuild or not weights.is_file() or weights.stat().st_size == 0:
-            print(f'Generating destination grid weights {weights.name!r}.')
-            getattr(cdo, method)(GRID_SPEC, input=str(path), output=str(weights))
-            _output_check(weights, print)
         print(f'Horizontally interpolating with grid weights {weights.name!r}.')
-        cdo.remap(f'{GRID_SPEC},{weights}', input=str(path), output=str(output))
+        cdo.remap(
+            f'{GRID_SPEC},{weights}',
+            input=str(path),
+            output=str(output),
+            options='-P 8',
+        )
         _output_check(output, print)
     return output
+
+
+def summarize_grids(
+    *paths, facets=None, project=None, flagship_translate=False, **constraints
+):
+    """
+    Print descriptions of horizontal grids and vertical levels for input files.
+
+    Parameters
+    ----------
+    paths : path-like, optional
+        The folder(s).
+    facets : str, optional
+        The facets to group by.
+    flagship_translate : bool, optional
+        Whether to group ensembles according to flagship or nonflagship identity.
+    **constraints
+        The additional constraints. Default is ``{'variable': 'ta'}``.
+    """
+    facets = facets or FACETS_SUMMARY
+    print = FacetPrinter('summary', 'grids')
+    print('Generating database.')
+    files, _ = _glob_files(*paths, project=project)
+    constraints = constraints or {'variable': 'ta'}
+    database = FacetDatabase(
+        files, facets, flagship_translate=flagship_translate, **constraints
+    )
+    grids, zaxes = {}, {}
+    for file, *_ in database:  # select first file from every file list
+        key = '_'.join(file.name.split('_')[:5])
+        try:
+            grid, zaxis = cdo.griddes(input=str(file)), cdo.zaxisdes(input=str(file))  # noqa: E501
+        except CDOException:
+            print(f'Warning: Failed to read file {file}.')  # message printed
+            continue
+        grid, zaxis = map(_parse_ncgrids, (grid, zaxis))
+        grids[key], zaxes[key] = grid, zaxis
+        print(f'\n{file.name}:')
+        for kw in (*grid, *zaxis):
+            string = ', '.join(
+                f'{k}: {v}' for k, v in kw.items()
+                if not isinstance(v, np.ndarray)
+            )
+            print(string, end='\n\n')
+            if kw in zaxis and 'vctsize' not in kw and kw['size'] > 1:
+                warnings.warn('Vertical axis does not have vertices.')
+    return grids, zaxes
+
+
+def summarize_processed(
+    *paths, facets=None, project=None, flagship_translate=False,
+):
+    """
+    Print summary of the processed climate and time series files.
+
+    Parameters
+    ----------
+    paths : path-like, optional
+        The folder(s).
+    facets : str, optional
+        The facets to group by.
+    project : str, optional
+        The scalar project.
+    flagship_translate : bool, optional
+        Whether to group ensembles according to flagship or nonflagship identity.
+    """
+    project = (project or 'cmip6').lower()
+    facets = facets or FACETS_SUMMARY
+    print = FacetPrinter('summary', 'processed', project=project)
+    print('Generating database.')
+    files, _ = _glob_files(*paths, project=project)
+    dates = sorted(set(map(_item_dates, files)))
+    interval = 500
+    database = FacetDatabase(files, facets, flagship_translate=flagship_translate)
+    for date in dates:
+        if not date:  # e.g. temporary files with suffix like 'standard-horizontal'
+            continue
+        print(f'Partitioning outputs {date}.')
+        database_date = copy.deepcopy(database)
+        for i, files in enumerate(database_date):
+            i % interval or print(f'Files: {i} out of {len(database_date)}')
+            files[:] = [file for file in files if _item_dates(file) == date]
+        database.summarize(message=f'Output {date}', printer=print)

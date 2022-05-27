@@ -2,21 +2,25 @@
 """
 File for downloading and merging relevant data.
 """
+# WARNING: List corrupt files that have to be manually deleted here. Can test using
+# e.g. for file in ta*nc; do echo $file && ncvardump ta $file >/dev/null; done
+# since often get HDF5 errors during processing but header can be read without error.
+# ./cmip6-picontrol-amon/clwvi_Amon_NorESM2-MM_piControl_r1i1p1f1_gn_132001-132912.nc
 import cmip_data
 
 # Global arguments
-# NOTE: Here have 'intvadse' and 'intvaw' for IPSL-CM6A-LR, CNRM-CM6-1, CNRM-ESM2-1,
-# and CNRM-CM6-1-HR (last one was briefly unavailable). Have only 'intvaw' for
-# ACCESS-CM2, ACCESS-CM1-5, and MIROC-ES2L, and only 'intvadse' for IPSL-CM5A2-INCA.
+# NOTE: Here have 'intvadse' and 'intvaw' for IPSL-CM6A-LR, CNRM-CM6-1, CNRM-ESM2-1, and
+# CNRM-CM6-1-HR (last one was briefly unavailable). Have only 'intvaw' for ACCESS-CM2,
+# ACCESS-CM1-5, MIROC-ES2L, and MIROC-ES2H, and only 'intvadse' for IPSL-CM5A2-INCA.
 # Have control 'vt' and 'vqint' for HadGEM3-GC31-LL, HadGEM3-GC31-MM, and UKESM1-0-LL.
 # NOTE: Here 'tauu' and 'tauv' are for jet calculations, since time-vertical-zonal
 # mean tauu is balanced by eddy-momentum convergence (integrated meridional wind is zero
 # due to mass conservation) and tauv is balanced by Coriolis torque from zonal wind.
 # Pair with residual eddy-energy transport for 'storm track' and 'eddy jet' metrics.
-# NOTE: Mark Zelinka CMIP5 is missing CNRM-CM5-2 (not sure why) and EC-Earth (possibly
-# due to piControl using EC-EARTH), increasing ensemble members from 29 to 31. Also
-# for some reason CSIRO-Mk3L-1-2 has only published abrupt data but not control data.
-# Unlike CMIP6 there are no flagships with non-r1i1p1 variants.
+# NOTE: Mark Zelinka CMIP5 is missing CNRM-CM5-2 (not sure why) and EC-Earth (because it
+# provides only partial data and recently disappeared from esgf), increasing ensemble
+# members from 29 to 31. Also for some reason CSIRO-Mk3L-1-2 has only published abrupt
+# data but not control data. Unlike CMIP6 verified there are no non-r1i1p1 flagships.
 # NOTE: Mark Zelinka CMIP6 is missing CAS-ESM2-0, FIO-ESM-2-0, ICON-ESM-LR, KIOST-ESM,
 # and MCM-UA-1-0 (older version also missed EC-Earth3-CC and GISS-E2-2-H but they were
 # recently added). However in search, failed to find control run of IPSL-CM6A-LR-INCA
@@ -28,16 +32,19 @@ import cmip_data
 # abrupt simulations of HadGEM3-GC31-LL and HadGEM3-GC31-MM (uses forcing 'f3', also
 # verified that 'parent_variable_label' is 'r1i1p1'), and both control and abrupt
 # simulations of CNRM-CM6-1, CNRM-CM6-1-HR, CNRM-ESM2-1, MIROC-ES2L, and UKESM1-0-LL
-# (uses forcing 'f2', and in contrast with HADGEM3 models the control forcing is also
-# 'f2'). There is also a MIROC-ES2H model that uses 'f2' that initially seems missed by
-# Mark but actually only provides single year of data for all variables (super weird).
-# Searched around and seems there are no other missing non-'r1i1p1f1' simulation pairs.
+# (uses forcing 'f2', and in contrast with HadGEM3 models the control forcing is also
+# 'f2'). There is also a MIROC-ES2H model that uses both 'f2' and 'p4' that Mark missed
+# (the equivalent 'f2' and 'p1' through 'p3' runs only include 1 year of data... weird).
+# Searched around and seems there are no other missing non-'r1i1p1f1' simulation pairs
+# (found only 'p2' ensemble of CanESM5-CANOE but only the control run is available).
 # In sum we added 5 models but missed 9 models for a total of 4 models fewer (47 instead
-# of 52). We can rectify everything but the IPSL model to provide a total of 4 models
-# more than Mark Zelinka (56 instead of 52).
+# of 52). We can rectify everything but the IPSL model, plus add the extra MIROC model,
+# to provide a total of 5 models more than Mark Zelinka (57 instead of 52).
+series = True  # get feedback time series?
+climate = True  # get all climate averages?
+feedbacks = True  # control and response data for feedbacks?
 constrain = True  # control data for constraints?
 circulation = True  # control and response data for implicit circulation stuff?
-feedbacks = True  # control and response data for feedbacks?
 explicit = True  # control and response data for explicit circulation stuff?
 download = False
 filter = False
@@ -86,44 +93,6 @@ kw_constant = {
         'sftlf',  # land fraction (possibly useful for averages e.g. constraints)
     ],
 }
-kw_constrain = {
-    'table': 'Amon',
-    'experiment': ['piControl', 'abrupt-4xCO2'],
-    'variable': [
-        'cl',  # percent cloud cover
-        'clt',  # total percent cloud cover
-        'cct',  # convective cloud top pressure
-        'clw',  # mass fraction cloud water/snow/ice
-        'cli',  # mass fraction cloud snow/ice
-        'clwvi',  # vertically integrated condensed cloud water/snow/ice
-        'clivi',  # vertically integrated condensed cloud snow/ice
-        'prw',  # vertically integrated water vapor path
-        'pfull',  # model level pressure (provided only for hybrid height models)
-        'ps',  # monthly surface pressure (for hybrid pressure sigma interpolation)
-        # 'pfull',  # pressure at model full levels (use hybrid coords instead)
-        # 'phalf',  # pressure at model half levels (use hybrid coords instead)
-    ]
-}
-kw_circulation = {
-    'table': 'Amon',
-    'experiment': ['piControl', 'abrupt-4xCO2'],
-    'variable': [
-        'hfls',  # surface upward LH flux for transport (Lv+Ls gained)
-        'hfss',  # surface upward SH flux for transport (heat gained)
-        'pr',  # water/snow/ice precipitation for transport (Lv+Ls gained)
-        'prsn',  # snow/ice precipitation for transport (Ls gained, use to isolate Lv)
-        'evspsbl',  # evaporation/transpiration/sublimation for transport (Lv+Ls lost)
-        'sbl',  # sublimation for transport (Ls lost, use to isolate Lv)
-        'ua',  # zonal wind for circulation
-        'va',  # meridional wind for circulation
-        'uas',  # surface wind for circulation
-        'vas',  # surface wind for circlation
-        'psl',  # sea-level pressure for circulation
-        'tauu',  # surface friction for circulation (indicates eddy jet strength)
-        'tauv',  # surface friction for circulation (indicates zonal jet strength)
-        'zg',  # geopotential height for circulation
-    ]
-}
 kw_feedbacks = {
     'table': 'Amon',
     'experiment': ['piControl', 'abrupt-4xCO2'],
@@ -149,6 +118,44 @@ kw_feedbacks = {
         # 'rss',  # net surface SW (use individual components instead)
     ],
 }
+kw_constrain = {
+    'table': 'Amon',
+    'experiment': ['piControl', 'abrupt-4xCO2'],
+    'variable': [
+        'cl',  # percent cloud cover
+        'clt',  # total percent cloud cover
+        'cct',  # convective cloud top pressure
+        'clw',  # mass fraction cloud water/snow/ice
+        'cli',  # mass fraction cloud snow/ice
+        'clwvi',  # vertically integrated condensed cloud water/snow/ice
+        'clivi',  # vertically integrated condensed cloud snow/ice
+        'prw',  # vertically integrated water vapor path
+        'pfull',  # model level pressure (provided only for hybrid height models)
+        'ps',  # monthly surface pressure (for hybrid pressure sigma interpolation)
+        # 'pfull',  # pressure at model full levels (use hybrid coords instead)
+        # 'phalf',  # pressure at model half levels (use hybrid coords instead)
+    ],
+}
+kw_circulation = {
+    'table': 'Amon',
+    'experiment': ['piControl', 'abrupt-4xCO2'],
+    'variable': [
+        'hfls',  # surface upward LH flux for transport (Lv+Ls gained)
+        'hfss',  # surface upward SH flux for transport (heat gained)
+        'pr',  # water/snow/ice precipitation for transport (Lv+Ls gained)
+        'prsn',  # snow/ice precipitation for transport (Ls gained, use to isolate Lv)
+        'evspsbl',  # evaporation/transpiration/sublimation for transport (Lv+Ls lost)
+        'sbl',  # sublimation for transport (Ls lost, use to isolate Lv)
+        'ua',  # zonal wind for circulation
+        'va',  # meridional wind for circulation
+        'uas',  # surface wind for circulation
+        'vas',  # surface wind for circlation
+        'psl',  # sea-level pressure for circulation
+        'tauu',  # surface friction for circulation (indicates eddy jet strength)
+        'tauv',  # surface friction for circulation (indicates zonal jet strength)
+        'zg',  # geopotential height for circulation
+    ]
+}
 kw_explicit = {
     'table': 'Emon',
     'experiment': ['piControl', 'abrupt-4xCO2'],
@@ -167,17 +174,16 @@ kw_explicit = {
     ]
 }
 
-
 # Download the wget files
 # NOTE: Facets and options supplied to constrain filter are standardized between
 # cmip5 and cmip6 synonyms. So can loop through both projects with about keywords.
 dicts = []
+if feedbacks:
+    dicts.append(kw_feedbacks)
 if constrain:
     dicts.append(kw_constrain)
 if circulation:
     dicts.append(kw_circulation)
-if feedbacks:
-    dicts.append(kw_feedbacks)
 if explicit:
     dicts.append(kw_explicit)
 if download:
@@ -192,11 +198,10 @@ if download:
                 node='llnl',
                 openid='https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd',
                 username='lukelbd',
-                flagship_filter=True,
+                flagship_translate=True,
                 **kwargs,
             )
             unfiltered.append(script)
-
 
 # Filter the resulting wget files
 # NOTE: Here only want to bother downloading constraint data with an equivalent
@@ -211,9 +216,6 @@ if filter:
         for project in projects:
             folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
             models_skip = (
-                'MIROC-ES2H',  # only provides single year of data
-            )
-            models_skip_pfull = (
                 'FGOALS-g2',  # sigma coordinates treated as hybrid
                 'FGOALS-g3',  # sigma coordinates treated as hybrid
                 'E3SM-1-1',  # does not have abrupt simulation
@@ -230,13 +232,10 @@ if filter:
                 endyears=False,
                 always_include={'variable': 'pfull'},  # i.e. bypass intersection
                 always_exclude=(
-                    {'model': models_skip},
-                    {'variable': 'pfull', 'model': models_skip_pfull},
+                    {'variable': 'pfull', 'model': models_skip},
                     {'variable': kw_constrain['variable'], 'experiment': 'abrupt-4xCO2'}
                 ),
-                facets_folder=['project', 'experiment', 'table'],
-                facets_intersect=['experiment'],  # include 'variable'?
-                flagship_filter=True,
+                flagship_translate=True,
                 **kwargs
             )
             filtered.extend(scripts)
@@ -247,35 +246,81 @@ if filter:
 # again exclude constraint data from processing (pfull is excluded in process_files).
 # See: https://pcmdi.llnl.gov/CMIP6/Guide/dataUsers.html
 if process:
-    for kwargs in dicts:
-        projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
-        for project in projects:
-            folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
-            experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
-            if kwargs is kw_constrain:
-                del experiments['abrupt-4xCO2']
-            for experiment, years in experiments.items():
-                kw = {**kwargs, 'experiment': experiment}
-                cmip_data.process_files(
-                    folder,
-                    project=project,
-                    climate=True,
-                    overwrite=False,
-                    dryrun=False,
-                    years=years,
-                    **kw,
-                )
-            experiments = {'abrupt-4xCO2': 150}
-            if kwargs is not kw_feedbacks:
-                experiments.clear()
-            for experiment, years in experiments.items():
-                kw = {**kwargs, 'experiment': experiment}
-                cmip_data.process_files(
-                    folder,
-                    project=project,
-                    climate=False,
-                    overwrite=False,
-                    dryrun=False,
-                    years=years,
-                    **kw,
-                )
+    for nodrift in (True,):
+        for kwargs in dicts:
+            projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
+            for project in projects:
+                folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
+                experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
+                if kwargs is kw_constrain:
+                    del experiments['abrupt-4xCO2']
+                if not climate:
+                    experiments.clear()
+                for experiment, years in experiments.items():
+                    kw = {**kwargs, 'experiment': experiment}
+                    cmip_data.process_files(
+                        folder,
+                        output='~/data',
+                        project=project,
+                        nodrift=nodrift,
+                        climate=True,
+                        overwrite=False,
+                        dryrun=False,
+                        years=years,
+                        **kw,
+                    )
+                experiments = {'abrupt-4xCO2': 150, 'piControl': 150}
+                if kwargs is not kw_feedbacks:
+                    experiments.clear()
+                if not series:
+                    experiments.clear()
+                for experiment, years in experiments.items():
+                    kw = {**kwargs, 'experiment': experiment}
+                    cmip_data.process_files(
+                        folder,
+                        output='~/scratch2/data-series',
+                        project=project,
+                        nodrift=nodrift,
+                        climate=False,
+                        overwrite=False,
+                        dryrun=False,
+                        years=years,
+                        **kw,
+                    )
+
+# Calculate the correlation, regression, and ratio feedbacks
+if process and feedbacks:
+    pass
+
+# Update the summary logs once finished
+# NOTE: The missing files for different feedback variables are tabulated below.
+# Checked the filter logs and same files are missing. Then checked the download logs
+# and for CMIP5 there were no failed dataset downloads but for CMIP6 there were several
+# that sometimes corresponded to missing files. Consider manually searching the
+# web interface or individually going onto model center websites. Currently should
+# consider fixing CMIP5 GFDL and FGOALS and CMIP6 FIO to get tropopause feedbacks, and
+# then NorESM2 and TaiESM1 (and possibly CAMS and GFDL-ESM4) to get surface feedbacks.
+# CMIP5 missing feedback models (copied 2022-05-08):
+# rsut: GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# rsutcs: GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# rsus: GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# rsuscs: FGOALS-g2, GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# CMIP6 missing feedback models (copied 2022-05-08):
+# rsdt: MCM-UA-1-0
+# rlutcs: MCM-UA-1-0
+# rsut: MCM-UA-1-0
+# rsutcs: FIO-ESM-2-0, MCM-UA-1-0
+# rlus: MCM-UA-1-0
+# rsus: MCM-UA-1-0
+# rsuscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
+# rlds: MCM-UA-1-0
+# rldscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0, NorESM2-LM, NorESM2-MM, TaiESM1
+# rsds: MCM-UA-1-0
+# rsdscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
+if False:
+    for project in ('cmip6', 'cmip5'):
+        kw = {'project': project, 'flagship_translate': True}
+        folders_downloads = ('~/scratch2', '~/scratch5')
+        folders_processed = ('~/data', '~/scratch2/data-series')
+        cmip_data.summarize_downloads(*folders_downloads, **kwargs)
+        cmip_data.summarize_processed(*folders_processed, **kwargs)

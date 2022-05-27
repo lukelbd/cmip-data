@@ -6,17 +6,15 @@ import json
 import warnings
 from pathlib import Path
 
+import climopy as climo  # noqa: F401  # add accessor
 import numpy as np
 import pandas as pd
 import xarray as xr
 import metpy.interpolate as interp
+from climopy import ureg
 from icecream import ic  # noqa: F401
 
-import climopy as climo  # noqa: F401  # add accessor
-from climopy import ureg
-
-# Constants
-DATA = Path.home() / 'data'
+from .facets import _glob_files
 
 
 def _standardize_kernels(ds, standardize_coords=False):
@@ -299,24 +297,30 @@ def load_cmip_tables(path='~/data'):
     return tables
 
 
-def load_cmip_xsections(
-    path='~/data', variable='ta', experiment='piControl', table='Amon', mode='latlev'
-):
+def load_cmip_xsections(path='~/data', **constraints):
     """
     Load CMIP variables for each model. Return a dictionary of datasets.
+
+    Parameters
+    ----------
+    path : path-like, optional
+        The data location. Passed to `_glob_files`.
+    **constraints
+        The constraints. Passed to `_glob_files`. Default is to take an average.
     """
-    # TODO: Support arbitrary multiple variables, experiments,
-    # etc. rather than just multiple projects and models.
-    variables = variable
-    if isinstance(variables, str):
-        variables = (variables,)
+    # NOTE: Currently standardize_coords renames bounds and converts coordinate
+    # units but does not convert bounds units... however that is irrelavant since
+    # we just need bounds for applying the weighting levels.
     monthly, seasonal, annual = {}, {}, {}
     for project in ('CMIP5', 'CMIP6'):
+        # Iterate over unique models
         print(f'Project: {project}')
-        path = DATA / f'{project.lower()}-{experiment}-{table}'
-        if not path.is_dir():
-            raise RuntimeError(f'Path {path!s} not found.')
-        files = sorted(file for var in variables for file in path.glob(f'{var}_{table}_*_{experiment}_{project.lower()}.nc'))  # noqa: E501
+        files = _glob_files(path, **constraints)
+        if not files:
+            raise RuntimeError(
+                f'Files with constraints {constraints} '
+                f'not found in path {path}.'
+            )
         models = tuple(file.name.split('_')[2] for file in files)
         print('Model:', end=' ')
         for i, model in enumerate(sorted(set(models))):
@@ -337,11 +341,6 @@ def load_cmip_xsections(
                     continue
 
                 # Standardize coordinates and attributes
-                # TODO: Translate latitude_bnds and longitude_bnds
-                # NOTE: Critical to work with dataset to retain bounds variables
-                # NOTE: This renames bounds and converts coordinate units but does not
-                # convert bounds units... however that is irrelavant since we just
-                # need bounds for applying the weighting levels.
                 ds = ds.climo.standardize_coords(verbose=False)
                 ds = ds.climo.add_scalar_coords(verbose=False)  # e.g. add back lon
                 for dim in ('lon', 'lat', 'lev'):
@@ -361,36 +360,6 @@ def load_cmip_xsections(
                 ds.close()
 
                 # Calculate annual and seasonal zonal averages
-                # TODO: Re-compute with 100 years instead of 50 years.
-                # TODO: Re-download data that only exists in longitude
-                # means originally computed and transfered from laptop.
-                # if any(dim not in da.coords for dim in ('lon', 'lat', 'lev')):
-                if any(dim not in da.coords for dim in ('lon', 'lat',)):
-                    messages.append('Missing spatial coordinates.')
-                    continue
-                if mode == 'latlev':  # cross-section
-                    if 'lon' in da.dims:
-                        da = da.mean('lon', keep_attrs=True)
-                    elif da.coords['lon'].size == 1:  # TODO: re-download and remove
-                        pass
-                    else:
-                        messages.append('Missing lon dimension.')
-                        continue
-                elif mode == 'lonlat':
-                    if 'lon' not in da.dims:
-                        messages.append('Missing lon dimension.')
-                        continue
-                    elif da.name in ('hur', 'hus'):  # weighted average with cell_height
-                        da = da.climo.average('lev', keep_attrs=True)
-                        pass
-                    elif 'lev' in da.dims:  # surface level selection
-                        sfc = da.coords['lev'].max(keep_attrs=True)
-                        da = da.sel(lev=sfc.item())
-                        lab = fr'{sfc.item():.0f}$\,${sfc.climo.units_label}'
-                        da.attrs['long_suffix'] = lab  # only if set(variables) & {'hur', 'hus'}?  # noqa: E501
-                        da = da.climo.replace_coords(lev=np.nan)
-                else:
-                    raise RuntimeError(f'Invalid reduction mode {mode!r}.')
                 ads[var] = da.mean('time', keep_attrs=True)
                 sds[var] = da.groupby('time.season').mean('time', keep_attrs=True)
                 mds[var] = da.climo.replace_coords(time=da['time.month']).rename(time='month')  # noqa: E501
@@ -416,6 +385,15 @@ def concat_datasets(tables, datasets, lat=10, lon=20, lev=50):
     """
     Interpolate and concatenate dictionaries of datasets. Input is dictionary of
     tables from different sources and dictionary of datasets from each model.
+
+    Parameters
+    ----------
+
+    Returns
+    -------
+    dataset : xarray.Dataset
+        The combined feedback and climate dataset. Contains ``'model'``
+        dimension whose values are built with ``project-model'``.
     """
     if not isinstance(tables, dict) or any(not isinstance(_, pd.DataFrame) for _ in tables.values()):  # noqa: E501
         raise ValueError('Invalid input. Must be dataframe.')
