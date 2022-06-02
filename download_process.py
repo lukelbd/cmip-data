@@ -6,6 +6,12 @@ File for downloading and merging relevant data.
 # e.g. for file in ta*nc; do echo $file && ncvardump ta $file >/dev/null; done
 # since often get HDF5 errors during processing but header can be read without error.
 # ./cmip6-picontrol-amon/clwvi_Amon_NorESM2-MM_piControl_r1i1p1f1_gn_132001-132912.nc
+# ./cmip6-picontrol-amon/clw_Amon_UKESM1-0-LL_piControl_r1i1p1f2_gn_196001-199912.nc
+# ./cmip6-picontrol-amon/cl_Amon_CNRM-CM6-1-HR_piControl_r1i1p1f2_gr_185001-185912.nc
+# ./cmip6-picontrol-amon/cl_Amon_CNRM-CM6-1-HR_piControl_r1i1p1f2_gr_186001-186912.nc
+# ./cmip6-picontrol-amon/cl_Amon_CNRM-CM6-1-HR_piControl_r1i1p1f2_gr_187001-187912.nc
+# Note only 3 files of CNRM-CM6-1-HR so far and last one is corrupt so should delete,
+# also there are no clw or cli files for this model, then add others as we go along.
 import cmip_data
 
 # Global arguments
@@ -47,8 +53,8 @@ constrain = True  # control data for constraints?
 circulation = True  # control and response data for implicit circulation stuff?
 explicit = True  # control and response data for explicit circulation stuff?
 download = False
-filter = False
-process = True
+filter = True
+process = False
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
 # NOTE: The abrupt and control radiation data is needed for 'local feedback parameter'
@@ -97,10 +103,10 @@ kw_feedbacks = {
     'table': 'Amon',
     'experiment': ['piControl', 'abrupt-4xCO2'],
     'variable': [
+        'ps',  # surface pressure for kernels
         'ta',  # air temperature for kernels
         'ts',  # surface temperature for kernels
         'hus',  # specific humidity for kernels
-        'huss',  # near-surface specific humidity for consistency
         'rsdt',  # downwelling SW TOA (identical to solar constant)
         'rlut',  # upwelling LW TOA
         'rsut',  # upwelling SW TOA
@@ -118,6 +124,26 @@ kw_feedbacks = {
         # 'rss',  # net surface SW (use individual components instead)
     ],
 }
+kw_circulation = {
+    'table': 'Amon',
+    'experiment': ['piControl', 'abrupt-4xCO2'],
+    'variable': [
+        'pr',  # water/ice precipitation for transport (Lv+Ls gained)
+        'prsn',  # ice precipitation for transport (Ls gained, use to isolate Lv)
+        'evspsbl',  # water/ice evaporation for transport (Lv+Ls lost)
+        'hfls',  # surface upward LH flux for transport (Lv+Ls gained)
+        'hfss',  # surface upward SH flux for transport (heat gained)
+        'sbl',  # ice evaporation for transport (Ls lost, use to isolate Lv)
+        'ua',  # zonal wind for circulation
+        'va',  # meridional wind for circulation
+        'uas',  # surface wind for circulation
+        'vas',  # surface wind for circlation
+        'psl',  # sea-level pressure for circulation
+        'tauu',  # surface friction for circulation (indicates eddy jet strength)
+        'tauv',  # surface friction for circulation (indicates zonal jet strength)
+        'zg',  # geopotential height for circulation
+    ]
+}
 kw_constrain = {
     'table': 'Amon',
     'experiment': ['piControl', 'abrupt-4xCO2'],
@@ -130,31 +156,24 @@ kw_constrain = {
         'clwvi',  # vertically integrated condensed cloud water/snow/ice
         'clivi',  # vertically integrated condensed cloud snow/ice
         'prw',  # vertically integrated water vapor path
-        'pfull',  # model level pressure (provided only for hybrid height models)
-        'ps',  # monthly surface pressure (for hybrid pressure sigma interpolation)
-        # 'pfull',  # pressure at model full levels (use hybrid coords instead)
-        # 'phalf',  # pressure at model half levels (use hybrid coords instead)
+        'huss',  # near-surface specific humidity
     ],
 }
-kw_circulation = {
-    'table': 'Amon',
-    'experiment': ['piControl', 'abrupt-4xCO2'],
-    'variable': [
-        'hfls',  # surface upward LH flux for transport (Lv+Ls gained)
-        'hfss',  # surface upward SH flux for transport (heat gained)
-        'pr',  # water/snow/ice precipitation for transport (Lv+Ls gained)
-        'prsn',  # snow/ice precipitation for transport (Ls gained, use to isolate Lv)
-        'evspsbl',  # evaporation/transpiration/sublimation for transport (Lv+Ls lost)
-        'sbl',  # sublimation for transport (Ls lost, use to isolate Lv)
-        'ua',  # zonal wind for circulation
-        'va',  # meridional wind for circulation
-        'uas',  # surface wind for circulation
-        'vas',  # surface wind for circlation
-        'psl',  # sea-level pressure for circulation
-        'tauu',  # surface friction for circulation (indicates eddy jet strength)
-        'tauv',  # surface friction for circulation (indicates zonal jet strength)
-        'zg',  # geopotential height for circulation
-    ]
+kw_dependencies = {
+    'table': ('Amon', 'AERmon'),
+    'experiment': ('piControl', 'control-1950'),
+    'variable': 'pfull',
+    'model': [
+        'ACCESS1-0',  # available in Amon piControl
+        'ACCESS1-3',  # available in Amon piControl
+        'HadGEM2-ES',  # available in Amon piControl
+        'ACCESS-CM2',  # available in Amon piControl
+        'ACCESS-ESM1-5',  # available in Amon piControl
+        'HadGEM3-GC31-LL',  # only available in Amon control-1950
+        'HadGEM3-GC31-MM',  # only available in Amon control-1950
+        'KACE-1-0-G',  # available in Amon piControl
+        'UKESM1-0-LL',  # only available in AERmon (see process.py)
+    ],
 }
 kw_explicit = {
     'table': 'Emon',
@@ -180,25 +199,35 @@ kw_explicit = {
 dicts = []
 if feedbacks:
     dicts.append(kw_feedbacks)
-if constrain:
-    dicts.append(kw_constrain)
 if circulation:
     dicts.append(kw_circulation)
+if constrain:
+    dicts.append(kw_constrain)
+if constrain:
+    dicts.append(kw_dependencies)
 if explicit:
     dicts.append(kw_explicit)
 if download:
     unfiltered = []
     for kwargs in dicts:
-        projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
+        if kwargs is kw_explicit:
+            projects = ('CMIP6',)
+        else:
+            projects = ('CMIP6', 'CMIP5')
         for project in projects:
-            folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
+            if kwargs is kw_dependencies:
+                folder = '~/scratch2/data-dependencies'
+            elif project == 'CMIP5':
+                folder = '~/scratch2'
+            elif project == 'CMIP6':
+                folder = '~/scratch5'
             script = cmip_data.download_script(
                 folder,
                 project=project,
                 node='llnl',
                 openid='https://esgf-node.llnl.gov/esgf-idp/openid/lukelbd',
                 username='lukelbd',
-                flagship_translate=True,
+                flagship_filter=True,
                 **kwargs,
             )
             unfiltered.append(script)
@@ -212,64 +241,75 @@ if download:
 if filter:
     filtered = []
     for kwargs in dicts:
-        projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
+        if kwargs is kw_explicit:
+            projects = ('CMIP6',)
+        else:
+            projects = ('CMIP6', 'CMIP5')
+        if kwargs is kw_dependencies:
+            always_exclude = {'table': 'AERmon', 'model': ['HadGEM3-GC31-LL', 'HadGEM3-GC31-MM']}  # noqa: E501
+        else:
+            always_exclude = {'variable': 'pfull'}
         for project in projects:
-            folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
-            models_skip = (
-                'FGOALS-g2',  # sigma coordinates treated as hybrid
-                'FGOALS-g3',  # sigma coordinates treated as hybrid
-                'E3SM-1-1',  # does not have abrupt simulation
-                'E3SM-1-1-ECA',  # does not have abrupt simulation
-                'IPSL-CM5A2',  # special hybrid coordinates interpolated
-                'IPSL-CM5A2-INCA',  # special hybrid coordinates interpolated
-                'IPSL-CM6A-LR',  # special hybrid coordinates interpolated
-                'IPSL-CM6A-LR-INCA',  # special hybrid coordinates interpolated
-            )
+            if kwargs is kw_dependencies:
+                folder = '~/scratch2/data-dependencies'
+            elif project == 'CMIP5':
+                folder = '~/scratch2'
+            elif project == 'CMIP6':
+                folder = '~/scratch5'
             scripts = cmip_data.filter_script(
                 folder,
                 project=project,
                 maxyears=150,
                 endyears=False,
-                always_include={'variable': 'pfull'},  # i.e. bypass intersection
-                always_exclude=(
-                    {'variable': 'pfull', 'model': models_skip},
-                    {'variable': kw_constrain['variable'], 'experiment': 'abrupt-4xCO2'}
-                ),
+                always_include=None,
+                always_exclude=always_exclude,
                 flagship_translate=True,
                 **kwargs
             )
             filtered.extend(scripts)
 
 # Average and standardize the resulting files
+# NOTE: Running overwrite=True
 # NOTE: Here follow Armour et al. 2019 methodology of taking difference between final
 # 30 years of the 150 years required by the DECK abrupt-4xco2 experiment protocol. Also
 # again exclude constraint data from processing (pfull is excluded in process_files).
 # See: https://pcmdi.llnl.gov/CMIP6/Guide/dataUsers.html
 if process:
-    for nodrift in (True,):
+    for nodrift in (True, False):
         for kwargs in dicts:
-            projects = ('CMIP6',) if kwargs is kw_explicit else ('CMIP6', 'CMIP5')
+            if kwargs is kw_dependencies:
+                projects = ()
+            elif kwargs is kw_explicit:
+                projects = ('CMIP6',)
+            else:
+                projects = ('CMIP6', 'CMIP5')
             for project in projects:
-                folder = '~/scratch2' if project == 'CMIP5' else '~/scratch5'
                 experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
                 if kwargs is kw_constrain:
                     del experiments['abrupt-4xCO2']
                 if not climate:
                     experiments.clear()
+                if project == 'CMIP5':
+                    folder = '~/scratch2'
+                elif project == 'CMIP6':
+                    folder = '~/scratch5'
                 for experiment, years in experiments.items():
                     kw = {**kwargs, 'experiment': experiment}
                     cmip_data.process_files(
                         folder,
                         output='~/data',
+                        search='~/scratch2/data-dependencies',
                         project=project,
+                        flagship_translate=True,
+                        method='gencon',
                         nodrift=nodrift,
-                        climate=True,
-                        overwrite=False,
-                        dryrun=False,
                         years=years,
+                        climate=True,
+                        overwrite=nodrift,
+                        dryrun=False,
                         **kw,
                     )
-                experiments = {'abrupt-4xCO2': 150, 'piControl': 150}
+                experiments = {'abrupt-4xCO2': 150, 'piCntrol': 150}
                 if kwargs is not kw_feedbacks:
                     experiments.clear()
                 if not series:
@@ -279,12 +319,15 @@ if process:
                     cmip_data.process_files(
                         folder,
                         output='~/scratch2/data-series',
+                        search='~/scratch2/data-dependencies',
                         project=project,
+                        flagship_translate=True,
+                        method='gencon',
                         nodrift=nodrift,
-                        climate=False,
-                        overwrite=False,
-                        dryrun=False,
                         years=years,
+                        climate=False,
+                        overwrite=nodrift,
+                        dryrun=False,
                         **kw,
                     )
 
@@ -319,8 +362,15 @@ if process and feedbacks:
 # rsdscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
 if False:
     for project in ('cmip6', 'cmip5'):
-        kw = {'project': project, 'flagship_translate': True}
         folders_downloads = ('~/scratch2', '~/scratch5')
-        folders_processed = ('~/data', '~/scratch2/data-series')
-        cmip_data.summarize_downloads(*folders_downloads, **kwargs)
-        cmip_data.summarize_processed(*folders_processed, **kwargs)
+        folders_processed = ('~/scratch2/data-series', '~/data')
+        cmip_data.summarize_downloads(
+            *folders_downloads,
+            project=project,
+            flagship_translate=True,
+        )
+        cmip_data.summarize_processed(
+            *folders_processed,
+            project=project,
+            flagship_translate=True,
+        )
