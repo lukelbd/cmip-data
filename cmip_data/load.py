@@ -381,13 +381,19 @@ def load_cmip_xsections(path='~/data', **constraints):
     return monthly, seasonal, annual
 
 
-def concat_datasets(tables, datasets, lat=10, lon=20, lev=50):
+def concat_datasets(tables, datasets):
     """
     Interpolate and concatenate dictionaries of datasets. Input is dictionary of
     tables from different sources and dictionary of datasets from each model.
 
     Parameters
     ----------
+    tables : dict
+        A dictionary of dataframes with feedback and sensitivity info. The
+        keys should indicate the source.
+    datasets : dict
+        A dictionary of datasets with cliamte info. The keys should indicate
+        the model.
 
     Returns
     -------
@@ -395,52 +401,20 @@ def concat_datasets(tables, datasets, lat=10, lon=20, lev=50):
         The combined feedback and climate dataset. Contains ``'model'``
         dimension whose values are built with ``project-model'``.
     """
-    if not isinstance(tables, dict) or any(not isinstance(_, pd.DataFrame) for _ in tables.values()):  # noqa: E501
-        raise ValueError('Invalid input. Must be dataframe.')
-    if not isinstance(datasets, dict) or any(not isinstance(_, xr.Dataset) for _ in datasets.values()):  # noqa: E501
-        raise ValueError('Invalid input. Must be dictionary of datasets.')
-    if np.iterable(lat):
-        pass
-    elif 90 % lat == 0:
-        lat = np.arange(-90, 90 + lat / 2, lat)
-    else:
-        raise ValueError(f'Invalid {lat=}.')
-    if np.iterable(lon):
-        pass
-    elif 360 % lon == 0:
-        lon = np.arange(0, 360 + lon / 2, lon)
-    else:
-        raise ValueError(f'Invalid {lon=}.')
-    if np.iterable(lev):
-        pass
-    elif 1000 % lev == 0:
-        lev = np.arange(lev, 1000 + lev / 2, lev)  # not including zero
-    else:
-        raise ValueError(f'Invalid {lev=}.')
-
-    # Interpolate datasets
-    print('Interpolating datasets...')
-    print('Model:', end=' ')
-    concat = {}
-    for i, (model, dataset) in enumerate(datasets.items()):
-        print(model, end='\n' if i == len(datasets) - 1 else ', ')
-        for key in ('lev_bnds', 'cell_width', 'cell_depth', 'cell_height'):
-            if key in dataset:
-                dataset = dataset.drop_vars(key)
-        interp = {}
-        for key, val in zip(('lon', 'lat', 'lev'), (lon, lat, lev)):
-            if key in dataset.dims:  # not coords
-                interp[key] = val
-        if 'lev' not in interp and 'lev' in dataset.coords:  # round pressuer levs
-            dataset = dataset.climo.replace_coords(lev=np.round(dataset.coords['lev']))
-        concat[model] = dataset.interp(**interp)
-
     # Combine datasets
     # WARNING: Critical to have same variables in each dataset
-    names = {name for ds in concat.values() for name in ds.data_vars}
+    if not isinstance(tables, dict) or not all(
+        isinstance(_, pd.DataFrame) for _ in tables.values()
+    ):
+        raise ValueError('Invalid input. Must be dictionary of dataframes.')
+    if not isinstance(datasets, dict) or not all(
+        isinstance(_, xr.Dataset) for _ in datasets.values()
+    ):
+        raise ValueError('Invalid input. Must be dictionary of datasets.')
+    names = {name for ds in datasets.values() for name in ds.data_vars}
     print('Concatenating datasets...')
     print(f'Variables names: {names}')
-    for ds in concat.values():  # interpolated datasets
+    for ds in datasets.values():  # interpolated datasets
         for name in names:
             if name not in ds:
                 da = tuple(ds.data_vars.values())[0]
@@ -448,13 +422,13 @@ def concat_datasets(tables, datasets, lat=10, lon=20, lev=50):
                 da.attrs.clear()
                 ds[name] = da
     models = xr.DataArray(
-        list(concat),
+        list(datasets),
         dims='model',
         name='model',
         attrs={'long_name': 'CMIP version and model ID'}
     )
     concat = xr.concat(
-        concat.values(),
+        datasets.values(),
         dim=models,
         coords='minimal',
         compat='equals',  # problems with e.g. both surface and integrated values

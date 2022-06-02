@@ -82,10 +82,10 @@ def _write_script(
 
     Parameters
     ----------
-    script : str
-        The script string.
+    path : path-like
+        The script location.
     prefix, center, suffix : list
-        The script parts. The center is sorted.
+        The script line parts. The center lines are sorted.
     openid : str, optional
         The openid to be hardcoded in the file.
     printer : callable, optional
@@ -367,7 +367,7 @@ def filter_script(
 
 
 def summarize_downloads(
-    *paths, facets=None, remove=False, project=None, flagship_translate=False,
+    *paths, facets=None, remove=False, flagship_translate=False, **constraints
 ):
     """
     Compare the input netcdf files in the directory to the files
@@ -381,34 +381,37 @@ def summarize_downloads(
         The facets to group by.
     remove : bool, optional
         Whether to remove detected missing files. Use this option with caution!
-    project : str, optional
-        The scalar project.
     flagship_translate : bool, optional
         Whether to group ensembles according to flagship or nonflagship identity.
+    **constraints
+        Passed to `_parse_constraints`.
     """
     # Generate script and file databases
     # NOTE: This is generally used to remove unnecessarily downloaded files as users
     # refine their filtering or downloading steps. Slow because we check membership
     # in giant lists instead of intersecting smaller lists for each folder... but
     # this approach is more flexible and this only needs to be run once so no worries.
-    project = (project or 'cmip6').lower()
+    interval = 500
     facets = facets or FACETS_SUMMARY
-    print = FacetPrinter('summary', 'downloads', project=project)
+    print = FacetPrinter('summary', 'downloads', **constraints)
     print('Generating databases.')
-    files_downloaded, files_duplicate = _glob_files(*paths, project=project)
-    names_downloaded = [file.name for file in files_downloaded]
+    files_downloaded, files_duplicate = _glob_files(
+        *paths, project=constraints.get('project', None)
+    )
+    names_downloaded = [
+        file.name for file in files_downloaded
+    ]
     names_scripts = [
         _item_file(line)
         for path in sorted(set(file.parent for file in files_downloaded))
         for file in path.glob('wget*.sh')
         for line in _parse_script(file, complement=False)
     ]
-    interval = 500
     database_downloads = FacetDatabase(
-        files_downloaded, facets, flagship_translate=flagship_translate
+        files_downloaded, facets, flagship_translate=flagship_translate, **constraints
     )
     database_scripts = FacetDatabase(
-        names_scripts, facets, flagship_translate=flagship_translate
+        names_scripts, facets, flagship_translate=flagship_translate, **constraints
     )
 
     # Partition into separate databases

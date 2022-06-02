@@ -233,16 +233,16 @@ _join_opts = lambda options: '_'.join(
 
 # Helper functions for parsing netcdf file names and wget script lines
 # NOTE: Netcdf names are <variable_id>_<table_id>_<source_id>_<experiment_id>...
-# ..._<member_id>_[<grid_label>[_<start_date>-<end_date>[-<climate_indicator>]]].nc
+# ..._<member_id>[_<grid_label>[_<start_date>-<end_date>[-<climate_indicator>]]].nc
 # where grid labels are only in cmip6 and climate indicator is used for e.g. pfull.
 # See: https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json
 _item_part = lambda file, idx: (
     getattr(file, 'name', file)  # str or Path input
     .strip("'").split('.')[0].split('_')[idx]
 )
-_item_file = lambda line: line.split()[0].strip("'"),
-_item_node = lambda line: line.split()[1].strip("'"),
-_item_dates = lambda file: d if (d := _item_part(file, -1))[0].isdigit() else ''
+_item_file = lambda line: line.split()[0].strip("'")
+_item_node = lambda line: line.split()[1].strip("'")
+_item_dates = lambda file: d if (d := _item_part(file, -1))[0].isdecimal() else ''
 _item_years = lambda file: tuple(int(s[:4]) for s in _item_dates(file).split('-')[:2])
 _main_parts = {
     'model': lambda file: _item_part(file, 2),
@@ -297,9 +297,11 @@ def _glob_files(*paths, pattern='*', project=None):
             file for ext in ('.nc', '.nc[0-9]') for path in paths
             for folder in Path(path).expanduser().glob(f'{project}*')
             for file in folder.glob(pattern + ext)
-            if file.stat().st_size > 0
-            or print(f'Warning: Removing empty download file {file.name!r}')
-            or file.unlink()
+            if file.name.count('_') >= 4 and (  # components can be parsed
+                file.stat().st_size > 0
+                or print(f'Warning: Removing empty download file {file.name!r}')
+                or file.unlink()
+            )
         ), facets=tuple(_file_parts)
     )
     files_duplicate = []
@@ -341,9 +343,10 @@ def _parse_constraints(reverse=True, restrict=True, **constraints):
         aliases = {(_, facet): alias for (_, alias), facet in FACET_ALIASES.items()}
     else:
         aliases = FACET_ALIASES
-    project = constraints.setdefault('project', ['CMIP6'])
-    project[:] = [proj.upper() for proj in project]  # in-place capitalization
-    project = project[0] if len(project) == 1 else None  # for naming standardization
+    projects = constraints.setdefault('project', ['CMIP6'])
+    if len(projects) != 1:
+        raise NotImplementedError('Non-scalar projects are not supported.')
+    projects[:] = [project := projects[0].upper()]
     facets = (
         *(facet for facet in FACET_ORDER if facet in constraints),  # impose order
         *(facet for facet in constraints if facet not in FACET_ORDER),  # keep order
@@ -497,7 +500,9 @@ class FacetDatabase(object):
             The constraints.
         """
         # NOTE: Since project is not included in script lines and file names we
-        # propagate it here. Note it is always used for folders and intersect groups.
+        # propagate it here. Also must always be scalar since not included in
+        # native file names or script lines and would be difficult to track
+        # outside of simply globbing the correct scripts and files.
         if len(args) == 1:
             source, facets = [item for items in self for item in items], *args
         elif len(args) == 2:
@@ -505,8 +510,6 @@ class FacetDatabase(object):
         else:
             raise TypeError(f'Expected 1 or 2 positional arguments. Got {len(args)}.')
         facets = facets.split(',') if isinstance(facets, str) else tuple(facets)
-        facets = {facet: () for facet in facets}
-        _, facets = _parse_constraints(**facets)
         project, constraints = _parse_constraints(**constraints)
         facets_group = ('project', *(facet for facet in _main_parts if facet in facets))
         facets_key = tuple(facet for facet in _main_parts if facet not in facets)
@@ -553,7 +556,7 @@ class FacetDatabase(object):
             for facet, opts in data.items() if opts
         )
         everything = {
-            group: {facet: opts for facet, opts in zip(self._key, zip(*data))}
+            group: {facet: set(opts) for facet, opts in zip(self._key, zip(*data))}
             for group, data in self._database.items()
         }
         available = {
