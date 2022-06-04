@@ -34,4 +34,5 @@ from .facets import *  # noqa: F401, F403
 from .download import *  # noqa: F401, F403
 from .process import *  # noqa: F401, F403
 from .feedbacks import *  # noqa: F401, F403
+from .kernels import *
 from .load import *  # noqa: F401, F403

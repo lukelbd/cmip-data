@@ -238,13 +238,9 @@ _join_opts = lambda options: '_'.join(
 # See: https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json
 _item_part = lambda file, idx: (
     getattr(file, 'name', file)  # str or Path input
-    .strip("'").split('.')[0].split('_')[idx]
+    .strip("'").split('.')[0].split('_')[idx]  # use part before .nc suffix
 )
-_item_file = lambda line: line.split()[0].strip("'")
-_item_node = lambda line: line.split()[1].strip("'")
-_item_dates = lambda file: d if (d := _item_part(file, -1))[0].isdecimal() else ''
-_item_years = lambda file: tuple(int(s[:4]) for s in _item_dates(file).split('-')[:2])
-_main_parts = {
+_item_parts = {
     'model': lambda file: _item_part(file, 2),
     'experiment': lambda file: _item_part(file, 3),
     'ensemble': lambda file: _item_part(file, 4),
@@ -252,29 +248,35 @@ _main_parts = {
     'variable': lambda file: _item_part(file, 0),
     'grid': lambda file: g if (g := _item_part(file, -1))[0] == 'g' else 'g',
 }
-_file_parts = {**_main_parts, 'dates': _item_dates}
-_line_parts = {**_file_parts, 'node': _item_node}
+_item_dates = lambda file: d if (d := _item_part(file, -1))[0].isdecimal() else ''
+_item_years = lambda file: tuple(int(s[:4]) for s in _item_dates(file).split('-')[:2])
+_item_file = lambda line: line.split()[0].strip("'")
+_item_node = lambda line: line.split()[1].strip("'").split('http://', 1)[-1].split('/')[0]  # noqa: E501
+_file_parts = {**_item_parts, 'dates': _item_dates}
+_line_parts = {**_item_parts, 'dates': _item_dates, 'node': _item_node}
 
 # Helper functions for sorting netcdf file names and wget script lines
 # NOTE: Previously we sorted files alphabetically but this means when processing
 # files for the first time we iterate over abrupt variables before the control
 # variables required for drift correction are available. The generalized priority
 # sorting ensures control data comes first and leaves room for additional restrictions.
-# NOTE: Previously we detected and removed identical files available from
-# multiple nodes but this was terrible idea. The scripts will auto-skip files
-# that both exist and are recorded in the .wget cache file, so as they loop over
-# files they ignore already-downloaded entries. This lets us maximize probability
-# and speed of retrieving files without having to explicitly filter bad nodes.
+# NOTE: Previously we detected and removed identical files available from multiple nodes
+# but this was terrible idea. The scripts will auto-skip files that both exist and are
+# recorded in the .wget cache file, so as they loop over files they ignore already
+# downloaded entries. This lets us maximize probability and speed of retrieving files
+# without having to explicitly filter bad nodes. Example indices for identical files:
+# ('00_ACCESS-ESM1-5', '00_piControl',...,'00_010101-012012', '02_esgf-data1.llnl.gov')
+# ('00_ACCESS-ESM1-5', '00_piControl',...,'00_010101-012012', '22_esgf.nci.org.au')
 _sort_facet = lambda items, facet: sorted(
     set(items), key=lambda item: _sort_index(item, facet)
 )
 _sort_facets = lambda items, facets: sorted(
-    items, key=lambda item: tuple(_sort_index(item, facet) for facet in facets),
+    items, key=lambda item: tuple(_sort_index(item, facet) for facet in facets)
 )
 _sort_index = lambda item, facet: (
-    (part := _line_parts[facet](item).lower() if '_' in getattr(item, 'name', item) else item)  # noqa: E501
-    and (priorities := (*FACET_PRIORITIES.get(facet, ()), part))  # noqa: E501
-    and min(f'{i}_{part}' for i, opt in enumerate(priorities) if opt in part)
+    (part := _line_parts[facet](item) if '_' in getattr(item, 'name', item) else item)
+    and (opts := (*FACET_PRIORITIES.get(facet, ()), part.lower()))
+    and min(f'{i:02d}_{part}' for i, opt in enumerate(opts) if opt in part.lower())
 )
 
 
@@ -290,6 +292,9 @@ def _glob_files(*paths, pattern='*', project=None):
     pattern : str, default: '*'
         The glob pattern preceding the file extension.
     """
+    # NOTE: Could amend this to not look for subfolders if 'project' was not passed
+    # but prefer consistency with FacetPrinter and FacetDatabase of always using cmip6
+    # as the default, and this is the only way to filter paths by 'project'.
     project = (project or 'cmip6').lower()
     paths = paths or ('~/data',)
     files = _sort_facets(  # have only seen .nc4 but this is in case
@@ -358,8 +363,8 @@ def _parse_constraints(reverse=True, restrict=True, **constraints):
     }
     if not restrict:
         pass
-    elif not constraints.keys() - _main_parts.keys() <= {'project'}:
-        raise ValueError(f'Facets {constraints.keys()} must be subset of: {_main_parts.keys()}')  # noqa: E501
+    elif not constraints.keys() - _item_parts.keys() <= {'project'}:
+        raise ValueError(f'Facets {constraints.keys()} must be subset of: {_item_parts.keys()}')  # noqa: E501
     return project, constraints
 
 
@@ -394,8 +399,8 @@ class FacetPrinter(object):
             else:
                 print(f'Removing previous log: {path}')
                 path.unlink(missing_ok=True)
-        self._path = path
-        self._constraints = constraints
+        self.path = path
+        self.constraints = constraints
 
     def __call__(self, *args, sep=' ', end='\n'):
         r"""
@@ -409,7 +414,7 @@ class FacetPrinter(object):
             Ending after last printed object.
         """
         print(*args, sep=sep, end=end)
-        with open(self._path, 'a') as f:
+        with open(self.path, 'a') as f:
             f.write(sep.join(map(str, args)) + end)
 
 
@@ -422,10 +427,10 @@ class FacetDatabase(object):
         return self.summarize(printer=lambda *args, **kwargs: None)
 
     def __len__(self):  # total number of files or lines
-        return sum(len(data.values()) for data in self._database.values())
+        return sum(len(data.values()) for data in self.database.values())
 
     def __iter__(self):  # iterate through lists of files or lines
-        for data in self._database.values():
+        for data in self.database.values():
             yield from data.values()
 
     def __init__(self, *args, **kwargs):
@@ -434,13 +439,13 @@ class FacetDatabase(object):
         self.reset(*args, **kwargs)
 
     def keys(self):
-        return self._database.keys()
+        return self.database.keys()
 
     def values(self):
-        return self._database.values()
+        return self.database.values()
 
     def items(self):
-        return self._database.items()
+        return self.database.items()
 
     def filter(self, keys, always_include=None, always_exclude=None):
         """
@@ -455,7 +460,7 @@ class FacetDatabase(object):
         always_exclude : dict or sequence, optional
             Dictionary describing invalid constraints, or a list thereof.
         """
-        project = self._project
+        project = self.project
         overrides = []
         for override in (always_include, always_exclude):
             override = override or ()
@@ -468,9 +473,9 @@ class FacetDatabase(object):
                 dicts.append(constraints)
             overrides.append(dicts)
         always_include, always_exclude = overrides
-        for group, data in self._database.items():
+        for group, data in self.database.items():
             for key in tuple(data):
-                parts = dict(zip((*self._group, *self._key), (*group, *key)))
+                parts = dict(zip((*self.group, *self.key), (*group, *key)))
                 if (
                     key not in (keys or data)
                     and not any(
@@ -511,16 +516,16 @@ class FacetDatabase(object):
             raise TypeError(f'Expected 1 or 2 positional arguments. Got {len(args)}.')
         facets = facets.split(',') if isinstance(facets, str) else tuple(facets)
         project, constraints = _parse_constraints(**constraints)
-        facets_group = ('project', *(facet for facet in _main_parts if facet in facets))
-        facets_key = tuple(facet for facet in _main_parts if facet not in facets)
-        self._group = facets_group
-        self._key = facets_key
-        self._project = project
-        self._constraints = constraints
-        self._database = {}
+        facets_group = ('project', *(facet for facet in _item_parts if facet in facets))
+        facets_key = tuple(facet for facet in _item_parts if facet not in facets)
+        self.group = facets_group
+        self.key = facets_key
+        self.project = project
+        self.constraints = constraints
+        self.database = {}
         for value in _sort_facets(source, facets=(*facets_group[1:], *facets_key)):
             parts = {'project': project}
-            parts.update({facet: func(value) for facet, func in _main_parts.items()})
+            parts.update({facet: func(value) for facet, func in _item_parts.items()})
             if any(opt not in constraints.get(facet, (opt,)) for facet, opt in parts.items()):  # noqa: E501
                 continue
             key_flagship = (project, parts['experiment'], parts['model'])
@@ -529,7 +534,7 @@ class FacetDatabase(object):
             if flagship_translate and 'flagship' not in (ens := parts['ensemble']):
                 parts['ensemble'] = 'flagship' if ens == ens_flagship else 'nonflagship'
             group = tuple(parts[facet] for facet in facets_group)
-            data = self._database.setdefault(group, {})
+            data = self.database.setdefault(group, {})
             key = tuple(parts[facet] for facet in facets_key)
             data.setdefault(key, []).append(value)
 
@@ -556,28 +561,29 @@ class FacetDatabase(object):
             for facet, opts in data.items() if opts
         )
         everything = {
-            group: {facet: set(opts) for facet, opts in zip(self._key, zip(*data))}
-            for group, data in self._database.items()
+            group: {facet: set(opts) for facet, opts in zip(self.key, zip(*data))}
+            for group, data in self.database.items()
         }
         available = {
-            facet: set(_ for opts in everything.values() for _ in opts.get(facet, ()))
-            for facet in self._key
+            facet: set(opt for data in everything.values() for opt in data.get(facet, ()))  # noqa: E501
+            for facet in self.key
         }
         if message:
             print(f'{message}:')
-        for group, opts in everything.items():
+        for group, data in everything.items():
+            if not data:
+                continue
             header = ', '.join(
-                f'{facet}: {opt}' for facet, opt in zip(self._group, group)
+                f'{facet}: {opt}' for facet, opt in zip(self.group, group)
             )
             unavailable = {
-                facet: available[facet] - set(opts[facet])
-                for facet in self._key
+                facet: available[facet] - set(data[facet]) for facet in self.key
             }
             print(header)
             if missing:
                 print('unavailable:')
                 flush(unavailable)
                 print('available:')
-            flush(opts)
+            flush(data)
         print()
         return '\n'.join(lines)

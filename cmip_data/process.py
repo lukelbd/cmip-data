@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Process groups of files downloaded from ESGF.
+Process groups of files downloaded from the ESGF.
 """
 import builtins
 import copy
@@ -46,10 +46,8 @@ __all__ = [
 #   [[ " ${models[*]} " =~ " $model " ]] && continue || models+=("$model")
 #   echo "$model:" && ncdims $f | grep -E 'lat|lon' | tr -s ' ' | xargs
 # done
-# GRID_SPEC = 'r360x180'  # 1.0 resolution
-# GRID_SPEC = 'r180x90'  # 2.0 resolution
-# GRID_SPEC = 'r144x72'  # 2.5 resolution
-GRID_SPEC = 'r72x36'  # 5.0 resolution
+# 'r360x180'  # 1.0 deg, 'r180x90'  # 2.0 deg, 'r144x72'  # 2.5 deg
+STANDARD_GRIDSPEC = 'r72x36'  # 5.0 resolution
 
 # Vertical grid constants
 # NOTE: Some models use hybrid coordinates but different names. The GFDL and CNRM
@@ -96,7 +94,7 @@ GRID_SPEC = 'r72x36'  # 5.0 resolution
 # cmip6-picontrol-amon/clw_Amon_IPSL-CM5A2-INCA_piControl_r1i1p1f1_gr_185001-209912.nc
 # cmip6-picontrol-amon/cl_Amon_IITM-ESM_piControl_r1i1p1f1_gn_192601-193512.nc
 # cmip6-picontrol-amon/cl_Amon_MCM-UA-1-0_piControl_r1i1p1f1_gn_000101-010012.nc
-VERT_LEVS = 100 * np.array(
+STANDARD_LEVELS = 100 * np.array(
     [
         1000, 925, 850, 700, 600, 500, 400, 300, 250,  # tropospheric
         200, 150, 100, 70, 50, 30, 20, 10, 5, 1,  # stratospheric
@@ -317,12 +315,12 @@ def process_files(
     # Find files and restrict to unique constraints
     # NOTE: Here we only constrain search to the project, which is otherwise not
     # indicated in native netcdf filenames. Similar approach to filter_script().
-    search = kwargs.pop('search', None)
-    method = kwargs.pop('method', None)
-    project = kwargs.get('project', None)
+    levels, search = kwargs.pop('levels', None), kwargs.pop('search', None)
+    gridspec, method = kwargs.pop('gridspec', None), kwargs.pop('method', None)
+    searches = (search,) if isinstance(search, (str, Path)) else tuple(search or ())
     dates, kwargs, constraints = _parse_time(constraints=True, **kwargs)
     print = printer or FacetPrinter('process', dates, **constraints)
-    files, _ = _glob_files(*paths, project=project)
+    files, _ = _glob_files(*paths, project=constraints.get('project', None))
     facets = facets or FACETS_FOLDER
     database = FacetDatabase(
         files, facets, flagship_translate=flagship_translate, **constraints
@@ -333,9 +331,12 @@ def process_files(
     # Initialize cdo and process files.
     # NOTE: Here perform horizontal interpolation before vertical interpolation because
     # latter adds NaNs and extrapolated data so should delay that step until very end.
+    # NOTE: Currently 'pfull' data is stored in separate 'data-dependencies' folder
+    # but 'ps' data is stored in normal folders since it is used for time-varying
+    # vertical integration of kernels and is always available.
     print(
         f'Input files ({len(database)}):',
-        *(f'{key}: ' + ' '.join(opts) for key, opts in database._constraints.items()),
+        *(f'{key}: ' + ' '.join(opts) for key, opts in database.constraints.items()),
         sep='\n', end='\n\n',
     )
     outs = []
@@ -345,6 +346,7 @@ def process_files(
         folder.mkdir(exist_ok=True)
         model = _file_parts['model'](files[0])
         variable = _file_parts['variable'](files[0])
+        search = (*searches, files[0].parent.parent)  # use the parent cmip folder
         if variable == 'pfull':
             continue
         stem = '_'.join(files[0].name.split('_')[:-1])
@@ -353,10 +355,19 @@ def process_files(
         hori = _output_path(folder, stem, 'standard-horizontal')
         out = _output_path(folder, stem, dates)
         outs.append(out)
-        kwtime = {'offset': constants, 'slope': constants, 'variable': variable, **kwargs}  # noqa: E501
-        kwvert = {'pfull': constants, 'ps': constants, 'search': search, 'project': project}  # noqa: E501
-        kwhori = {'method': method, 'weights': constants}
-        kw = {'overwrite': overwrite, 'printer': print, 'model': model}
+        kwtime = {
+            'offset': constants, 'slope': constants,
+            'variable': variable, 'model': model, **kwargs
+        }
+        kwvert = {
+            'levels': levels, 'search': search, 'project': database.project,
+            'pfull': constants, 'ps': constants, 'model': model,
+        }
+        kwhori = {
+            'gridspec': gridspec, 'method': method,
+            'weights': constants, 'model': model,
+        }
+        kw = {'overwrite': overwrite, 'printer': print}
         print('Output:', '/'.join((out.parent.name, out.name)))
 
         # Repair files and standardize time
@@ -419,8 +430,8 @@ def process_files(
 
 def repair_files(*paths, dryrun=False, printer=None):
     """
-    Repair the metadata on the input files in preparation for vertical
-    and horizontal standardization using `cdo`.
+    Repair the metadata on the input files in-place so they are compatible with the
+    `cdo` subcommands used by `standardize_vertical` and `standardize_horizontal`.
 
     Parameters
     ----------
@@ -868,6 +879,7 @@ def standardize_time(
 def standardize_vertical(
     path,
     output=None,
+    levels=None,
     ps=None,
     pfull=None,
     model=None,
@@ -887,6 +899,8 @@ def standardize_vertical(
         The input file.
     output : path-like, optional
         The output name and/or location.
+    levels : array-like, optional
+        The output levels. If not passed then the standard cmip levels are used.
     ps, pfull : path-like, optional
         The reference surface and model level pressure paths.
     model : str, optional
@@ -913,6 +927,7 @@ def standardize_vertical(
     output = _output_path(output or path.parent, path.stem, 'standard-vertical')
     search = search or '~/data'
     search = (search,) if isinstance(search, (str, Path)) else tuple(search)
+    levels = STANDARD_LEVELS if levels is None else np.array(levels)
     deps = output.parent / (output.stem + '-deps' + output.suffix)
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
@@ -942,7 +957,7 @@ def standardize_vertical(
         raise NotImplementedError(f'Cannot interpolate vertical axis {axis!r} for {path.name!r}.')  # noqa: E501
     string = ', '.join(f'{k}: {v}' for k, v in grids[0].items() if not isinstance(v, np.ndarray))  # noqa: E501
     print('Current vertical levels:', string)
-    print('Destination vertical levels:', ', '.join(map(str, VERT_LEVS.flat)))
+    print('Destination vertical levels:', ', '.join(map(str, levels.flat)))
 
     # Generate the dependencies
     # NOTE: This adds 'ps' and 'pfull' to hybrid height coordinate variables and adds
@@ -1000,13 +1015,17 @@ def standardize_vertical(
             merge = f'{merge} -setzaxis,{text}'  # applied to original file
             atted = [Atted('overwrite', 'long_name', 'lev', 'generalized height').prn_option()]  # noqa: E501
 
-    # Interpolate to pressure levels
+    # Add dependencies and interpolate
     # NOTE: Removing unneeded variables by leading chain with -delname,ps,orog,pfull
     # seemed to cause cdo > 1.9.1 and cdo < 2.0.0 to hang indefinitely. Not sure
     # why and not worth issuing bug report but make sure cdo is up to date.
     # NOTE: Tried applying long_name as part of the chain before ap2pl but seems axis
     # is deciphered before stepping through chain so this fails. Instead apply after
     # merge with ncatted (cdo setattribute at top of merge chain would also work).
+    levels_equal = lambda axis, array: (
+        axis == 'pressure' and array.size == levels.size
+        and np.all(np.isclose(array, levels))
+    )
     if not merge:
         print(f'File {path.name!r} already has required dependencies.')
         shutil.copy(path, deps)
@@ -1018,11 +1037,11 @@ def standardize_vertical(
             print('Preparing attributes for interpolation with:', *atted)
             nco.ncatted(input=str(deps), output=str(deps), options=atted)  # noqa: E501
         _output_check(deps, print)
-    if axis == 'pressure' and np.all(np.isclose(grids[0]['levels'], VERT_LEVS)):
+    if levels_equal(axis, grids[0]['levels']):
         print(f'File {path.name!r} is already on standard vertical levels.')
         deps.rename(output)
     else:
-        method = method % ','.join(map(str, VERT_LEVS.flat))
+        method = method % ','.join(map(str, np.atleast_1d(levels)))
         print(f'Vertically interpolating with method {method}.')
         cdo.delname(  # missing variables causes warning not error
             'ps,orog,pfull',
@@ -1037,20 +1056,22 @@ def standardize_vertical(
     # while others use integer, so important to use np.isclose() when comparing. Note
     # all pressure level models use Pa and are ordered with decreasing pressure.
     grids = _parse_ncgrids(cdo.zaxisdes(input=str(output)))
+    grids = [kw for kw in grids if kw['zaxistype'] != 'surface']
     axis = ', '.join(grid['zaxistype'] for grid in grids)
-    if axis == 'pressure' and np.all(np.isclose(grids[0]['levels'], VERT_LEVS)):
+    if levels_equal(axis, grids[0]['levels']):
         print('Verified correct output file levels.')
         deps.unlink(missing_ok=True)  # remove deps file
     else:
-        levels = ', '.join(map(str, grids[0]['levels'].flat))
+        result = ', '.join(map(str, np.atleast_1d(grids[0]['levels'])))
         output.unlink(missing_ok=True)  # retain deps file for debugging
-        raise RuntimeError(f'Incorrect output axis {axis!r} or levels {levels}.')
+        raise RuntimeError(f'Incorrect output axis {axis!r} or levels {result}.')
     return output
 
 
 def standardize_horizontal(
     path,
     output=None,
+    gridspec=None,
     method=None,
     weights=None,
     model=None,
@@ -1068,6 +1089,8 @@ def standardize_horizontal(
         The input file.
     output : path-like, optional
         The output name and/or location.
+    gridspec : str, default: 'r72x36'
+        The standard gridspec. Default is uniform 5 degree resolution.
     method : str, default: 'con'
         The `cdo` remapping command suffix.
     weights : path-like, optional
@@ -1088,11 +1111,12 @@ def standardize_horizontal(
     Paper: https://doi.org/10.1175/1520-0493(1999)127%3C2204:FASOCR%3E2.0.CO;2
     """
     # Initial stuff
-    method = method or 'con'
-    method = method if method[:3] == 'gen' else 'gen' + method
     print = printer or builtins.print
     path = Path(path).expanduser()
     output = _output_path(output or path.parent, path.stem, 'standard-horizontal')
+    method = method or 'con'
+    method = method if method[:3] == 'gen' else 'gen' + method
+    gridspec = STANDARD_GRIDSPEC if gridspec is None else gridspec
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
         return output
@@ -1109,22 +1133,22 @@ def standardize_horizontal(
     grid = grids[0]
     string = ', '.join(f'{k}: {v}' for k, v in grid.items() if not isinstance(v, np.ndarray))  # noqa: E501
     print('Current horizontal grid:', string)
-    print('Destination horizontal grid:', GRID_SPEC)
+    print('Destination horizontal grid:', gridspec)
 
     # Generate weights
     # NOTE: Grids for same model but different variables are sometimes different
     # most likely due to underlying staggered grids. Account for this by including
-    # grid indicator suffix in the default weight file name.
-    grid_spec = grid.get('gridtype', 'unknown')[:1] or 'u'
+    # the grid spec of the source file in the default weight file name.
+    grid_current = grid.get('gridtype', 'unknown')[:1] or 'u'
     if 'xsize' in grid and 'ysize' in grid:
-        grid_spec += 'x'.join(str(grid[s]) for s in ('xsize', 'ysize'))
+        grid_current += 'x'.join(str(grid[s]) for s in ('xsize', 'ysize'))
     else:
-        grid_spec += str(grid.get('gridsize', 'XXX'))
-    weights = _output_path(weights or path.parent, method, model, grid_spec)
+        grid_current += str(grid.get('gridsize', 'XXX'))
+    weights = _output_path(weights or path.parent, method, model, grid_current)
     if rebuild or not weights.is_file() or weights.stat().st_size == 0:
         print(f'Generating destination grid weights {weights.name!r}.')
         getattr(cdo, method)(
-            GRID_SPEC,
+            gridspec,
             input=str(path),
             output=str(weights),
             options='-P 8',
@@ -1136,14 +1160,14 @@ def standardize_horizontal(
     # variables getting silently skipped). So testing output griddes not necessary.
     opts = ('gridtype', 'xstart', 'ystart', 'xsize', 'ysize')
     key_current = tuple(grid.get(key, None) for key in opts)
-    key_destination = ('lonlat', 0, -90, *map(int, GRID_SPEC[1:].split('x')))
+    key_destination = ('lonlat', 0, -90, *map(int, gridspec[1:].split('x')))
     if key_current == key_destination:
         print(f'File {path.name!r} is already on destination grid.')
         shutil.copy(path, output)
     else:
         print(f'Horizontally interpolating with grid weights {weights.name!r}.')
         cdo.remap(
-            f'{GRID_SPEC},{weights}',
+            f'{gridspec},{weights}',
             input=str(path),
             output=str(output),
             options='-P 8',

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Calculate feedback, forcing, and sensitivity estimates from ESGF data.
+Calculate feedback, forcing, and sensitivity estimates for ESGF data.
 """
 import climopy as climo  # noqa: F401  # add accessor
 from icecream import ic  # noqa: F401
@@ -19,25 +19,28 @@ __all__ = [
 
 
 # Feedback variables
+# NOTE: The CAM5 kernels are stored so that positive for longwave is always up and
+# positive for shortwave is always down (see readme). However we want positive for
+# both shortwave and longwave, surface and toa to mean into the atmosphere. This
+# requires multiplication by -1 for toa longwave and surface shortwave kernels.
 # NOTE: Here albedo is taken from ratio of upwelling to downwelling all-sky surface
 # shortwave radiation, and surface shortwave and longwave feedbacks are determined
 # by regressing net (upwelling minus downwelling) radiation fluxes. Note since albedo
 # is just the ratio of upwelling to downwelling surface shortwave, and kernels are
 # the change in net shortwave per unit albedo, then surface albedo kernels are the
 # simple function Ka = (rsus - rsds) / (rsus / rsds). So totally radiation dependent.
-VARIABLES = [
-    'rlut',  # all-sky upwelling LW TOA
-    'rsut',  # all-sky upwelling SW TOA
-    'rlutcs',  # clear-sky upwelling LW TOA
-    'rsutcs',  # clear-sky upwelling SW TOA
-    'rlds',  # all-sky downwelling LW surface
-    'rsds',  # all-sky downwelling SW surface
-    'rldscs',  # clear-sky downwelling LW surface
-    'rsdscs',  # clear-sky downwelling SW surface
-    'rlus',  # all-sky upwelling LW surface (for net LW surface budget)
-    'rsus',  # all-sky upwelling SW surface (for net SW surface budget and albedo)
-    'rsuscs',  # all-sky upwelling SW surface (for net SW surface budget and albedo)
-]
+# NOTE: Here cloud feedback comes about from change in cloud radiative forcing (i.e.
+# R_cloud_abrupt - R_cloud_control where R_cloud = R_clear - R_all) then corrected
+# for masking of clear-sky effects (e.g. by adding dt * K_t_cloud where similarly
+# K_t_cloud = K_t_clear - K_t_all). Note that since shortwave clear-sky effects
+# are just albedo and small water vapor effect, the mask correction is far less
+# important. Only longwave component will have huge masked clear-sky effects.
+VARIABLES = {
+    ('rlut', 'rlutcs'): ('ta', 'ts', 'hus'),  # upwelling LW top-of-atmosphere
+    ('rsut', 'rsutcs'): ('hus', 'alb'),  # upwelling SW top-of-atmosphere
+    (('rlds', 'rlus'), 'rldscs'): ('ta', 'ts', 'hus'),  # downwelling LW surface
+    (('rsds', 'rsus'), ('rsdscs', 'rsuscs')): ('hus', 'alb'),  # downwelling SW surface
+}
 
 
 def _control_feedback():
@@ -111,10 +114,6 @@ def process_feedbacks(
     database = FacetDatabase(files, facets, flagship_translate=True, **constraints)
 
     # Calculate clear and full-sky feedbacks surface and TOA files
-    # NOTE: This requires existence of feedback kernel files for surface albedo,
-    # surface temperature, air temperature, specifid humidity. They will be created
-    # at the same location if they do not already exist. Could also loop through
-    # in separate function and put into separate database... but whatever dude.
     # NOTE: Unlike the method that uses a fixed SST experiment to deduce forcing and
     # takes the ratio of local radiative flux change to global temperature change as
     # the feedback, the average of a regression of radiative flux change against global
@@ -126,7 +125,7 @@ def process_feedbacks(
     response = response or (120, 150)
     kernels = ('ts', 'ta', 'hus', 'alb') if kernels else ()
     for group, data in database.items():
-        group = dict(zip(database._group, group))
+        group = dict(zip(database.group, group))
         string = ', '.join(f'{key}: {value}' for key, value in group.items())
         print(f'\nCalculating {mode} feedbacks:', string)
         key1 = 'piControl'
@@ -146,6 +145,6 @@ def process_feedbacks(
             print(*(date for date in (*dates1, *dates2)))
 
             # Select files for derivations
-            files = []
-            for kernel in kernels:
-                pass
+            # files = []
+            # for kernel in kernels:
+            #     pass

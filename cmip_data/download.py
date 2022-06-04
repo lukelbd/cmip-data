@@ -186,6 +186,7 @@ def download_script(
     project, constraints = _parse_constraints(
         reverse=False, restrict=False, **constraints
     )
+    raise Exception
     print = FacetPrinter('download', **constraints)
     conn = init_connection(node, username, password)
     facets = constraints.pop('facets', list(constraints))
@@ -335,7 +336,7 @@ def filter_script(
     for group, data in database.items():
         center = []  # wget script lines
         folder = path.parent / _join_opts((group,))
-        kwargs = {facet: (opt,) for facet, opt in zip(database._group, group)}
+        kwargs = {facet: (opt,) for facet, opt in zip(database.group, group)}
         for facet, opts in constraints.items():
             kwargs.setdefault(facet, opts)
         print('Writing script:', ', '.join(group))
