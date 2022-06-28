@@ -21,8 +21,8 @@ from pyesgf.search import SearchConnection
 
 from .facets import (
     _glob_files,
-    _join_opts,
     _item_file,
+    _item_join,
     _item_years,
     _line_parts,
     _parse_constraints,
@@ -31,7 +31,7 @@ from .facets import (
     FacetDatabase,
     FACETS_FOLDER,
     FACETS_SUMMARY,
-    FLAGSHIP_ENSEMBLES,
+    ENSEMBLES_FLAGSHIP,
     NODES_HOSTS,
 )
 
@@ -100,7 +100,7 @@ def _write_script(
     path = Path(path).expanduser()
     path.mkdir(exist_ok=True)
     _, constraints = _parse_constraints(**constraints)
-    name = _join_opts(constraints.values())
+    name = _item_join(constraints.values())
     path = path / ('wget_' + name + '.sh')
     prefix = re.sub(r'openId=\n', f'openId={openid!r}\n', ''.join(prefix))
     if openid and not re.search(re.escape(f'{openid!r}'), prefix):
@@ -186,13 +186,12 @@ def download_script(
     project, constraints = _parse_constraints(
         reverse=False, restrict=False, **constraints
     )
-    raise Exception
     print = FacetPrinter('download', **constraints)
     conn = init_connection(node, username, password)
     facets = constraints.pop('facets', list(constraints))
     if flagship_filter:
         ensembles = [
-            ensemble for key, ensemble in FLAGSHIP_ENSEMBLES.items() if key[0] == project  # noqa: E501
+            ensemble for key, ensemble in ENSEMBLES_FLAGSHIP.items() if key[0] == project  # noqa: E501
         ]
         if not ensembles:
             raise ValueError(f'Invalid {project=} for {flagship_filter=}. Must be CMIP5 or CMIP6.')  # noqa: E501
@@ -201,11 +200,11 @@ def download_script(
         )
         def flagship_filter(value):  # noqa: E301
             identifiers = [s.lower() for s in value.split('.')]
-            for keys, ensemble in FLAGSHIP_ENSEMBLES.items():
-                if all(key and key.lower() in identifiers for key in keys):
+            for keys, ensemble in ENSEMBLES_FLAGSHIP.items():
+                if all(key and key.lower() in identifiers for key in (*keys, ensemble)):
                     return True
             else:
-                return FLAGSHIP_ENSEMBLES[project, None, None] in identifiers
+                return ENSEMBLES_FLAGSHIP[project, None, None] in identifiers
 
     # Search and parse wget scripts
     # NOTE: This uses the 'dataset' search context to find individual simulations (i.e.
@@ -264,8 +263,9 @@ def download_script(
 
 def filter_script(
     path='~/data', maxyears=50, endyears=False, overwrite=False,
-    facets_intersect=None, facets_folder=None, flagship_translate=False,
-    always_include=None, always_exclude=None, **constraints
+    facets_intersect=None, facets_folder=None,
+    always_include=None, always_exclude=None,
+    **constraints
 ):
     """
     Filter the wget scripts to the input number of years for intersecting
@@ -285,14 +285,12 @@ def filter_script(
         The facets that should be enforced to intersect across other facets.
     facets_folder : str or sequence, optional
         The facets that should be grouped into unique folders.
-    flagship_translate : bool, optional
-        Whether to group ensembles according to flagship or nonflagship identity.
     always_include : dict-like, optional
         The constraints to always include in the output, ignoring the filters.
     always_exclude : dict-like, optional
         The constraints to always exclude from the output, ignoring the filters.
     **constraints
-        The constraints.
+        Passed to `FacetPrinter` and `FacetDatabase`.
     """
     # Read the file and group lines into dictionaries indexed by the facets we
     # want to intersect and whose keys indicate the remaining facets, then find the
@@ -315,9 +313,7 @@ def filter_script(
     prefix, suffix = _parse_script(files[0], complement=True)
     source = [line for file in files for line in _parse_script(file, complement=False)]
     facets_intersect = facets_intersect or FACETS_FOLDER
-    database = FacetDatabase(
-        source, facets_intersect, flagship_translate=flagship_translate, **constraints,
-    )
+    database = FacetDatabase(source, facets_intersect, **constraints)
     database.summarize(message='Initial groups', printer=print)
     groups = tuple(database.values())  # the group dictionaries
     keys = set(groups[0]).intersection(*map(set, groups))  # intersect dictionary keys
@@ -335,11 +331,13 @@ def filter_script(
     database.summarize(message='Folder groups', printer=print)
     for group, data in database.items():
         center = []  # wget script lines
-        folder = path.parent / _join_opts((group,))
-        kwargs = {facet: (opt,) for facet, opt in zip(database.group, group)}
+        group = dict(zip(database.group, group))
+        folder = path.parent / _item_join((group.values(),))
+        kwargs = {facet: (opt,) for facet, opt in group.items()}
         for facet, opts in constraints.items():
             kwargs.setdefault(facet, opts)
-        print('Writing script:', ', '.join(group))
+        print('Writing download script:')
+        print(', '.join(f'{key}: {value}' for key, value in group.items()))
         for key, lines in data.items():
             print('  ' + ', '.join(key) + ':', end=' ')
             years = (
@@ -367,9 +365,7 @@ def filter_script(
     return dests
 
 
-def summarize_downloads(
-    *paths, facets=None, remove=False, flagship_translate=False, **constraints
-):
+def summarize_downloads(*paths, facets=None, remove=False, **constraints):
     """
     Compare the input netcdf files in the directory to the files
     listed in the wget scripts in the same directory.
@@ -382,10 +378,8 @@ def summarize_downloads(
         The facets to group by.
     remove : bool, optional
         Whether to remove detected missing files. Use this option with caution!
-    flagship_translate : bool, optional
-        Whether to group ensembles according to flagship or nonflagship identity.
     **constraints
-        Passed to `_parse_constraints`.
+        Passed to `FacetPrinter` and `FacetDatabase`.
     """
     # Generate script and file databases
     # NOTE: This is generally used to remove unnecessarily downloaded files as users
@@ -397,7 +391,7 @@ def summarize_downloads(
     print = FacetPrinter('summary', 'downloads', **constraints)
     print('Generating databases.')
     files_downloaded, files_duplicate = _glob_files(
-        *paths, project=constraints.get('project', None)
+        *paths, project=constraints.get('project'),
     )
     names_downloaded = [
         file.name for file in files_downloaded
@@ -408,12 +402,8 @@ def summarize_downloads(
         for file in path.glob('wget*.sh')
         for line in _parse_script(file, complement=False)
     ]
-    database_downloads = FacetDatabase(
-        files_downloaded, facets, flagship_translate=flagship_translate, **constraints
-    )
-    database_scripts = FacetDatabase(
-        names_scripts, facets, flagship_translate=flagship_translate, **constraints
-    )
+    database_downloads = FacetDatabase(files_downloaded, facets, **constraints)
+    database_scripts = FacetDatabase(names_scripts, facets, **constraints)
 
     # Partition into separate databases
     print('Partitioning finished downloads.')

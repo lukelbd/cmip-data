@@ -2,6 +2,7 @@
 """
 Load datasets downloaded from external sources and downloaded here.
 """
+import builtins
 import json
 import warnings
 from pathlib import Path
@@ -13,14 +14,106 @@ import xarray as xr
 from climopy import ureg
 from icecream import ic  # noqa: F401
 
-from .facets import _glob_files
+from .facets import _get_ranges, _glob_files, LEVELS_CMIP5, LEVELS_CMIP6
 
 
-def load_cmip_tables(path='~/data'):
+__all__ = [
+    'load_file',
+    'load_tables',
+    'load_datasets',
+    'concat_tables',
+    'concat_datasets',
+]
+
+
+def load_file(path, variable=None, project=None, printer=None):
+    """
+    Open an output dataset and repair possible coordinate issues.
+
+    Parameters
+    ----------
+    path : path-like
+        The path.
+    project : str, optional
+        The project. Used in level checking.
+    variable : str, optional
+        The variable. If passed a data array is returned.
+    printer : callable, optional
+        The printer.
+    """
+    # Initial stuff
+    project = (project or 'cmip6').lower()
+    levels = LEVELS_CMIP5 if project == 'cmip5' else LEVELS_CMIP6
+    print = printer or builtins.print
+    data = xr.open_dataset(path, use_cftime=True)
+    if variable is not None:
+        data = data[variable]
+    data.load()
+    for coord in data.coords.values():  # remove missing bounds variables
+        coord.attrs.pop('bounds', None)
+
+    # Validate variable data
+    # NOTE: Here monthly temperature can be out of range in the stratosphere so we
+    # are conservative and only test annual means. Also don't bother with global
+    # tests for now (compare with 'summarize_ranges' function in process.py).
+    if variable is not None:
+        points, _ = _get_ranges()
+        test = data
+        if 'time' in data.sizes:  # use more liberal test
+            test = data.resample(time='AS').mean('time')
+        min_, max_ = test.min().item(), test.max().item()
+        if data.size > 1 and np.isclose(min_, max_):
+            data.data[:] = np.nan
+            print(
+                f'Warning: Variable {variable!r} has the identical value {min_} '
+                'across entire domain. Set all values to NaN.'
+            )
+        pmin, pmax = points.get(('Amon', variable), (None, None))
+        if pmin is not None and min_ < pmin or pmax is not None and max_ > pmax:
+            data.data[:] = np.nan
+            print(
+                f'Warning: Pointwise {variable!r} range ({min_}, {max_}) is outside '
+                f'the valid cmip range ({pmin}, {pmax}). Set all values to NaN.'
+            )
+    # Validate coordinate data
+    # NOTE: Here drop_duplicates is only available for arrays. Monitor this
+    # thread for updates: https://github.com/pydata/xarray/pull/5239
+    # NOTE: Since cmip6 includes 2 extra levels have to drop them to get it to work
+    # with cmip5 data (this is used to get standard kernels to work with cmip5 data).
+    if 'plev' in data.coords:
+        plev = data.coords['plev']
+        vals = [v for v in plev.data.flat if not np.any(np.isclose(v, levels))]
+        if vals:
+            message = ', '.join(format(v, '.0f') for v in vals)
+            data = data.drop_sel(plev=vals)
+            print(
+                f'Warning: File {path.name!r} has {len(vals)} extra (stratospheric?) '
+                f'pressure levels: {message}. Kept only the standard 19 levels.'
+            )
+    if variable is not None and 'time' in data.coords:  # only arrays (xarray #5239)
+        time = data.coords['time']
+        data = data.drop_duplicates('time', keep='first')
+        vals = [v for v in time.data.flat if v not in data.coords['time'].data]
+        if vals:  # error with standardize_time? or outdated file?
+            message = ', '.join(format(v, '.0f') for v in vals)
+            print(
+                f'Warning: File {path.name!r} has {len(vals)} duplicate '
+                f'time values: {message}. Kept only the first values.'
+            )
+    return data
+
+
+def load_tables(path='~/data'):
     """
     Load forcing-feedback data from each source. Return a dictionary of dataframes.
+
+    Parameters
+    ----------
+    path : path-like, optional
+        The base path. Searches for a ``cmip-tables`` subfolder.
     """
-    path = Path(path).expanduser() / 'cmip-tables'
+    path = Path(path).expanduser()
+    path = path / 'cmip-tables'
     if not path.is_dir():
         raise RuntimeError(f'Path {path!r} not found.')
     files = [file for ext in ('.txt', '.json') for file in path.glob('cmip*' + ext)]
@@ -65,7 +158,7 @@ def load_cmip_tables(path='~/data'):
     return tables
 
 
-def load_cmip_xsections(path='~/data', **constraints):
+def load_datasets(path='~/data', **constraints):
     """
     Load CMIP variables for each model. Return a dictionary of datasets.
 
@@ -149,46 +242,32 @@ def load_cmip_xsections(path='~/data', **constraints):
     return monthly, seasonal, annual
 
 
-def concat_datasets(tables, datasets):
+def concat_datasets(datasets, verbose=False):
     """
-    Interpolate and concatenate dictionaries of datasets. Input is dictionary of
-    tables from different sources and dictionary of datasets from each model.
+    Concatenate datasets along a model dimension
+    accounting for missing variables.
 
     Parameters
     ----------
-    tables : dict
-        A dictionary of dataframes with feedback and sensitivity info. The
-        keys should indicate the source.
     datasets : dict
-        A dictionary of datasets with cliamte info. The keys should indicate
-        the model.
-
-    Returns
-    -------
-    dataset : xarray.Dataset
-        The combined feedback and climate dataset. Contains ``'model'``
-        dimension whose values are built with ``project-model'``.
+        The datasets passed as dictionaries.
     """
-    # Combine datasets
-    # WARNING: Critical to have same variables in each dataset
-    if not isinstance(tables, dict) or not all(
-        isinstance(_, pd.DataFrame) for _ in tables.values()
-    ):
-        raise ValueError('Invalid input. Must be dictionary of dataframes.')
     if not isinstance(datasets, dict) or not all(
         isinstance(_, xr.Dataset) for _ in datasets.values()
     ):
         raise ValueError('Invalid input. Must be dictionary of datasets.')
-    names = {name for ds in datasets.values() for name in ds.data_vars}
+    names = sorted(set(name for ds in datasets.values() for name in ds.data_vars))
     print('Concatenating datasets...')
-    print(f'Variables names: {names}')
+    if verbose:
+        print('Variables:', *names)
     for ds in datasets.values():  # interpolated datasets
         for name in names:
-            if name not in ds:
-                da = tuple(ds.data_vars.values())[0]
-                da = xr.full_like(da, np.nan)
-                da.attrs.clear()
-                ds[name] = da
+            if name in ds:
+                continue
+            da = tuple(ds.data_vars.values())[0]
+            da = xr.full_like(da, np.nan)
+            da.attrs.clear()
+            ds[name] = da
     models = xr.DataArray(
         list(datasets),
         dims='model',
@@ -205,13 +284,13 @@ def concat_datasets(tables, datasets):
     for suffix in ('', 'vi'):  # in-place and vertially integrated
         ice = 'cli' + suffix  # solid
         water = 'clw' + suffix  # liquid + solid (read description)
-        if ice in names and water in names:
+        if ice in concat and water in concat:
             da = 100 * concat[ice] / concat[water]
             da = da.clip(0, 100)
             da.attrs['long_name'] = 'ice water ratio'
             da.attrs['units'] = '%'
             concat['clr' + suffix] = da
-    for name in names:
+    for name in concat.data_vars:
         da = concat[name]
         if da.climo.units == ureg.Pa:
             da.attrs['standard_units'] = 'hPa'  # default standard units
@@ -223,17 +302,43 @@ def concat_datasets(tables, datasets):
             del da.attrs['title']
         if da.climo.standard_units:
             concat[name] = da.climo.to_standard_units()
-    concat = concat.climo.add_cell_measures(verbose=False)
+    return concat.climo.add_cell_measures(verbose=False)
 
-    # Add tables
-    # NOTE: Keep models that are only available with different forcing variants. This
-    # still indicates simulations belonging to same branch but slightly different
-    # forcing procedure. The control data downloaded is all r1i1p1 though so should
-    # still match those values.
+
+def concat_tables(tables, datasets):
+    """
+    Concatenate pandas tables of feedback values along with the input
+    dataset.
+
+    Parameters
+    ----------
+    tables : dict
+        A dictionary of dataframes with feedback and sensitivity info. The
+        keys should indicate the source.
+    datasets : dict or xarray.Dataset
+        A dictionary of datasets with cliamte info. The keys should indicate
+        the model.
+
+    Returns
+    -------
+    dataset : xarray.Dataset
+        The combined feedback and climate dataset. Contains ``'model'``
+        dimension whose values are built with ``project-model'``.
+    """
+    # Combine datasets
+    # WARNING: Critical to have same variables in each dataset
+    if not isinstance(tables, dict) or not all(
+        isinstance(_, pd.DataFrame) for _ in tables.values()
+    ):
+        raise ValueError('Invalid input. Must be dictionary of dataframes.')
     print('Adding feedbacks and sensitivity...')
     message = lambda label, array: None if len(array) == 0 else print(
         f'{len(array)} {label}:', ', '.join(map(repr, sorted(array)))
     )
+    if isinstance(datasets, xr.Dataset):
+        dataset = datasets
+    else: # possibly raise type error inside this
+        dataset = concat_datasets(datasets)
     for project in ('CMIP5', 'CMIP6'):
         for src, table in tables.items():
             # Filter the table values
@@ -249,15 +354,15 @@ def concat_datasets(tables, datasets):
                 if variant[:6] == 'r1i1p1' and variant[-1] == '1' and model not in added:  # noqa: E501
                     added.add(model)
             table = table.loc[added, :]  # automatically assumes first index
-            final = set(m for m in table.index.levels[0] if project + '-' + m in models.values)  # noqa: E501
+            final = set(m for m in table.index.levels[0] if project + '-' + m in dataset.model.values)  # noqa: E501
             table = table.loc[final, :]
             # Add the values to the dataset
             for var, series in table.items():
                 key = src.split('-', 1)[1] + '_' + var.lower()
-                if key not in concat:
-                    full = np.full(concat.sizes['model'], np.nan)
-                    concat[key] = ('model', full)
-                    concat[key].attrs.update(
+                if key not in dataset:
+                    full = np.full(dataset.sizes['model'], np.nan)
+                    dataset[key] = ('model', full)
+                    dataset[key].attrs.update(
                         long_name=var.upper(),
                         units=(
                             'K' if var[:3] == 'ECS'
@@ -267,7 +372,7 @@ def concat_datasets(tables, datasets):
                     )
                 index = series.index.get_level_values('model')
                 index = [project + '-' + m for m in index]
-                concat[key].loc[index] = series.values
+                dataset[key].loc[index] = series.values
             # Messages
             print(f'Table {src!r}...')
             message('initial models', () if final == initial else initial)
@@ -275,4 +380,4 @@ def concat_datasets(tables, datasets):
             message('missing models', initial - final)
             message('final models', final)
 
-    return concat
+    return dataset

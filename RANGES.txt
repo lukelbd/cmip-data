@@ -1,0 +1,389 @@
+The below text was copied from https://clipc-services.ceda.ac.uk/dreq/index/qcranges.html
+although links on that page are dead so had to actually go through individual variables
+in the Amon table and navigate to Quality Control Ranges tab and follow those links.
+This data is automatically parsed by the summarize_ranges function in process.py.
+
+[Amon-cct] Guide ranges for cct (table Amon)
+valid_max[i]: 115000.0
+valid_min[i]: 0.0
+ok_min_mean_abs[i]: 5000.0
+ok_max_mean_abs[i]: 100000.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]: suggested
+valid_min_status[i]: robust
+
+[Amon-cl] Cloud Area Fraction
+valid_max[i]: 105.0
+valid_min[i]: 0.0
+ok_max_mean_abs[i]: 26.07
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]:
+valid_min_status[i]: suggested
+
+[Amon-clivi] Ice Water Path
+valid_max[i]: 1.535
+valid_min[i]: -1.872e-06
+ok_max_mean_abs[i]: 0.1187
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]:
+valid_min_status[i]: suggested
+
+[Amon-clt] Guide ranges for clt (table Amon)
+valid_max[i]: 100.001
+valid_min[i]: -0.001
+ok_min_mean_abs[i]: 10.0
+ok_max_mean_abs[i]: 90.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-clwvi] Condensed Water Path
+valid_max[i]: 3.364
+valid_min[i]: -3.827e-06
+ok_max_mean_abs[i]: 0.2846
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]:
+valid_min_status[i]: suggested
+
+[Amon-hfls] Guide ranges for hfls (table Amon)
+valid_max[i]: 1800.0
+valid_min[i]: -400.0
+ok_min_mean_abs[i]: 30.0
+ok_max_mean_abs[i]: 110.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-hfss] Guide ranges for hfss (table Amon)
+valid_max[i]: 2000.0
+valid_min[i]: -1000.0
+ok_min_mean_abs[i]: 5.0
+ok_max_mean_abs[i]: 60.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-hur] Guide ranges for hur (table Amon)
+valid_max[i]: 105.0
+valid_min[i]: -0.001
+ok_min_mean_abs[i]: 10.0
+ok_max_mean_abs[i]: 90.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-hurs] Guide ranges for hurs (table Amon)
+valid_max[i]: 100.001
+valid_min[i]: -0.001
+ok_min_mean_abs[i]: 50.0
+ok_max_mean_abs[i]: 99.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]: suggested
+valid_min_status[i]: robust
+
+[Amon-hus] Specific Humidity
+valid_max[i]: 0.02841
+valid_min[i]: -0.000299
+ok_max_mean_abs[i]: 0.01041
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]:
+valid_min_status[i]: suggested
+
+[Amon-huss] Guide ranges for huss (table Amon)
+valid_max[i]: 0.03
+valid_min[i]: 0.0
+ok_min_mean_abs[i]: 0.005
+ok_max_mean_abs[i]: 0.012
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-pr] Guide ranges for pr (table Amon)
+valid_max[i]: 0.0015
+valid_min[i]: -1e-06
+ok_min_mean_abs[i]: 1.5e-05
+ok_max_mean_abs[i]: 4e-05
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-prsn] Guide ranges for prsn (table Amon)
+valid_max[i]: 0.0008
+valid_min[i]: -1e-06
+ok_min_mean_abs[i]: 1e-06
+ok_max_mean_abs[i]: 8e-06
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-prw] Guide ranges for prw (table Amon)
+valid_max[i]: 90.0
+valid_min[i]: 0.0
+ok_min_mean_abs[i]: 12.0
+ok_max_mean_abs[i]: 26.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-ps] Guide ranges for ps (table Amon)
+valid_max[i]: 112000.0
+valid_min[i]: 47500.0
+ok_min_mean_abs[i]: 93000.0
+ok_max_mean_abs[i]: 100000.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-psl] Guide ranges for psl (table Amon)
+valid_max[i]: 109000.0
+valid_min[i]: 91000.0
+ok_min_mean_abs[i]: 96000.0
+ok_max_mean_abs[i]: 106000.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rlds] Guide ranges for rlds (table Amon)
+valid_max[i]: 520.0
+valid_min[i]: 30.0
+ok_min_mean_abs[i]: 260.0
+ok_max_mean_abs[i]: 330.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rldscs] Guide ranges for rldscs (table Amon)
+valid_max[i]: 550.0
+valid_min[i]: 25.0
+ok_min_mean_abs[i]: 220.0
+ok_max_mean_abs[i]: 310.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rlus] Guide ranges for rlus (table Amon)
+valid_max[i]: 660.0
+valid_min[i]: 43.0
+ok_min_mean_abs[i]: 320.0
+ok_max_mean_abs[i]: 380.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rlut] Guide ranges for rlut (table Amon)
+valid_max[i]: 385.0
+valid_min[i]: 65.0
+ok_min_mean_abs[i]: 205.0
+ok_max_mean_abs[i]: 305.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rlutcs] Guide ranges for rlutcs (table Amon)
+valid_max[i]: 390.0
+valid_min[i]: 65.0
+ok_min_mean_abs[i]: 220.0
+ok_max_mean_abs[i]: 270.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rsds] Guide ranges for rsds (table Amon)
+valid_max[i]: 550.0
+valid_min[i]: -0.1
+ok_min_mean_abs[i]: 120.0
+ok_max_mean_abs[i]: 200.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rsdscs] Guide ranges for rsdscs (table Amon)
+valid_max[i]: 550.0
+valid_min[i]: -0.1
+ok_min_mean_abs[i]: 120.0
+ok_max_mean_abs[i]: 200.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rsdt] TOA Incident Shortwave Radiation
+valid_max[i]: 580.4
+valid_min[i]: 0.0
+ok_min_mean_abs[i]: 282.6
+ok_max_mean_abs[i]: 315.8
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]: suggested
+valid_min_status[i]: suggested
+
+[Amon-rsus] Guide ranges for rsus (table Amon)
+valid_max[i]: 480.0
+valid_min[i]: -0.1
+ok_min_mean_abs[i]: 10.0
+ok_max_mean_abs[i]: 90.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rsuscs] Guide ranges for rsuscs (table Amon)
+valid_max[i]: 480.0
+valid_min[i]: -0.1
+ok_min_mean_abs[i]: 10.0
+ok_max_mean_abs[i]: 90.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rsut] Guide ranges for rsut (table Amon)
+valid_max[i]: 480.0
+valid_min[i]: -0.1
+ok_min_mean_abs[i]: 60.0
+ok_max_mean_abs[i]: 160.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-rsutcs] Guide ranges for rsutcs (table Amon)
+valid_max[i]: 480.0
+valid_min[i]: -0.1
+ok_min_mean_abs[i]: 30.0
+ok_max_mean_abs[i]: 120.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-sbl] Guide ranges for sbl (table Amon)
+valid_max[i]: 0.001
+valid_min[i]: -0.0005
+ok_min_mean_abs[i]: 0.0
+ok_max_mean_abs[i]: 0.0001
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-ta] Air Temperature
+valid_max[i]: 336.3
+valid_min[i]: 157.1
+ok_min_mean_abs[i]: 194.3
+ok_max_mean_abs[i]: 299.8
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]: suggested
+valid_min_status[i]: suggested
+
+[Amon-tas] Guide ranges for tas (table Amon)
+valid_max[i]: 350.0
+valid_min[i]: 170.0
+ok_min_mean_abs[i]: 255.0
+ok_max_mean_abs[i]: 295.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-tauu] Guide ranges for tauu (table Amon)
+valid_max[i]: 10.0
+valid_min[i]: -10.0
+ok_min_mean_abs[i]: 0.01
+ok_max_mean_abs[i]: 0.2
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-tauv] Guide ranges for tauv (table Amon)
+valid_max[i]: 10.0
+valid_min[i]: -10.0
+ok_min_mean_abs[i]: 0.01
+ok_max_mean_abs[i]: 0.2
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-ts] Guide ranges for ts (table Amon)
+valid_max[i]: 340.0
+valid_min[i]: 170.0
+ok_min_mean_abs[i]: 255.0
+ok_max_mean_abs[i]: 295.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-ua] Eastward Wind
+valid_max[i]: 136.6
+valid_min[i]: -68.65
+ok_min_mean_abs[i]: 1.101
+ok_max_mean_abs[i]: 22.42
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]: suggested
+valid_min_status[i]: suggestedCMIP6 Data Request
+
+[Amon-uas] Guide ranges for uas (table Amon)
+valid_max[i]: 80.0
+valid_min[i]: -80.0
+ok_min_mean_abs[i]: 1.0
+ok_max_mean_abs[i]: 10.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-va] Northward Wind
+valid_max[i]: 69.93
+valid_min[i]: -71.1
+ok_min_mean_abs[i]: 0.9886
+ok_max_mean_abs[i]: 4.679
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]: suggested
+valid_min_status[i]: suggested
+
+[Amon-vas] Guide ranges for vas (table Amon)
+valid_max[i]: 80.0
+valid_min[i]: -80.0
+ok_min_mean_abs[i]: 1.0
+ok_max_mean_abs[i]: 10.0
+valid_max_status[i]: robust
+ok_max_mean_abs_status[i]: robust
+ok_min_mean_abs_status[i]: robust
+valid_min_status[i]: robust
+
+[Amon-zg] Geopotential Height
+valid_max[i]: 34370.0
+valid_min[i]: -719.7
+ok_max_mean_abs[i]: 32990.0
+valid_max_status[i]: suggested
+ok_max_mean_abs_status[i]: suggested
+ok_min_mean_abs_status[i]:
+valid_min_status[i]: suggested
