@@ -30,9 +30,9 @@ cdo = Cdo(options=['-s'])
 nco = Nco()  # overwrite is default, and see https://github.com/nco/pynco/issues/56
 
 # Import remaining tools
-from .facets import *  # noqa: F401, F403
+from .internals import *  # noqa: F401, F403
 from .download import *  # noqa: F401, F403
 from .process import *  # noqa: F401, F403
 from .feedbacks import *  # noqa: F401, F403
 from .kernels import *  # noqa: F401, F403
-from .load import *  # noqa: F401, F403
+from .utils import *  # noqa: F401, F403

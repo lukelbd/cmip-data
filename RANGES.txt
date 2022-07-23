@@ -1,6 +1,8 @@
+Valid Ranges
+------------
 The below text was copied from https://clipc-services.ceda.ac.uk/dreq/index/qcranges.html
 although links on that page are dead so had to actually go through individual variables
-in the Amon table and navigate to Quality Control Ranges tab and follow those links.
+in the Amon table and navigate to Quality Control Ranges tab then follow those links.
 This data is automatically parsed by the summarize_ranges function in process.py.
 
 [Amon-cct] Guide ranges for cct (table Amon)
@@ -15,7 +17,7 @@ valid_min_status[i]: robust
 
 [Amon-cl] Cloud Area Fraction
 valid_max[i]: 105.0
-valid_min[i]: 0.0
+valid_min[i]: -0.1  # modified from 0.0 (triggered without nodrift)
 ok_max_mean_abs[i]: 26.07
 valid_max_status[i]: suggested
 ok_max_mean_abs_status[i]: suggested
@@ -24,7 +26,7 @@ valid_min_status[i]: suggested
 
 [Amon-clivi] Ice Water Path
 valid_max[i]: 1.535
-valid_min[i]: -1.872e-06
+valid_min[i]: -0.001  # modified from -1.872e-06 (triggered with nodrift)
 ok_max_mean_abs[i]: 0.1187
 valid_max_status[i]: suggested
 ok_max_mean_abs_status[i]: suggested
@@ -33,7 +35,7 @@ valid_min_status[i]: suggested
 
 [Amon-clt] Guide ranges for clt (table Amon)
 valid_max[i]: 100.001
-valid_min[i]: -0.001
+valid_min[i]: -0.1  # modified from -0.001 (consistent with cl)
 ok_min_mean_abs[i]: 10.0
 ok_max_mean_abs[i]: 90.0
 valid_max_status[i]: robust
@@ -43,7 +45,7 @@ valid_min_status[i]: robust
 
 [Amon-clwvi] Condensed Water Path
 valid_max[i]: 3.364
-valid_min[i]: -3.827e-06
+valid_min[i]: -0.001  # modified from -3.827e-06 (triggered with nodrift)
 ok_max_mean_abs[i]: 0.2846
 valid_max_status[i]: suggested
 ok_max_mean_abs_status[i]: suggested
@@ -91,8 +93,8 @@ ok_min_mean_abs_status[i]: suggested
 valid_min_status[i]: robust
 
 [Amon-hus] Specific Humidity
-valid_max[i]: 0.02841
-valid_min[i]: -0.000299
+valid_max[i]: 0.03  # modified from 0.02841 (cleaner)
+valid_min[i]: -0.001  # modified from -0.000299 (triggered without nodrift)
 ok_max_mean_abs[i]: 0.01041
 valid_max_status[i]: suggested
 ok_max_mean_abs_status[i]: suggested
@@ -100,8 +102,8 @@ ok_min_mean_abs_status[i]:
 valid_min_status[i]: suggested
 
 [Amon-huss] Guide ranges for huss (table Amon)
-valid_max[i]: 0.03
-valid_min[i]: 0.0
+valid_max[i]: 0.03  # unmodified (matches modified hus)
+valid_min[i]: -0.001  # modified from 0.0 (triggered without nodrift)
 ok_min_mean_abs[i]: 0.005
 ok_max_mean_abs[i]: 0.012
 valid_max_status[i]: robust
@@ -131,7 +133,7 @@ valid_min_status[i]: robust
 
 [Amon-prw] Guide ranges for prw (table Amon)
 valid_max[i]: 90.0
-valid_min[i]: 0.0
+valid_min[i]: -0.1  # modified from 0.0 (triggered with nodrift)
 ok_min_mean_abs[i]: 12.0
 ok_max_mean_abs[i]: 26.0
 valid_max_status[i]: robust
@@ -150,7 +152,7 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-psl] Guide ranges for psl (table Amon)
-valid_max[i]: 109000.0
+valid_max[i]: 110000.0  # modified from 109000.0 (triggered without nodrift)
 valid_min[i]: 91000.0
 ok_min_mean_abs[i]: 96000.0
 ok_max_mean_abs[i]: 106000.0
@@ -380,9 +382,9 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-zg] Geopotential Height
-valid_max[i]: 34370.0
-valid_min[i]: -719.7
-ok_max_mean_abs[i]: 32990.0
+valid_max[i]: 100000.0  # modified from 34370.0 (triggered without nodrift)
+valid_min[i]: -1000.0  # modified from -719.7 (cleaner)
+ok_max_mean_abs[i]: 50000.0  # modified from 32990.0 (triggered without nodrift)
 valid_max_status[i]: suggested
 ok_max_mean_abs_status[i]: suggested
 ok_min_mean_abs_status[i]:

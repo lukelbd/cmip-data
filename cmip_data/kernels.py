@@ -62,13 +62,13 @@ def _standardize_kernels(
                     )
                     ds[f'{var}a{sky}'] = da
             for lev in ('t', 's', 'a'):
-                if var + lev + 'cs' in ds and var + lev in ds:
-                    da = ds[var + lev] - ds[var + lev + 'cs']
+                if f'{var}{lev}cs' in ds and f'{var}{lev}' in ds:
+                    da = ds[f'{var}{lev}'] - ds[f'{var}{lev}cs']
                     nm = da.attrs['long_name']
                     da.attrs['long_name'] = (
-                        nm.replace('Net', 'Cloud forcing')
+                        nm.replace('Net', 'Cloud effect')
                     )
-                    ds[var + lev + 'cf'] = da
+                    ds[f'{var}{lev}ce'] = da
 
     # Standardize horizontal and vertical grid
     # TODO: Consider supporting xarray dataset input to the standardize functions
