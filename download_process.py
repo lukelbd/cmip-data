@@ -13,29 +13,34 @@ import cmip_data
 # mean tauu is balanced by eddy-momentum convergence (integrated meridional wind is zero
 # due to mass conservation) and tauv is balanced by Coriolis torque from zonal wind.
 # Pair with residual eddy-energy transport for 'storm track' and 'eddy jet' metrics.
-# NOTE: Mark Zelinka CMIP5 is missing CNRM-CM5-2 (not sure why) and EC-Earth (because it
-# provides only partial data and recently disappeared from esgf), increasing ensemble
-# members from 29 to 31. Also for some reason CSIRO-Mk3L-1-2 has only published abrupt
-# data but not control data. Unlike CMIP6 verified there are no non-r1i1p1 flagships.
-# NOTE: Mark Zelinka CMIP6 is missing CAS-ESM2-0, FIO-ESM-2-0, ICON-ESM-LR, KIOST-ESM,
-# and MCM-UA-1-0 (older version also missed EC-Earth3-CC and GISS-E2-2-H but they were
-# recently added). However in search, failed to find control run of IPSL-CM6A-LR-INCA
-# (tried ESGF website and seems it was removed, also checked that abrupt parent is
-# indeed the same model and searched the IPSL ESGF node -- note CMCC-CM2-HR4 also only
-# published abrupt data so was ignored by Mark and ignored by us), abrupt simulations of
-# EC-Earth3 (uses realization 'r8', verified that 'parent_variable_label' is 'r1i1p1f1',
-# and note 'r3' is also available but the online interface downloads zero-byte files),
-# abrupt simulations of HadGEM3-GC31-LL and HadGEM3-GC31-MM (uses forcing 'f3', also
-# verified that 'parent_variable_label' is 'r1i1p1'), and both control and abrupt
-# simulations of CNRM-CM6-1, CNRM-CM6-1-HR, CNRM-ESM2-1, MIROC-ES2L, and UKESM1-0-LL
-# (uses forcing 'f2', and in contrast with HadGEM3 models the control forcing is also
-# 'f2'). There is also a MIROC-ES2H model that uses both 'f2' and 'p4' that Mark missed
-# (the equivalent 'f2' and 'p1' through 'p3' runs only include 1 year of data... weird).
-# Searched around and seems there are no other missing non-'r1i1p1f1' simulation pairs
-# (found only 'p2' ensemble of CanESM5-CANOE but only the control run is available).
-# In sum we added 5 models but missed 9 models for a total of 4 models fewer (47 instead
-# of 52). We can rectify everything but the IPSL model, plus add the extra MIROC model,
-# to provide a total of 5 models more than Mark Zelinka (57 instead of 52).
+# NOTE: Mark Zelinka CMIP5 is missing r1i1p1 CNRM-CM5-2 (not sure why) and EC-Earth
+# (also skip this one because it provides only partial data and recently disappeared
+# from esgf... even tried downloading from CEDA but missing data), increasing ensemble
+# members from 29 to 30. Also for some reason CSIRO-Mk3L-1-2 has only published abrupt
+# data but not control. Verified that unlike CMIP6 there are no non-r1i1p1 flagships.
+# NOTE: Mark Zelinka CMIP6 is missing r1i1p1f1 CAS-ESM2-0, FIO-ESM-2-0, ICON-ESM-LR,
+# KIOST-ESM, and MCM-UA-1-0 (older versions also missed EC-Earth3-CC, EC-Earth3-Veg-LR,
+# GISS-E2-2-H but they were recently added). However in initial search, failed to find
+# non-r1i1p1f1 flagship abrupt runs of EC-Earth3 (uses realization 'r8', verified that
+# parent_variant_label is r1i1p1f1, and note 'r3' appears available but web interface
+# downloads zero-byte files), abrupt runs of HadGEM3-GC31-LL and HadGEM3-GC31-MM
+# (use forcing 'f3', also verified that parent_variant_label is r1i1p1), both control
+# and abrupt runs of CNRM-CM6-1, CNRM-CM6-1-HR, CNRM-ESM2-1, MIROC-ES2L, UKESM1-0-LL
+# (use forcing 'f2', and unlike HadGEM, control runs also use forcing 'f2'), and
+# control runs of IPSL-CM6A-LR-INCA (comment attribute indicates this was started from
+# an IPSL-CM6A-LR spinup and a full INCA version of the control run was never published
+# -- so we skip processing this one, and it is useless anyway since we are trying to
+# constrain the response from the control climate). There is also a MIROC-ES2H model
+# that uses both 'f2' and 'p4' that Mark missed (the equivalent 'f2' and 'p1' through
+# 'p3' runs only include 1 year of data... weird), and a similar UKESM1-1 model with the
+# same r1i1p1f2 variant (no pfull yet but also no model level data available). Verified
+# there are no other missing control-abrupt pairs (candidates are AWI-ESM-1-1-LR,
+# CMCC-CM2-HR4, CanESM5-CanOE, E3SM-1-1, E3SM-1-1-ECA, EC-Earth3-LR, and NorESM1-F,
+# but all are missing abrupt simulations). In sum we added 5 models but missed 9 models
+# for a total of 4 models fewer (49 instead of 53). We can rectify everything but the
+# IPSL model, plus add the extra MIROC and UKESM models, to provide a total of 6 models
+# more than Mark (59 instead of 53). Note that for MCM-UA-1-0, we download 'rtmt' files
+# and compute 'rsut - rsdt' from the difference (see 'manual_data.sh').
 series = True  # get feedback analysis time series?
 climate = True  # get various climate time averages?
 analysis = True  # control and response data for feedback analysis?
@@ -112,9 +117,9 @@ kw_analysis = {
         'rsuscs',  # upwelling SW surface (clear-sky) (in response to downwelling)
         'rldscs',  # downwelling LW surface (clear-sky)
         'rsdscs',  # downwelling SW surface (clear-sky)
+        # 'rtmt',  # net TOA LW and SW (Amon table, use individual components instead)
         # 'rls',  # net surface LW (Emon table, use individual components instead)
         # 'rss',  # net surface SW (Emon table, use individual components instead)
-        # 'rtmt',  # net TOA LW and SW (Amon table, use individual components instead)
     ],
 }
 kw_circulation = {
@@ -148,8 +153,8 @@ kw_constraints = {
         'cli',  # mass fraction cloud snow/ice
         'clwvi',  # vertically integrated condensed cloud water/snow/ice
         'clivi',  # vertically integrated condensed cloud snow/ice
-        'prw',  # vertically integrated water vapor path
         'huss',  # near-surface specific humidity
+        'prw',  # vertically integrated water vapor path
     ],
 }
 kw_dependencies = {
@@ -162,10 +167,11 @@ kw_dependencies = {
         'HadGEM2-ES',  # available in Amon piControl
         'ACCESS-CM2',  # available in Amon piControl
         'ACCESS-ESM1-5',  # available in Amon piControl
-        'HadGEM3-GC31-LL',  # only available in Amon control-1950
-        'HadGEM3-GC31-MM',  # only available in Amon control-1950
+        'HadGEM3-GC31-LL',  # only available in Amon control-1950 (skip AERmon)
+        'HadGEM3-GC31-MM',  # only available in Amon control-1950 (skip AERmon)
         'KACE-1-0-G',  # available in Amon piControl
         'UKESM1-0-LL',  # only available in AERmon (see process.py)
+        'UKESM1-1-LL',  # not available yet but will likely match UKESM1-0-LL
     ],
 }
 kw_explicit = {
@@ -226,6 +232,11 @@ if download:
             unfiltered.append(script)
 
 # Filter the resulting wget files
+# NOTE: The cloud model-level data for CNRM-CM6-1-HR is larger than any other (4GB
+# for 10 years of data compared to next highest of 2GB for 10 years of HadGEM-31-MM
+# data or 300MB to 1GB for 10 years of most other data) so skip this for now. These
+# files have 91 levels, 360 latitudes, 720 longitudes, way more than other models.
+# Try the following: cd ~/scratch5 && ll cmip*/cl{,i,w}_* | cut -d' ' -f5- | sort -h
 # NOTE: Here only want to bother downloading constraint data with an equivalent
 # abrupt simulation (indicating feedbacks are available) but don't actually want to
 # download this data so use the exclude fitler to avoid it. Also don't want abrupt
@@ -238,13 +249,16 @@ if filter:
             projects = ('CMIP6',)
         else:
             projects = ('CMIP6', 'CMIP5')
-        if kwargs is kw_dependencies:
-            always_exclude = {'table': 'AERmon', 'model': ['HadGEM3-GC31-LL', 'HadGEM3-GC31-MM']}  # noqa: E501
-        elif kwargs is kw_constraints:
-            always_exclude = {'experiment': 'abrupt4xCO2'}
-        else:
-            always_exclude = {}
         for project in projects:
+            exclude = []
+            if kwargs is kw_constraints:
+                exclude.append({'experiment': 'abrupt4xCO2'})
+            if project == 'CMIP5':
+                exclude.append({'model': 'EC-EARTH'})  # incomplete availability
+            elif kwargs is kw_dependencies:
+                exclude.append({'table': 'AERmon', 'model': ['HadGEM3-GC31-LL', 'HadGEM3-GC31-MM']})  # noqa: E501
+            elif kwargs is kw_constraints:
+                exclude.append({'model': 'CNRM-CM6-1-HR', 'variable': ['cl', 'clw', 'cli']})  # noqa: E501
             if kwargs is kw_dependencies:
                 folder = '~/scratch2/data-dependencies'
             elif project == 'CMIP5':
@@ -256,7 +270,7 @@ if filter:
                 maxyears=150,
                 endyears=False,
                 always_include=None,
-                always_exclude=always_exclude,
+                always_exclude=exclude,
                 flagship_filter=True,
                 project=project,
                 **kwargs
@@ -264,13 +278,15 @@ if filter:
             filtered.extend(scripts)
 
 # Average and standardize the resulting files
-# TODO: Overwrite only piControl nodrift series that should end up failing
 # NOTE: Here follow Armour et al. 2019 methodology of taking difference between final
 # 30 years of the 150 years required by the DECK abrupt-4xco2 experiment protocol. Also
 # again exclude constraint data from processing (pfull is excluded in process_files).
 # See: https://pcmdi.llnl.gov/CMIP6/Guide/dataUsers.html
 if process:
-    for nodrift in (True, False):
+    # nodrifts = (False,)
+    # nodrifts = (True,)
+    nodrifts = (False, True)
+    for nodrift in nodrifts:
         for kwargs in dicts:
             if kwargs is kw_dependencies:
                 projects = ()
@@ -298,13 +314,13 @@ if process:
                         years=years,
                         climate=True,
                         nodrift=nodrift,
-                        overwrite=False,
+                        overwrite=False,  # TODO: change back
                         dryrun=False,
                         flagship_filter=True,
                         project=project,
                         **kw,
                     )
-                experiments = {'abrupt-4xCO2': 150, 'piControl': 150}
+                experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
                 if kwargs is not kw_analysis:
                     experiments.clear()
                 if not series:
@@ -319,7 +335,7 @@ if process:
                         years=years,
                         climate=False,
                         nodrift=nodrift,
-                        overwrite=False,
+                        overwrite=False,  # TODO: change back
                         dryrun=False,
                         flagship_filter=True,
                         project=project,
@@ -331,48 +347,67 @@ if process:
 # NOTE: The residual feedback will only be calculated if all kernels
 # for the associated flux are requested. Otherwise this is bypassed.
 if feedbacks:
-    for nodrift in (True, False):
-        # methods = ('response', 'control', 'anomalies')
-        methods = ('response', 'control')
-        for method in methods:
+    # nodrifts = (False,)
+    # nodrifts = (True,)
+    nodrifts = (False, True)
+    for nodrift in nodrifts:
+        experiments = (
+            ('abrupt4xCO2', False),  # regression of series
+            ('piControl', False),  # regression of series
+            ('abrupt4xCO2', True),  # ratio of anomalies
+        )
+        for experiment, ratio in experiments:
             projects = ('CMIP6', 'CMIP5')
             for project in projects:
                 cmip_data.process_feedbacks(
                     '~/data',
                     '~/scratch2/data-series',
-                    method=method,
+                    ratio=ratio,
                     project=project,
+                    experiment=experiment,
                     flagship_filter=True,
                     nodrift=nodrift,
                     overwrite=False,
-                    testing=True,
+                    testing=False,
                 )
 
 # Update the summary logs once finished
-# NOTE: The missing files for different feedback variables are tabulated below.
-# Checked the filter logs and same files are missing. Then checked the download logs
-# and for CMIP5 there were no failed dataset downloads but for CMIP6 there were several
-# that sometimes corresponded to missing files. Consider manually searching the
-# web interface or individually going onto model center websites. Currently should
-# consider fixing CMIP5 GFDL and FGOALS and CMIP6 FIO to get tropopause feedbacks, and
-# then NorESM2 and TaiESM1 (and possibly CAMS and GFDL-ESM4) to get surface feedbacks.
-# CMIP5 missing feedback models (copied 2022-05-08):
-# rsut: GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
-# rsutcs: GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
-# rsus: GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
-# rsuscs: FGOALS-g2, GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
-# CMIP6 missing feedback models (copied 2022-05-08):
-# rsdt: MCM-UA-1-0
-# rlutcs: MCM-UA-1-0
-# rsut: MCM-UA-1-0
-# rsutcs: FIO-ESM-2-0, MCM-UA-1-0
-# rlus: MCM-UA-1-0
-# rsus: MCM-UA-1-0
-# rsuscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
+# NOTE: Missing GFDL data can be found on the GFDL data ftp://nomads.gfdl.noaa.gov/
+# data portal (e.g. finder 'connect to server' or curl or lftp). See manual_data.sh
+# and this link for details: https://data1.gfdl.noaa.gov/faq.html
+# NOTE: Missing EC-EARTH data can be found on the CEDA data portal using ftp methods
+# or curl -O http links: https://dap.ceda.ac.uk/badc/cmip5/data/cmip5/output1/ICHEC/
+# however too much is missing for worthwhile analysis (no rtmt or rsut).
+# NOTE: Still need to download missing FGOALS-g2, CAMS-CSM1-0, GFDL-ESM4, NorESM2-LM,
+# NorESM2-MM, and TaiESM1 flux for surface and atmosphere feedbacks. Note MCM-UA-1-0
+# only provides rtmt and rlus TOA flux so impossible to get that missing data.
+# CMIP5 models (copied 2022-07-10):
+# rlds: EC-EARTH
+# rldscs: EC-EARTH
+# rlus: EC-EARTH
+# rlut: EC-EARTH
+# rlutcs: EC-EARTH
+# rsds: EC-EARTH
+# rsdscs: EC-EARTH
+# rsus: EC-EARTH, GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# rsuscs: EC-EARTH, FGOALS-g2, GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# rsut: EC-EARTH, GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# rsutcs: EC-EARTH, GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# ts: EC-EARTH, GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# ta: GFDL-CM3, GFDL-ESM2G, GFDL-ESM2M
+# CMIP6 models (copied 2022-07-10):
 # rlds: MCM-UA-1-0
 # rldscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0, NorESM2-LM, NorESM2-MM, TaiESM1
+# rlus: MCM-UA-1-0
+# rlutcs: MCM-UA-1-0
 # rsds: MCM-UA-1-0
 # rsdscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
+# rsdt: MCM-UA-1-0
+# rsus: MCM-UA-1-0
+# rsuscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
+# rsut: MCM-UA-1-0
+# rsutcs: FIO-ESM-2-0, MCM-UA-1-0
+# rsdt: MCM-UA-1-0
 if summarize:
     for project in ('cmip6', 'cmip5'):
         folders_downloads = ('~/scratch2', '~/scratch5')
@@ -383,6 +418,7 @@ if summarize:
             flagship_translate=True,
         )
         cmip_data.summarize_processed(
+            *folders_downloads,
             *folders_processed,
             project=project,
             flagship_translate=True,
