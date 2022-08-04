@@ -2,6 +2,52 @@
 """
 Process groups of files downloaded from the ESGF.
 """
+# NOTE: Some models use hybrid coordinates but have different names. The GFDL and CNRM
+# models have zaxistype 'hybrid' and longname 'atmospheric model level' instead of the
+# 'hybrid sigma pressure coordinate' (seems due to using an 'ap' pressure term instead
+# of an 'a' coefficient times a 'p0' reference), and some FGOALS models have zaxistype
+# 'generic' and longname 'sigma coordinate' instead of zaxistype 'hybrid' (also the
+# CMIP5 hybrid FGOALS-s2 model, but not the CMIP6 hybrid FGOALS-f3-L model, use 'ap'
+# pressure coordinates despite naming them 'a' and indicating 'a' in formula terms).
+# However 'cdo ml2pl' is general so works (seems to parse 'formula'). Relevant files:
+# cmip6-picontrol-amon/cl_Amon_GFDL-CM4_piControl_r1i1p1f1_gr1_015101-025012.nc
+# cmip6-picontrol-amon/cl_Amon_GFDL-ESM4_piControl_r1i1p1f1_gr1_000101-010012.nc
+# cmip6-picontrol-amon/cl_Amon_CNRM-CM6-1_piControl_r1i1p1f2_gr_185001-194912.nc
+# cmip6-picontrol-amon/cl_Amon_CNRM-ESM2-1_piControl_r1i1p1f2_gr_185001-194912.nc
+# cmip5-picontrol-amon/cl_Amon_FGOALS-g2_piControl_r1i1p1_020101-021012.nc
+# cmip6-picontrol-amon/cl_Amon_FGOALS-g3_piControl_r1i1p1f1_gn_020001-020912.nc
+# NOTE: Some models have zaxistype 'generic' and longname 'hybrid height coordinates'
+# and require 'pfull' for vertical interpolation. These consist of ACCESS, KACE, UKESM,
+# and HadGEM. Since CMIP5 only provides 'pfull' for control experiments we use these
+# even for forced experiments. Also HadGEM only provides 'pfull' for control-1950 and
+# UKESM only provides 'pfull' for AERmon instead of Amon so we manually obtained wget
+# scripts using the online interface (see also the filter command). Relevant files:
+# cmip5-picontrol-amon/cl_Amon_ACCESS1-0_piControl_r1i1p1_030001-032412.nc
+# cmip5-picontrol-amon/cl_Amon_ACCESS1-3_piControl_r1i1p1_025001-027412.nc
+# cmip6-picontrol-amon/cl_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_095001-096912.nc
+# cmip6-picontrol-amon/cl_Amon_ACCESS-ESM1-5_piControl_r1i1p1f1_gn_010101-012012.nc
+# cmip6-picontrol-amon/cl_Amon_E3SM-1-0_piControl_r1i1p1f1_gr_000101-002512.nc
+# cmip5-picontrol-amon/cl_Amon_HadGEM2-ES_piControl_r1i1p1_185912-188411.nc
+# cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-MM_piControl_r1i1p1f1_gn_185001-185912.nc
+# cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-LL_piControl_r1i1p1f1_gn_185001-189912.nc
+# cmip6-picontrol-amon/cl_Amon_KACE-1-0-G_piControl_r1i1p1f1_gr_200001-209912.nc
+# cmip6-picontrol-amon/cl_Amon_UKESM1-0-LL_piControl_r1i1p1f2_gn_196001-199912.nc
+# NOTE: Some model data is erroneously interpreted as having pressure levels due to
+# missing CF standard name and formula terms. This includes all CESM2 models except
+# CESM2-WACCM-FV2, so can infer correct attributes for this (note the latter is also
+# messed up, since some have levels with positive descending magnitude and others with
+# negative ascending magnitude, so must manually flip axis before merging and let cdo
+# issue a level mismatch warning). It also includes IPSL models but no point of
+# reference, have to adjust manually. Finally, IITM-ESM and MCM-UA *actually do* provide
+# standard pressure level data when not required by the table protocol. Relevant files:
+# cmip6-picontrol-amon/cl_Amon_CESM2_piControl_r1i1p1f1_gn_000101-009912.nc
+# cmip6-picontrol-amon/cl_Amon_CESM2-FV2_piControl_r1i1p1f1_gn_000101-005012.nc
+# cmip6-picontrol-amon/cl_Amon_CESM2-WACCM_piControl_r1i1p1f1_gn_000101-009912.nc
+# cmip6-picontrol-amon/cl_Amon_CESM2-WACCM-FV2_piControl_r1i1p1f1_gn_000101-004912.nc
+# cmip6-picontrol-amon/cl_Amon_IPSL-CM6A-LR_piControl_r1i1p1f1_gr_185001-234912.nc
+# cmip6-picontrol-amon/clw_Amon_IPSL-CM5A2-INCA_piControl_r1i1p1f1_gr_185001-209912.nc
+# cmip6-picontrol-amon/cl_Amon_IITM-ESM_piControl_r1i1p1f1_gn_192601-193512.nc
+# cmip6-picontrol-amon/cl_Amon_MCM-UA-1-0_piControl_r1i1p1f1_gn_000101-010012.nc
 import builtins
 import copy
 import re
@@ -16,20 +62,19 @@ import xarray as xr
 
 from . import Atted, CDOException, Rename, cdo, nco
 from .internals import (
-    FACETS_FOLDER,
-    FACETS_SUMMARY,
-    STANDARD_GRID_CMIP,
-    STANDARD_LEVS_CMIP5,
-    STANDARD_LEVS_CMIP6,
+    FACETS_STORAGE,
+    FACETS_SUMMARIZE,
+    STANDARD_GRIDSPEC_CMIP,
+    STANDARD_LEVELS_CMIP5,
+    STANDARD_LEVELS_CMIP6,
     Database,
-    Printer,
-    _file_parts,
-    _glob_files,
+    Logger,
+    glob_files,
     _item_dates,
     _item_join,
     _item_parts,
     _item_years,
-    _variable_ranges,
+    _validate_ranges,
 )
 
 __all__ = [
@@ -42,16 +87,6 @@ __all__ = [
     'summarize_descrips',
     'summarize_ranges',
 ]
-
-# Global constants
-# NOTE: Positive-definite variables like humidity and cloud mass have to be scaled
-# with a multiplicative trend correction rather than additive. Here we comprehensively
-# list additive variables, but default is multiplicative (for example upwelling and
-# downwelling flux components are never negative). See e.g. Gupta et al. 2013.
-# TODO: Implement this... currently avoiding, worried about divide by zero errors.
-VARIABLES_ADDITIVE = (
-    'ta', 'ts', 'ps', 'psl', 'ua', 'va', 'uas', 'vas', 'tauu', 'tauv', 'zg',
-)
 
 
 def _parse_time(
@@ -114,7 +149,7 @@ def _parse_dump(path):
     # and trim e.g. '1.e+20f' numeric type indicator suffixes in attribute values.
     # See: https://docs.unidata.ucar.edu/nug/current/_c_d_l.html#cdl_data_types
     path = Path(path).expanduser()
-    info = nco.ncks(input=str(path), options=['--cdl', '-m']).decode()
+    info = nco.ncks(input=str(path), options=['--cdl', '-m', '-M']).decode()
     regex_dim = re.compile(
         r'\n\s*(\w+) = [^0-9]*([0-9]+)'
     )
@@ -127,7 +162,7 @@ def _parse_dump(path):
     sizes = {m.group(1): m.group(2) for m in regex_dim.finditer(info)}
     names = {m.group(1): (*s.split(','),) if (s := m.group(2)) else () for m in regex_var.finditer(info)}  # noqa: E501
     attrs = {}
-    for name in names:  # include global attributes with empty variable prefix
+    for name in ('', *names):  # include global attributes with empty variable prefix
         regex_key = re.compile(rf'\n\s*{name}:(\w+) = (.*?)\s*;(?=\n)')
         attrs[name] = {
             m.group(1): tup[0] if len(tup) == 1 else tup
@@ -236,12 +271,12 @@ def _output_path(path=None, *parts):
 def process_files(
     *paths,
     output='~/data',
-    constants='~/data/cmip-constants',
+    constants='~/data',
     facets=None,
     vertical=True,
     horizontal=True,
     overwrite=False,
-    printer=None,
+    logging=False,
     dryrun=False,
     **kwargs,
 ):
@@ -253,9 +288,9 @@ def process_files(
     *paths : path-like
         The input path(s) for the raw data.
     output : path-like, optional
-        The output directory for processed data. Subfolders are created here.
+        The output directory. Subfolder ``{project}-{experiment}-{table}`` is used.
     constants : path-like, optional
-        The output directory for constants.
+        The constants directory. Subfolder ``cmip-constants`` is used.
     facets : str, optional
         The facets for grouping into output folders.
     dependencies : bool, optional
@@ -266,27 +301,29 @@ def process_files(
         Whether to standardize horizontal grid.
     overwrite : bool, default: True
         Whether to overwrite existing files or skip them.
-    printer : callable, default: `print`
-        The print function.
+    logging : bool, optional
+        Whether to build a custom logger.
     dryrun : bool, optional
         Whether to only print time information and exit.
     **kwargs
         Passed to `standardize_time`, `standardize_vertical`, `standardize_horizontal`.
     **constraints
-        Passed to `Printer` and `Database`.
+        Passed to `Logger` and `Database`.
     """
     # Find files and restrict to unique constraints
     # NOTE: Here we only constrain search to the project, which is otherwise not
     # indicated in native netcdf filenames. Similar approach to filter_script().
+    logging = logging and not dryrun
     levels, search = kwargs.pop('levels', None), kwargs.pop('search', None)
     gridspec, method = kwargs.pop('gridspec', None), kwargs.pop('method', None)
     searches = (search,) if isinstance(search, (str, Path)) else tuple(search or ())
     dates, kwargs, constraints = _parse_time(constraints=True, **kwargs)
-    print = printer or Printer('process', *dates, **constraints)
-    files, *_ = _glob_files(*paths, project=constraints.get('project'))
-    facets = facets or FACETS_FOLDER
+    print = Logger('process', *dates, **constraints) if logging else builtins.print
+    files, *_ = glob_files(*paths, project=constraints.get('project'))
+    facets = facets or FACETS_STORAGE
     database = Database(files, facets, **constraints)
     constants = Path(constants).expanduser()
+    constants = constants / 'cmip-constants'
     output = Path(output).expanduser()
 
     # Initialize cdo and process files.
@@ -295,6 +332,7 @@ def process_files(
     # NOTE: Currently 'pfull' data is stored in separate 'data-dependencies' folder
     # but 'ps' data is stored in normal folders since it is used for time-varying
     # vertical integration of kernels and is always available.
+    kw = {'overwrite': overwrite, 'printer': print}
     outs = []
     print(f'Input files ({len(database)}):')
     print(*(f'{key}: ' + ' '.join(opts) for key, opts in database.constraints.items()), sep='\n')  # noqa: E501
@@ -304,10 +342,10 @@ def process_files(
     )
     for files in database:
         # Initial stuff
-        folder = output / files[0].parent.name
+        folder = output / files[0].parent.name  # TODO: use explicit components?
         folder.mkdir(exist_ok=True)
-        model = _file_parts['model'](files[0])
-        variable = _file_parts['variable'](files[0])
+        model = _item_parts['model'](files[0])
+        variable = _item_parts['variable'](files[0])
         search = (*searches, files[0].parent.parent)  # use the parent cmip folder
         if variable == 'pfull':
             continue
@@ -329,7 +367,6 @@ def process_files(
             'gridspec': gridspec, 'method': method,
             'weights': constants, 'model': model,
         }
-        kw = {'overwrite': overwrite, 'printer': print}
         print('Output:', '/'.join((out.parent.name, out.name)))
 
         # Repair files and standardize time
@@ -892,7 +929,8 @@ def standardize_time(
     # NOTE: FIO-ESM-2-0 control psl returned 300-399 and 400-499 in addition to 301-400
     # and 401-500, CAS-ESM2-0 rsus returned 001-600 control and 001-167 abrupt in
     # addition to standard 001-550 and 001-150, and GFDL-CM4 abrupt returned 000-010
-    # in addition to 000-100. The below block should handle these situations.
+    # in addition to 000-100. The below should handle these situations... although
+    # ideally should never download these files anymore (see download_script function).
     ranges = []
     for input, (y0, y1) in tuple(inputs.items()):
         for other, (z0, z1) in tuple(inputs.items()):
@@ -1025,9 +1063,9 @@ def standardize_vertical(
     model : str, optional
         The model to use in the default reference pressure paths and search pattern.
     search : path-like or sequence, optional
-        The path(s) to pass to `_glob_files` when searching for reference pressure data.
+        The path(s) to pass to `glob_files` when searching for reference pressure data.
     project : str, optional
-        The project to pass to `_glob_files` when searching for reference pressure data.
+        The project to pass to `glob_files` when searching for reference pressure data.
     rebuild : path-like, default: False
         Whether to rebuild the dependency files.
     overwrite : bool, default: True
@@ -1049,11 +1087,13 @@ def standardize_vertical(
     search = (search,) if isinstance(search, (str, Path)) else tuple(search)
     deps = output.parent / (output.stem + '-deps' + output.suffix)
     if levels is not None:
-        pass
+        levels = np.array(levels)
     elif project == 'cmip5':
-        levels = STANDARD_LEVS_CMIP5
+        levels = STANDARD_LEVELS_CMIP5
+    elif project == 'cmip6':
+        levels = STANDARD_LEVELS_CMIP6
     else:
-        levels = STANDARD_LEVS_CMIP6
+        raise ValueError(f'Invalid {project=} for determining levels.')
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
         return output
@@ -1128,7 +1168,7 @@ def standardize_vertical(
             pattern = f'{variable}_*{model}_*'  # search pattern
             if not model:
                 raise ValueError(f'Model is required when searching for dependency {variable!r}.')  # noqa: E501
-            files, *_ = _glob_files(*search, pattern=pattern, project=project)
+            files, *_ = glob_files(*search, pattern=pattern, project=project)
             if not files:
                 raise ValueError(f'Glob {pattern!r} returned no results for path(s) {search}.')  # noqa: E501
             input = '[ ' + ' '.join(f'-selname,{variable} {file}' for file in files) + ' ]'  # noqa: E501
@@ -1248,7 +1288,7 @@ def standardize_horizontal(
     output = _output_path(output or path.parent, path.stem, 'standard-horizontal')
     method = method or 'con'
     method = method if method[:3] == 'gen' else 'gen' + method
-    gridspec = STANDARD_GRID_CMIP if gridspec is None else gridspec
+    gridspec = STANDARD_GRIDSPEC_CMIP if gridspec is None else gridspec
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
         return output
@@ -1319,12 +1359,12 @@ def summarize_descrips(*paths, facets=None, **constraints):
     facets : str, optional
         The facets to group by.
     **constraints
-        Passed to `Printer` and `Database`.
+        Passed to `Logger` and `Database`.
     """
-    facets = facets or FACETS_SUMMARY
-    print = Printer('summary', 'descrips')
+    facets = facets or FACETS_SUMMARIZE
+    print = Logger('summary', 'descrips')
     print('Generating database.')
-    files, *_ = _glob_files(*paths, project=constraints.get('project'))
+    files, *_ = glob_files(*paths, project=constraints.get('project'))
     database = Database(files, facets, **constraints)
     grids, zaxes = {}, {}
     for file, *_ in database:  # select first file from every file list
@@ -1360,61 +1400,59 @@ def summarize_processed(*paths, facets=None, **constraints):
     facets : str, optional
         The facets to group by in the database.
     **constraints
-        Passed to `Printer` and `Database`.
+        Passed to `Logger` and `Database`.
     """
     # Iterate over dates
-    facets = facets or FACETS_SUMMARY
-    print = Printer('summary', 'processed', **constraints)
-    glob, *_ = _glob_files(*paths, project=constraints.get('project'))
+    facets = facets or FACETS_SUMMARIZE
+    print = Logger('summary', 'processed', **constraints)
+    glob, *_ = glob_files(*paths, project=constraints.get('project'))
     key = lambda pair: ('4xCO2' in pair[0], 'series' in pair[1], pair[1])
     opts = ('climate', 'series')  # recognized output file suffixes
     pairs = set((_item_parts['experiment'](file), _item_dates(file)) for file in glob)
     pairs = sorted((pair for pair in pairs if any(o in pair[1] for o in opts)), key=key)
     interval = 500
+    database = Database(glob, facets, **constraints)
     for experiment, date in pairs:
         # Print the raw summary files
         constraints['experiment'] = experiment
         print(f'Finished output for {experiment} {date}.')
-        database = Database(glob, facets, **constraints)
         database_date = copy.deepcopy(database)
         for i, files in enumerate(database_date):
             i % interval or print(f'Files: {i} out of {len(database_date)}')
             files[:] = [file for file in files if _item_dates(file) == date]
         database_date.summarize(missing=True, printer=print)
 
-        # Print the files with missing outputs
-        # NOTE: Skip groups where we did not attempt to get output e.g.
-        # time series of non-feedback variables.
-        print(f'Missing output for {experiment} {date}.')
-        database_outputs = copy.deepcopy(database)
-        for i, files in enumerate(database_outputs):
-            i % interval or print(f'Files: {i} out of {len(database_outputs)}')
-            if (  # ignore when no inputs are present *or* output is present
-                not any(all(o not in _item_dates(file) for o in opts) for file in files)
-                or any(_item_dates(file) == date for file in files)
-            ):
-                files.clear()
-        for group, data in tuple(database_outputs.items()):
-            if all(files for files in data.values()):
-                del database_outputs.database[group]
-        database_outputs.summarize(missing=False, printer=print)
-
         # Print the files with missing inputs
         # NOTE: Skip groups where we did not attempt to get output e.g.
         # time series of non-feedback variables.
         print(f'Missing inputs for {experiment} {date}.')
-        database_inputs = copy.deepcopy(database)
-        for i, files in enumerate(database_inputs):
-            i % interval or print(f'Files: {i} out of {len(database_inputs)}')
-            if (  # ignore when inputs are present *or* output is not present
-                any(all(o not in _item_dates(file) for o in opts) for file in files)
-                or not any(_item_dates(file) == date for file in files)
-            ):
-                files.clear()
-        for group, data in tuple(database_inputs.items()):
+        missing_inputs = copy.deepcopy(database)
+        for i, files in enumerate(missing_inputs):
+            i % interval or print(f'Files: {i} out of {len(missing_inputs)}')
+            if not any(_item_dates(file) == date for file in files):
+                files.clear()  # current date is not present (covered below)
+            elif not all(any(o in _item_dates(file) for o in opts) for file in files):
+                files.clear()  # inputs are present (i.e. not missing)
+        for group, data in tuple(missing_inputs.items()):
             if all(files for files in data.values()):
-                del database_inputs.database[group]
-        database_inputs.summarize(missing=False, printer=print)
+                del missing_inputs.database[group]
+        missing_inputs.summarize(missing=False, printer=print)
+
+        # Print the files with missing outputs
+        # NOTE: Skip groups where we did not attempt to get output e.g.
+        # time series of non-feedback variables.
+        print(f'Missing output for {experiment} {date}.')
+        missing_outputs = copy.deepcopy(database)
+        for i, files in enumerate(missing_outputs):
+            i % interval or print(f'Files: {i} out of {len(missing_outputs)}')
+            if any(_item_dates(file) == date for file in files):
+                files.clear()  # current date is present (i.e. not missing)
+            elif all(any(o in _item_dates(file) for o in opts) for file in files):
+                files.clear()  # inputs are not present (covered above)
+        for group, data in tuple(missing_outputs.items()):
+            if all(files for files in data.values()):
+                del missing_outputs.database[group]
+        missing_outputs.summarize(missing=False, printer=print)
 
 
 def summarize_ranges(*paths, facets=None, **constraints):
@@ -1430,15 +1468,15 @@ def summarize_ranges(*paths, facets=None, **constraints):
     facets : str, optional
         The facets to group by.
     **constraints
-        Passed to `Printer` and `Database`.
+        Passed to `Logger` and `Database`.
     """
-    facets = facets or FACETS_SUMMARY
-    print = Printer('summary', 'ranges', **constraints)
+    facets = facets or FACETS_SUMMARIZE
+    print = Logger('summary', 'ranges', **constraints)
     print('Generating database.')
-    files, *_ = _glob_files(*paths, project=constraints.get('project'))
+    files, *_ = glob_files(*paths, project=constraints.get('project'))
     database = Database(files, facets, **constraints)
     keys = (path.name.split('_')[:2] for paths in database for path in paths)
-    ranges = {key: _variable_ranges(*key) for key in sorted(set(map(tuple, keys)))}
+    ranges = {key: _validate_ranges(*key) for key in sorted(set(map(tuple, keys)))}
     for path in (path for paths in database for path in paths):
         # Load test data
         print(f'\n{path}:')

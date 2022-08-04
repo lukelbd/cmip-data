@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """
-Utilities for opening results.
+Utilities for reading and handling results.
 """
 import builtins
+import re
 
 import climopy as climo  # noqa: F401  # add accessor
 import numpy as np
 import xarray as xr
 from icecream import ic  # noqa: F401
 
-from .internals import (
-    STANDARD_LEVS_CMIP5,
-    STANDARD_LEVS_CMIP6,
-    _variable_ranges,
-)
+from .internals import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
 
 __all__ = [
     'open_file',
-    'space_averages',
-    'time_averages',
+    'average_periods',
+    'average_regions',
 ]
+
+# Automatically updated mapping from model names to institution ids
+# NOTE: This is used inside plotting functions to group cmip5 and/or cmip6 models from
+# the same center. Previously tried to detect alike models from their names but this
+# was unreliable (for example ACCESS and CSIRO models are both from CSIRO in Australia,
+# MPI and ICON are both from MPI in Germany, and CESM and CCSM are both from NCAR). Can
+# survey diferent institution ids with following code: { models=(); for f in ts_Amon_*;
+# do model=$(echo $f | cut -d_ -f3); [[ " ${models[*]} " =~ " $model " ]] && continue;
+# models+=("$model"); echo $f; ncinfo $f | grep -E 'institut(e|ion)_id'; done; } | less
+MODELS_INSTITUTIONS = {}
 
 
 def open_file(path, variable=None, validate=True, project=None, printer=None):
@@ -44,72 +51,90 @@ def open_file(path, variable=None, validate=True, project=None, printer=None):
     # with cmip5 data (this is used to get standard kernels to work with cmip5 data).
     # NOTE: Here drop_duplicates is only available for arrays. Monitor this
     # thread for updates: https://github.com/pydata/xarray/pull/5239
+    # WARNING: Here the model id recorded under 'source_id' or 'model_id' often differs
+    # from the model id in the file name. Annoying but have to use the file version.
     print = printer or builtins.print
+    project = project and project.lower()
     dataset = xr.open_dataset(path, use_cftime=True)
+    if 'numerator' in dataset and 'denominator' in dataset and 'region' in dataset.sizes:  # noqa: E501
+        dataset = dataset.set_index(region=('numerator', 'denominator'))
     dataset = dataset.drop_vars(dataset.coords.keys() - dataset.sizes.keys())
     for coord in dataset.coords.values():  # remove missing bounds variables
         coord.attrs.pop('bounds', None)
+    model = path.name.split('_')[2] if path.name.count('_') >= 4 else None
+    institution = dataset.attrs.get('institute_id', dataset.attrs.get('institution_id'))
+    if institution:
+        if 'FGOALS' in model and 'CAS' in institution:
+            institution = 'LASG'  # changed in cmip6 to accomodate CAS (Chinese center)
+        else:
+            institution = institution.split()[0].split('-')[0]
 
-    # Validate coordinate data
-    # NOTE: Some models provide non-uniform days (e.g. 15 for one month and 16 for
-    # another) and possibly others use end days. So we also standardize days.
+    # Validate pressure level data
+    # NOTE: Some files will have duplicate times (i.e. due to using cdo mergetime on
+    # files with overlapping time coordinates) and drop_duplicates(time, keep='first')
+    # does not work since it is only available on DataArrays, so use manual method.
+    # See: https://github.com/pydata/xarray/issues/1072
+    # See: https://github.com/pydata/xarray/discussions/6297
     # NOTE: Testing reveals that calling 'cdo ymonmean' on files that extend from
     # december-november instead of january-december will result in january-december
     # climate files with non-monotonic time steps. This will mess up the .groupby()
-    # operations in time_averages so we auto-convert time array to be monotonic.
+    # operations in average_periods, so we auto-convert time array to be monotonic
+    # and standardize the days (so that cell_duration calculations are correct).
     if project and 'plev' in dataset.coords and dataset.plev.size > 1:
-        std = STANDARD_LEVS_CMIP5 if project.lower() == 'cmip5' else STANDARD_LEVS_CMIP6
-        plev = [p for p in dataset.plev.values.flat if not np.any(np.isclose(p, std))]
-        if message := ', '.join(format(p / 100, '.1f') for p in plev):
-            dataset = dataset.drop_sel(plev=plev)
+        plev = dataset.plev.values
+        if project == 'cmip5':
+            levels = STANDARD_LEVELS_CMIP5
+        elif project == 'cmip6':
+            levels = STANDARD_LEVELS_CMIP6
+        else:
+            raise ValueError(f'Invalid {project=} for determining levels.')
+        extra = [p for p in plev if not np.any(np.isclose(p, levels))]
+        missing = [p for p in levels if not np.any(np.isclose(p, plev))]
+        dataset = dataset.drop_sel(plev=extra)  # no message since this is common
+        if message := ', '.join(format(p / 100, '.0f') for p in missing):
             print(
-                f'Warning: File {path.name!r} has {len(plev)} extra pressure '
-                f'levels: {message}. Kept the standard {len(std)} levels.'
+                f'Warning: File {path.name!r} has {len(missing)} missing '
+                f'pressure levels ({plev.size} out of {levels.size}): {message}.'
             )
     if 'time' in dataset.coords and dataset.time.size > 1:
-        time = dataset.time
-        if any(str(t) == 'NaT' for t in dataset.time.values):
-            raise ValueError(f'File {path.name!r} has invalid time values.')
-        if isinstance(dataset, xr.DataArray):  # only arrays (xarray #5239)
-            dataset = dataset.drop_duplicates('time', keep='first')
-            dups = [t for t in time.values if t not in dataset.time.values]
-            if message := ', '.join(format(t, '.0f') for t in dups):
-                print(
-                    f'Warning: File {path.name!r} has {len(dups)} duplicate '
-                    f'time values: {message}. Kept only the first values.'
-                )
+        time = dataset.time.values
+        mask = dataset.get_index('time').duplicated(keep='first')
+        if message := ', '.join(format(t, '.0f') for t in time[mask]):
+            dataset = dataset.isel(time=~mask)  # WARNING: drop_isel fails here
+            print(
+                f'Warning: File {path.name!r} has {mask.sum().item()} duplicate '
+                f'time values: {message}. Kept only the first values.'
+            )
         years, months = dataset.time.dt.year, dataset.time.dt.month
         if years.size == 12 and sorted(months.values) == sorted(range(1, 13)):
             cls = type(dataset.time[0].item())  # e.g. CFTimeNoLeap
-            time = [cls(min(years), t.month, 1) for t in dataset.time.values]
-            time = xr.DataArray(time, dims='time', name='time', attrs=dataset.time.attrs)  # noqa: E501
-            dataset = dataset.assign_coords(time=time)  # assign with same attributes
+            std = [cls(min(years), t.month, 1) for t in dataset.time.values]
+            std = xr.DataArray(std, dims='time', name='time', attrs=dataset.time.attrs)
+            dataset = dataset.assign_coords(time=std)  # assign with same attributes
             dataset = dataset.sortby('time')  # sort in case months are non-monotonic
 
     # Validate variable data
     # NOTE: Found negative radiative flux values for rldscs in IITM-ESM model. For
     # now just automatically invert these values but should contact developer.
-    # NOTE: Here monthly temperature can be out of range in the stratosphere so we
-    # are conservative and only test annual means. Also don't bother with global
-    # tests for now (compare with 'summarize_ranges' function in process.py).
     names = dataset.data_vars if validate else ()
-    ranges = {name: _variable_ranges(name, 'Amon') for name in names}
-    if 'pr' in dataset.data_vars and 'CIESM' in path.stem:  # kludge
+    ranges = {name: _validate_ranges(name, 'Amon') for name in names}
+    if 'pr' in dataset.data_vars and model == 'CIESM':  # kludge
         print(
             'Warning: Adjusting CIESM precipitation flux with obviously '
-            'incorrect units by 1e3 (estimate to recover correct unit).'
+            'incorrect units by 1e3 (guess to recover correct units).'
         )
         with xr.set_options(keep_attrs=True):
             dataset['pr'].data *= 1e3
     for name in names:
-        array = dataset[name]
+        array = test = dataset[name]
         if 'bnds' in array.sizes or 'bounds' in array.sizes:
             continue
-        test = array.mean('time') if 'time' in array.sizes else array
+        if 'time' in array.sizes:
+            test = array.mean('time')
         min_, max_ = test.min().item(), test.max().item()
         pmin, pmax, *_ = ranges[name]
-        skip_range = name == 'rsut' and 'MCM-UA-1-0' in path.stem
-        skip_identical = name == 'rsdt' and 'MCM-UA-1-0' in path.stem
+        skip_range = name == 'rsut' and model == 'MCM-UA-1-0'
+        skip_identical = name == 'rsdt' and model == 'MCM-UA-1-0'
         if not skip_identical and array.size > 1 and np.isclose(min_, max_):
             array.data[:] = np.nan
             print(
@@ -132,82 +157,20 @@ def open_file(path, variable=None, validate=True, project=None, printer=None):
                 f'Warning: Variable {name!r} range ({min_}, {max_}) is outside '
                 f'valid cmip range ({pmin}, {pmax}). Set all data to NaN.'
             )
+
+    # Possibly retrieve variable and update mapping
+    # NOTE: Some models from the same lineage have different suffixes in their
+    # institution id (for example ACCESS in CMIP6 is CSIRO-ARCCSS while ACCESS
+    # in CMIP5 is CSIRO-BOM). Therefore only preserve first part of id.
+    if model and institution:
+        MODELS_INSTITUTIONS[model] = institution
     if variable is None:  # demote precision for speed
         return dataset
     else:
         return dataset[variable].astype(np.float32)
 
 
-def space_averages(input, point=True, latitude=True, hemisphere=True, globe=True):
-    """
-    Convert space coordinates into three sets of coordinates: the original longitude
-    and latitude coordinates, and a ``'region'`` coordinate indicating the average
-    (i.e. points, latitudes, hemispheres, or global). See `response_feedbacks`.
-
-    Parameters
-    ----------
-    input : xarray.Dataset
-        The input dataset.
-    point, latitude, hemisphere, globe : optional
-        Whether to add each type of average.
-    """
-    # NOTE: Previously used a 2D array ((1x1, 1xM), (1x1, 1xM), (1x1, 1xM), (Nx1, NxM))
-    # for storing (rows) the global average, sh average, nh average, and fully-resolved
-    # latitude data, plus (cols) the global average and fully-resolved longitude data.
-    # This was built as a nested 4x2 list, with default NaN-filled datasets in each
-    # slot, then combined with combine_nested. However this was unnecessary... way way
-    # easier to just broadcast averages in existing space coordinates. Also normal
-    # xarray-style slice selection fails with NaN or +/-Inf coordinates so selections
-    # would always need to use .isel() rather than .sel()... even more awkward.
-    eps = 1e-10  # avoid assigning twice
-    input = input.climo.add_cell_measures()
-    outputs = []
-    for data in input.climo._iter_data_vars():
-        output = {'point': data} if point else {}
-        if latitude:
-            da = xr.ones_like(data) * data.climo.average('lon')
-            da.name = data.name
-            da.attrs.update(data.attrs)
-            output['latitude'] = da
-        if hemisphere:
-            sh = data.climo.sel_hemisphere('sh').climo.average('area')
-            nh = data.climo.sel_hemisphere('nh').climo.average('area')
-            sh = sh.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
-            nh = nh.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
-            sh = sh.transpose(*data.sizes)
-            nh = nh.transpose(*data.sizes)
-            da = data.astype(np.float64)
-            da.loc[{'lat': slice(None, 0 - eps)}] = sh
-            da.loc[{'lat': slice(0 + eps, None)}] = nh
-            da.loc[{'lat': slice(0 - eps, 0 + eps)}] = 0.5 * (sh + nh)
-            output['hemisphere'] = da
-        if globe:
-            da = xr.ones_like(data) * data.climo.average('area')
-            da.name = data.name
-            da.attrs.update(data.attrs)
-            output['globe'] = da
-        outputs.append(output)
-    if isinstance(input, xr.DataArray):
-        output, = outputs
-    else:
-        output = {k: xr.Dataset({o[k].name: o[k] for o in outputs}) for k in outputs[0]}
-    region = xr.DataArray(
-        list(output),
-        dims='region',
-        name='region',
-        attrs={'long_name': 'spatial averaging region'},
-    )
-    output = xr.concat(
-        output.values(),
-        dim=region,
-        coords='minimal',
-        compat='equals',
-        combine_attrs='drop_conflicts',
-    )
-    return output
-
-
-def time_averages(input, annual=True, seasonal=True, monthly=True):
+def average_periods(input, annual=True, seasonal=True, monthly=True):
     """
     Convert time coordinates into two sets of coordinates: a ``'time'`` coordinate
     indicating the year, and a ``'period'`` coordinate inidicating the period (i.e.
@@ -220,13 +183,8 @@ def time_averages(input, annual=True, seasonal=True, monthly=True):
     annual, seasonal, monthly : bool, optional
         Whether to take various decompositions. Default is annual and seasonal.
     """
-    # See: https://ncar.github.io/esds/posts/2021/yearly-averages-xarray
-    # See: https://docs.xarray.dev/en/stable/examples/monthly-means.html
-    # NOTE: Have improved climopy cell duration calculation to auto-detect monthly
-    # and yearly data but still fails when days are different (e.g. common for models
-    # to use the 'central' day which can vary from 14 to 16 depending on month). So
-    # far not interested in manually changing coordinates, so here still use explicit
-    # days per month weights instead of automatic cell durations.
+    # NOTE: The new climopy cell duration calculation will auto-detect monthly and
+    # yearly data, but not yet done, so use explicit days-per-month weights for now.
     # NOTE: Here resample(time='AS') and groupby('time.year') yield identical results,
     # except latter creates an integer 'year' axis while former resamples the existing
     # time axis and preserves the datetime64 format. Test with the following code:
@@ -276,8 +234,83 @@ def time_averages(input, annual=True, seasonal=True, monthly=True):
     )
     attrs = {'long_name': 'time', 'standard_name': 'time', 'units': 'yr', 'axis': 'T'}
     output = output.rename(year='time')
+    if isinstance(input, xr.DataArray):
+        output.name = input.name
     if output.time.size == 1:  # avoid conflicts during merge
         output = output.isel(time=0, drop=True)
     else:
         output.time.attrs.update(attrs)
+    return output
+
+
+def average_regions(input, point=True, latitude=True, hemisphere=True, globe=True):
+    """
+    Convert space coordinates into three sets of coordinates: the original longitude
+    and latitude coordinates, and a ``'region'`` coordinate indicating the average
+    (i.e. points, latitudes, hemispheres, or global). See `response_feedbacks`.
+
+    Parameters
+    ----------
+    input : xarray.Dataset
+        The input dataset.
+    point, latitude, hemisphere, globe : optional
+        Whether to add each type of average.
+    """
+    # NOTE: Alternative approach to feedbacks 'numerator' and 'denominator' is to
+    # get pointwise fluxes relative to different averages, then when we want non-local
+    # feedbacks, simply take averages of the local values. Will consider after testing.
+    # NOTE: Previously used a 2D array ((1x1, 1xM), (1x1, 1xM), (1x1, 1xM), (Nx1, NxM))
+    # for storing (rows) the global average, sh average, nh average, and fully-resolved
+    # latitude data, plus (cols) the global average and fully-resolved longitude data.
+    # This was built as a nested 4x2 list (with longitude and latitude coordinates of
+    # NaN, ... and NaN, -Inf, Inf, ..., and default NaN-filled arrays in each slot),
+    # subsequently combined with combine_nested. However this was unnecessary... way
+    # easier to just broadcast averages in existing space coordinates. Also normal
+    # xarray-style slice selection fails with NaN or +/-Inf coordinates so selections
+    # would always need to use .isel() rather than .sel()... even more awkward.
+    eps = 1e-10  # avoid assigning twice
+    input = input.climo.add_cell_measures()
+    outputs = []
+    for data in input.climo._iter_data_vars():
+        output = {'point': data} if point else {}
+        if latitude:
+            da = xr.ones_like(data) * data.climo.average('lon')
+            da.name = data.name
+            da.attrs.update(data.attrs)
+            output['latitude'] = da
+        if hemisphere:
+            sh = data.climo.sel_hemisphere('sh').climo.average('area')
+            nh = data.climo.sel_hemisphere('nh').climo.average('area')
+            sh = sh.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
+            nh = nh.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
+            sh = sh.transpose(*data.sizes)
+            nh = nh.transpose(*data.sizes)
+            da = data.astype(np.float64)
+            da.loc[{'lat': slice(None, 0 - eps)}] = sh
+            da.loc[{'lat': slice(0 + eps, None)}] = nh
+            da.loc[{'lat': slice(0 - eps, 0 + eps)}] = 0.5 * (sh + nh)
+            output['hemisphere'] = da
+        if globe:
+            da = xr.ones_like(data) * data.climo.average('area')
+            da.name = data.name
+            da.attrs.update(data.attrs)
+            output['globe'] = da
+        outputs.append(output)
+    if isinstance(input, xr.DataArray):
+        output, = outputs
+    else:
+        output = {k: xr.Dataset({o[k].name: o[k] for o in outputs}) for k in outputs[0]}
+    region = xr.DataArray(
+        list(output),
+        dims='region',
+        name='region',
+        attrs={'long_name': 'spatial averaging region'},
+    )
+    output = xr.concat(
+        output.values(),
+        dim=region,
+        coords='minimal',
+        compat='equals',
+        combine_attrs='drop_conflicts',
+    )
     return output

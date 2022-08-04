@@ -8,24 +8,23 @@ import traceback
 from pathlib import Path
 
 import numpy as np  # noqa: F401
-import pandas as pd
 import xarray as xr
 from climopy import const, ureg
 from icecream import ic  # noqa: F401
-from shared import physics  # noqa: F401
+from idealized import physics  # noqa: F401
 from metpy import calc  # noqa: F401
 from metpy.units import units as mreg  # noqa: F401
 from numpy import ma  # noqa: F401
 
 from .internals import (
     Database,
-    Printer,
-    _glob_files,
+    Logger,
+    glob_files,
     _item_dates,
     _item_join,
     _item_parts,
 )
-from .utils import open_file, space_averages, time_averages
+from .utils import open_file, average_periods, average_regions
 
 __all__ = [
     'compute_feedbacks',
@@ -76,9 +75,9 @@ VARIABLE_DEPENDENCIES = {
     'ta': ('ta',),  # anomaly data
     'hus': ('hus',),  # anomaly data
     'alb': ('rsus', 'rsds'),  # out of and into the surface
-    'cta': ('ta',),  # control data for humidity kernels
-    'rta': ('ta',),  # response data for integration bounds
-    'rps': ('ps',),  # response data for integration bounds
+    'tapi': ('ta',),  # control data for humidity kernels
+    'ta4x': ('ta',),  # response data for integration bounds
+    'ps4x': ('ps',),  # response data for integration bounds
     'rlnt': ('rlut',),  # out of the atmosphere
     'rsnt': ('rsut',),  # out of the atmosphere (ignore constant rsdt)
     'rlntcs': ('rlutcs',),  # out of the atmosphere
@@ -218,7 +217,7 @@ def clausius_clapeyron(ta):
     return scale.climo.quantify()
 
 
-def response_anomalies(printer=None, project=None, testing=False, **inputs):
+def response_anomalies(printer=None, project=None, dryrun=False, **inputs):
     """
     Return dataset containing response minus control anomalies for the variables given
     pairs of paths to its dependencies (e.g. ``'rlds'`` and ``'rlus'`` for ``'rlns'``).
@@ -231,8 +230,8 @@ def response_anomalies(printer=None, project=None, testing=False, **inputs):
         The project. Used in level checking.
     printer : callable, default: `print`
         The print function.
-    testing : bool, optional
-        Whether to run this in 'testing mode' with only three years of data.
+    dryrun : bool, optional
+        Whether to run with only three years of data.
     """
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
@@ -240,16 +239,14 @@ def response_anomalies(printer=None, project=None, testing=False, **inputs):
     print('Calculating response minus control anomalies.')
     for variable, dependencies in VARIABLE_DEPENDENCIES.items():
         # Load datasets and prepare the variables
+        # NOTE: Some datasets have a pressure 'bounds' variable but appears calculated
+        # naively as halfway points between levels. Since inconsistent between files
+        # just strip all bounds attribute and rely on climopy calculations. See:
+        # ta_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_0000-0150-climate-nodrift.nc
         # NOTE: The signs of the kernels are matched so that negative always means
         # tending to cool the atmosphere and positive means tending to warm the
         # atmosphere. We scale the positive-definite upwelling and dowwelling
         # components by sorting dependency fluxes in the format (out,) or (out, in).
-        # NOTE: Some datasets have a pressure 'bounds' variable but appears calculated
-        # naively as halfway points between levels. Since inconsistent between files
-        # just strip all bounds attribute and rely on climopy auto calculations. see:
-        # ta_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_0000-0150-climate-nodrift.nc
-        # NOTE: Some datasets seem to have overlapping time series years. Check
-        # against this by removing duplicate indices.
         if missing := tuple(name for name in dependencies if name not in inputs):
             print(
                 f'Warning: Anomaly variable {variable!r} is missing its '
@@ -262,7 +259,7 @@ def response_anomalies(printer=None, project=None, testing=False, **inputs):
             for path, datas in zip((control, response), (controls, responses)):
                 path = Path(path).expanduser()
                 data = open_file(path, dependency, project=project, printer=print)
-                if testing:
+                if dryrun:
                     data = data.isel(time=slice(None, 24))
                 data.name = variable
                 datas.append(data)
@@ -277,11 +274,11 @@ def response_anomalies(printer=None, project=None, testing=False, **inputs):
         # to turn time indices into month indices. Note this also makes this function
         # robust to using control data time series rather than climatologies.
         with xr.set_options(keep_attrs=True):
-            if variable in ('cta',):  # the control data matched to response data times
+            if variable in ('tapi',):  # control data matched to response data times
                 (control,), (response,) = controls, responses
                 control = (0 * response).groupby('time.month') + control.groupby('time.month').mean()  # noqa: E501
                 response = None
-            elif variable in ('rta', 'rps'):  # the response data itself
+            elif variable in ('ta4x', 'ps4x'):  # the response data itself
                 (control,), (response,) = controls, responses
                 control = None
                 response = response
@@ -309,48 +306,46 @@ def response_anomalies(printer=None, project=None, testing=False, **inputs):
         # Add attributes and update dataset
         # NOTE: Albedo is taken above from ratio of upwelling to downwelling all-sky
         # surface shortwave radiation. Feedback is simply (rsus - rsds) / (rsus / rsds)
-        if response is None:
-            data = control
-        elif control is None:
-            data = response
-        else:
-            with xr.set_options(keep_attrs=True):
+        # WARNING: Critical to store
+        with xr.set_options(keep_attrs=True):
+            if response is None:
+                data = control
+            elif control is None:
+                data = response
+            else:
                 data = response.groupby('time.month') - control.groupby('time.month').mean()  # noqa: E501
         if variable == 'alb':  # enforce new name and new units
-            long_name = 'albedo'
+            long_name = 'surface albedo'
             data.attrs['units'] = '%'
-        elif variable == 'hus':
+        elif variable == 'hus':  # enforce new name and new units
             long_name = 'specific humidity logarithm'
             data.attrs['units'] = '1'
         else:  # enforce lower-case name for consistency
             parts = data.attrs['long_name'].split()
             long_name = ' '.join(s if s == 'TOA' else s.lower() for s in parts)
-        if variable in ('cta',):
+        if variable in ('tapi',):
             long_name = f'control {long_name}'
-            output.coords[variable] = data
-        elif variable in ('rta', 'rps'):
+        elif variable in ('ta4x', 'ps4x'):
             long_name = f'response {long_name}'
-            output.coords[variable] = data
         else:
             long_name = f'{long_name} anomaly'
-            output[variable] = data
-        data = output[variable]
         data.attrs['long_name'] = long_name
-        if variable not in ('rta', 'rps'):  # keep standard name for cell heights
+        if variable not in ('ta4x', 'ps4x'):  # keep standard name for cell heights
             data.attrs.pop('standard_name', None)
+        output[variable] = data
         print(f'  {variable} ({long_name}): {len(data.time)}')
 
     return output
 
 
-def response_fluxes(input, kernels, printer=None):
+def response_fluxes(anoms, kernels, printer=None):
     """
     Return a dataset containing the actual radiative flux responses and the radiative
     flux responses implied by the radiative kernels and input anomaly data.
 
     Parameters
     ----------
-    input : xarray.Dataset
+    anoms : xarray.Dataset
         The climate anomaly data.
     kernels : xarray.Dataset
         The radiative kernel data.
@@ -358,42 +353,58 @@ def response_fluxes(input, kernels, printer=None):
         The print function.
     """
     # Initial stuff
-    # WARNING: Cell height returns zero everywhere for descending levels consistent
-    # with cmip conventions rather than ascending levels. Should fix this. Also should
-    # support selections like e.g. sel(50, 100) on reversed coordinates in .sel wrapper
-    # and permit bypassing the automatic scaling to 'kg m^-2' units.
-    # WARNING: Had unbelievably frustrating issue where pressure level coordinates on
-    # kernels and anomalies would be identical (same type, value, etc.) but then
-    # input.plev == kernels.plev returned empty array and assigning time-varying cell
-    # heights to data before integration in Planck feedback block created array of
-    # all NaNs. Still not sure why this happened but assign_coords seems to fix it.
+    # NOTE: Currently cell_height() in physics.py automatically adds surface bounds,
+    # tropopause bounds, and cell heights as coordinates for consistency. Here want
+    # to store just the bounds in output dataset for debugging, so promote from
+    # coordinate variable to data variable before adding to output.
+    # WARNING: Cell height returns zero everywhere for the descending levs consistent
+    # with cmip conventions (expects ascending levs consistent with standardize_coords).
+    # Should fix this, support selections like e.g. sel(50, 100) on reversed levs in
+    # .sel wrapper, permit bypassing the automatic scaling to 'kg m^-2' units.
     print = printer or builtins.print
-    print('Calculating cell measures for vertical integration.')
-    input = input.isel(plev=slice(None, None, -1))
-    input = input.climo.add_cell_measures(surface=True, tropopause=True)
-    input = input.isel(plev=slice(None, None, -1))
+    print('Calculating response cell measures for vertical integration.')
+    anoms = anoms.isel(plev=slice(None, None, -1))
+    anoms = anoms.climo.add_cell_measures(surface=True, tropopause=True)
+    anoms = anoms.isel(plev=slice(None, None, -1))
+    anoms = anoms.reset_coords(('plev_bot', 'plev_top'))  # reassign as data vars
     with xr.set_options(keep_attrs=True):
-        height = const.g * input.climo.coords['cell_height']
-        kernels = kernels.groupby('time.month').mean()  # see _get_anomalies notes
+        kernels = kernels.groupby('time.month').mean()  # see response_anomalies notes
+    with xr.set_options(keep_attrs=True):
+        height = const.g * anoms.climo.coords['cell_height']
     height = height.climo.dequantify()
     min_, max_, mean = height.min().item(), height.max().item(), height.mean().item()
     print(f'Cell height range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
-    bot = input.coords['plev_bot'].climo.dequantify()
-    min_, max_, mean = bot.min().item(), bot.max().item(), bot.mean().item()
-    print(f'Vertical bottom range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
-    top = input.coords['plev_top'].climo.dequantify()
-    min_, max_, mean = top.min().item(), top.max().item(), top.mean().item()
-    print(f'Vertical top range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
-    scale = clausius_clapeyron(input.coords['cta'])
+
+    # Print information and get Clausius-Clapeyron adjustments
+    # WARNING: Had unbelievably frustrating issue where pressure level coordinates
+    # on kernels and anomalies would be identical (same type, value, etc.) but then
+    # anoms.plev == kernels.plev returned empty array and assigning time-varying cell
+    # heights to data before integration in Planck feedback block created array of
+    # all NaNs. Still not sure why this happened but assign_coords seems to fix it.
+    pbot = anoms.plev_bot.climo.dequantify()  # response surface pressure
+    pbot.attrs['long_name'] = 'surface pressure'
+    min_, max_, mean = pbot.min().item(), pbot.max().item(), pbot.mean().item()
+    print(f'Surface pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
+    ptop = anoms.plev_top.climo.dequantify()  # response tropopause pressure
+    ptop.attrs['long_name'] = 'tropopause pressure'
+    min_, max_, mean = ptop.min().item(), ptop.max().item(), ptop.mean().item()
+    print(f'Tropopause pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
+    temp = anoms.tapi.climo.dequantify()
+    scale = clausius_clapeyron(temp)
     min_, max_, mean = scale.min().item(), scale.max().item(), scale.mean().item()
     print(f'Clausius-Clapeyron range: min {min_:.2f} max {max_:.2f} mean {mean:.2f}')
-    input = input.climo.quantify()
-    input = input.assign_coords(cell_height=height)  # critical (see above)
+    anoms = anoms.climo.quantify()
+    anoms = anoms.assign_coords(cell_height=height)  # critical (see above)
     kernels = kernels.climo.quantify()
-    kernels = kernels.assign_coords(plev=input.plev)  # critical (see above)
-    if input.sizes.get('plev', np.inf) < kernels.sizes['plev']:
-        kernels = kernels.sel(plev=input.plev.values)  # NESM3 abrupt-4xCO2 data
-    output = xr.Dataset({'ts': input.ts})
+    if anoms.sizes.get('plev', np.inf) < kernels.sizes['plev']:
+        levs = [  # NESM3 abrupt-4xCO2 data contains missing levels
+            lev for lev in kernels.plev.values
+            if np.any(np.isclose(lev, anoms.plev.values))
+        ]
+        kernels = kernels.sel(plev=levs)
+    kernels = kernels.assign_coords(plev=anoms.plev)  # critical (see above)
+    temp = anoms.ts.climo.dequantify()
+    output = xr.Dataset({'ts': temp, 'plev_bot': pbot, 'plev_top': ptop})
 
     # Iterate over flux components
     # NOTE: Here cloud feedback comes about from change in cloud radiative forcing (i.e.
@@ -410,16 +421,16 @@ def response_fluxes(input, kernels, printer=None):
         # NOTE: If either longwave or shortwave component is missing it will be excluded
         # from the "longwave plus shortwave" calculations below. Also only exclude cloud
         # and residual components when the actual model radiative flux is missing.
-        flux = f'r{wavelength[0]}n{boundary[0].lower()}'
-        fluxes = (flux,)  # kernel fluxes
+        rad = f'r{wavelength[0]}n{boundary[0].lower()}'
+        rads = (rad,)  # kernel fluxes
         variables = FEEDBACK_DEPENDENCIES[component][wavelength]  # empty for fluxes
         dependencies = list(variables)  # anomaly and kernel variables
         if component == '':
-            dependencies.append(flux)
+            dependencies.append(rad)
         elif component == 'cs':
-            dependencies.append(flux := f'{flux}cs')
+            dependencies.append(rad := f'{rad}cs')
         elif component == 'cl' or component == 'resid':
-            dependencies.extend(fluxes := (flux, f'{flux}cs'))  # used for cloud masking
+            dependencies.extend(rads := (rad, f'{rad}cs'))  # used for cloud masking
         elif not dependencies:
             continue
         if component == '':
@@ -427,7 +438,7 @@ def response_fluxes(input, kernels, printer=None):
         if component == '':
             print(f'Calculating {wavelength} {boundary} fluxes using kernel method.')
         if message := ', '.join(
-            repr(name) for name in dependencies if name not in input
+            repr(name) for name in dependencies if name not in anoms
         ):
             print(
                 f'Warning: {wavelength.title()} flux {component=} is missing '
@@ -435,8 +446,8 @@ def response_fluxes(input, kernels, printer=None):
             )
             continue
         if message := ', '.join(
-            repr(name) for var in variables for flux in fluxes
-            if (name := f'{var}_{flux}') not in kernels
+            repr(name) for var in variables for rad in rads
+            if (name := f'{var}_{rad}') not in kernels
         ):
             print(
                 f'Warning: {wavelength.title()} flux {component=} is missing '
@@ -448,51 +459,52 @@ def response_fluxes(input, kernels, printer=None):
         # NOTE: This data is then fed into response_feedbacks and converted
         # into feedback parameter and forcing estimates using these names.
         if component == 'alb':  # albedo flux (longwave skipped above)
-            grp = input['alb'].groupby('time.month')
-            data = grp * kernels[f'alb_{flux}']
+            grp = anoms['alb'].groupby('time.month')
+            data = grp * kernels[f'alb_{rad}']
         elif component[:2] == 'pl':  # planck flux (shortwave skipped for 'pl')
-            grp = input['ts'].groupby('time.month')
+            grp = anoms['ts'].groupby('time.month')
             data = 0.0 * ureg('W m^-2 Pa^-1')
             if wavelength[0] == 'l':
-                data = data + grp * kernels[f'ta_{flux}']
+                data = data + grp * kernels[f'ta_{rad}']
             if component == 'pl*':
-                data = data + grp * kernels[f'hus_{flux}']
-            data = data.assign_coords(cell_height=input.cell_height)  # necessary
+                data = data + grp * kernels[f'hus_{rad}']
+            data = data.assign_coords(cell_height=anoms.cell_height)  # necessary
             data = data.climo.integral('plev')
             if wavelength[0] == 'l':
-                data = data + grp * kernels[f'ts_{flux}']
+                data = data + grp * kernels[f'ts_{rad}']
         elif component[:2] == 'lr':  # lapse rate flux (shortwave skipped for 'lr')
-            grp = (input['ta'] - input['ts']).groupby('time.month')
+            grp = (anoms['ta'] - anoms['ts']).groupby('time.month')
             data = 0.0 * ureg('W m^-2 Pa^-1')
             if wavelength[0] == 'l':
-                data = data + grp * kernels[f'ta_{flux}']
+                data = data + grp * kernels[f'ta_{rad}']
             if component == 'lr*':
-                data = data + grp * kernels[f'hus_{flux}']
+                data = data + grp * kernels[f'hus_{rad}']
             data = data.climo.integral('plev')
         elif component[:2] == 'hu':  # specific and relative humidity fluxes
-            grp = (scale * input['hus']).groupby('time.month')
-            data = grp * kernels[f'hus_{flux}']
+            grp = (scale * anoms['hus']).groupby('time.month')
+            data = grp * kernels[f'hus_{rad}']
             if component == 'hur':
-                grp = input['ta'].groupby('time.month')
-                data = data - grp * kernels[f'hus_{flux}']
+                grp = anoms['ta'].groupby('time.month')
+                data = data - grp * kernels[f'hus_{rad}']
             data = data.climo.integral('plev')
         elif component == 'cl':  # shortwave and longwave cloud fluxes
-            data = input[flux] - input[f'{flux}cs']
+            data = anoms[rad] - anoms[f'{rad}cs']
             for var in variables:  # relevant longwave or shortwave variables
-                grp = input[var].groupby('time.month')
-                adj = grp * (kernels[f'{var}_{flux}'] - kernels[f'{var}_{flux}cs'])
+                grp = anoms[var].groupby('time.month')
+                adj = grp * (kernels[f'{var}_{rad}'] - kernels[f'{var}_{rad}cs'])
                 if var == 'hus':
                     adj = scale * adj
                 if var in ('ta', 'hus'):
                     adj = adj.climo.integral('plev')
                 data = data - adj.climo.to_units('W m^-2')  # cloud masking adjustment
         elif component == 'resid':  # residual flux
-            data = input[flux] - running
+            data = anoms[rad] - running
         else:  # net flux
-            data = 1.0 * input[flux]
+            data = 1.0 * anoms[rad]
 
-        # Update the input dataset with component fluxes
-        name = flux if component in ('', 'cs') else f'{component}_{flux}'
+        # Update the input dataset with resulting component fluxes. Add select
+        # components to the running total for use with the residual flux.
+        name = rad if component in ('', 'cs') else f'{component}_{rad}'
         descrip = descrip and f'{descrip} flux' or 'flux'  # for lon gname
         component = component or 'net'  # for print message
         data.name = name
@@ -500,11 +512,10 @@ def response_fluxes(input, kernels, printer=None):
         data = data.climo.to_units('W m^-2')
         if component in ('pl', 'lr', 'hus', 'alb', 'cl'):
             running = data + running
-        data = data.climo.dequantify()
+        output[data.name] = data = data.climo.dequantify()
         min_, max_, mean = data.min().item(), data.max().item(), data.mean().item()
         print(format(f'  {component} flux:', ' <15s'), end=' ')
         print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')
-        output[data.name] = data
 
     # Combine shortwave and longwave components
     # NOTE: Could also compute feedbacks and forcings for just shortwave and longwave
@@ -521,32 +532,32 @@ def response_fluxes(input, kernels, printer=None):
         long = f'rln{boundary[0].lower()}'
         short = f'rsn{boundary[0].lower()}'
         if component in ('', 'cs'):
-            fluxes = (f'{long}{component}', f'{short}{component}')
+            names = (f'{long}{component}', f'{short}{component}')
         elif component in ('alb',):
-            fluxes = (f'{component}_{short}',)
+            names = (f'{component}_{short}',)
         elif component in ('lr', 'pl'):  # traditional feedbacks
-            fluxes = (f'{component}_{long}',)
+            names = (f'{component}_{long}',)
         else:
-            fluxes = (f'{component}_{long}', f'{component}_{short}')
+            names = (f'{component}_{long}', f'{component}_{short}')
 
         # Sum component fluxes into net longwave plus shortwave fluxes
         # if both dependencies exist. Otherwise emit warning.
-        if message := ', '.join(flux for flux in fluxes if flux not in output):
+        if message := ', '.join(name for name in names if name not in output):
             print(
                 f'Warning: Net radiative flux {component=} is missing longwave or '
                 f'shortwave dependencies {message}. Skipping net flux estimate.'
             )
             continue
-        name = f'{net}{component}' if component in ('', 'cs') else f'{component}_{net}'  # noqa: E501
+        name = f'{net}{component}' if component in ('', 'cs') else f'{component}_{net}'
         descrip = descrip and f'{descrip} flux' or 'flux'  # for long name
         component = component or 'net'  # for print message
-        with xr.set_options(keep_attrs=True):
-            data = sum(output[flux] for flux in fluxes)
+        data = sum(output[name].climo.quantify() for name in names)  # no leakage here
         data.name = name
         data.attrs['long_name'] = f'net {boundary} {descrip}'
-        output[name] = data
-        if len(fluxes) == 1:  # e.g. drop the shortwave albedo 'component'
-            output = output.drop_vars(fluxes[0])
+        data = data.climo.to_units('W m^-2')
+        if len(names) == 1:  # e.g. drop the shortwave albedo 'component'
+            output = output.drop_vars(names[0])
+        output[name] = data = data.climo.dequantify()
         min_, max_, mean = data.min().item(), data.max().item(), data.mean().item()
         print(format(f'  {component} flux:', ' <15s'), end=' ')
         print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')
@@ -554,16 +565,16 @@ def response_fluxes(input, kernels, printer=None):
     return output
 
 
-def response_feedbacks(input, forcing=None, printer=None):
+def response_feedbacks(fluxes, forcing=None, printer=None):
     """
-    Return a dataset containing feedbacks calculated along all `time_averages` periods
+    Return a dataset containing feedbacks calculated along all `average_periods` periods
     (annual averages, seasonal averages, and month averages) and along all combinations
-    of `space_averages` (points, latitudes, hemispheres, and global, with different
+    of `average_regions` (points, latitudes, hemispheres, and global, with different
     averaging conventions used in the denominator indicated by the ``region`` coord).
 
     Parameters
     ----------
-    input : xarray.Dataset
+    fluxes : xarray.Dataset
         The source for the flux anomaly data. Should have been generated
         in `response_fluxes` using standardized radiative kernel data.
     forcing : path-like, optional
@@ -578,138 +589,122 @@ def response_feedbacks(input, forcing=None, printer=None):
     print = printer or builtins.print
     statistic = 'regression' if forcing is None else 'ratio'
     print(f'Calculating radiative feedbacks using {statistic}s.')
-    plev_top = time_averages(input['plev_top'])
-    plev_bot = time_averages(input['plev_bot'])
-    title = f'{statistic}-derived forcing-feedback decompositions'
-    input = input.climo.add_cell_measures()
-    input = input.climo.quantify()
-    input = time_averages(input)
-    input = space_averages(input)
+    fluxes = fluxes.climo.add_cell_measures()
+    fluxes = fluxes.climo.quantify()
+    fluxes = average_periods(fluxes)
+    denoms = average_regions(fluxes['ts'])  # concatenate possible averages
 
     # Iterate over fluxes
+    # NOTE: Since forcing is constant the cloud masking adjustment has no effect on
+    # feedback estimates, but does affect the 'cl_erf' cloud adjustment forcing.
     outputs = {}
-    regions = ('point', 'latitude', 'hemisphere', 'globe')
-    for numerator, denominator in itertools.product(regions, regions):
-        if regions.index(numerator) > regions.index(denominator):
+    for region, boundary, wavelength, component in itertools.product(
+        ('point', 'latitude', 'hemisphere', 'globe'),
+        ('TOA', 'surface'),
+        ('full', 'longwave', 'shortwave'),
+        FEEDBACK_DESCRIPTIONS,
+    ):
+        # Get the flux names
+        # NOTE: Here if a component has no 'dependencies' it does not
+        # exist so skip (e.g. temperature shortwave).
+        if boundary == 'TOA' and wavelength == 'full' and component == '':
+            outputs[region] = output = xr.Dataset()
+        rad = f'r{wavelength[0]}n{boundary[0].lower()}'
+        descrip = FEEDBACK_DESCRIPTIONS[component]
+        if component in ('', 'cs'):
+            name = f'{rad}{component}'
+        elif wavelength == 'full':
+            name = f'{component}_{rad}'
+        elif all(keys for keys in FEEDBACK_DEPENDENCIES[component].values()):
+            name = f'{component}_{rad}'
+        else:  # skips e.g. non-full planck and albedo
             continue
-        key = (numerator, denominator)  # used as multi-index
-        outputs[key] = output = xr.Dataset()
-        for boundary, wavelength, component in itertools.product(
-            ('TOA', 'surface'),
-            ('full', 'longwave', 'shortwave'),
-            FEEDBACK_DESCRIPTIONS,
-        ):
-            # Get the flux names
-            # NOTE: Here if a component has no 'dependencies' it does not
-            # exist so skip (e.g. temperature shortwave).
-            flux = f'r{wavelength[0]}n{boundary[0].lower()}'
-            descrip = FEEDBACK_DESCRIPTIONS[component]
-            if component in ('', 'cs'):
-                name = f'{flux}{component}'
-            elif wavelength == 'full':
-                name = f'{component}_{flux}'
-            elif all(keys for keys in FEEDBACK_DEPENDENCIES[component].values()):
-                name = f'{component}_{flux}'
-            else:  # skips e.g. non-full planck and albedo
-                continue
-            if wavelength == 'full' and component == '':
-                print(
-                    f'Calculating {numerator} vs. {denominator} '
-                    f'{wavelength} {boundary} forcing and feedback.'
-                )
-            if name not in input:
-                print(
-                    'Warning: Input dataset is missing radiative flux '
-                    f'component {name!r}. Skipping feedback estimate.'
-                )
-                continue
-            numer = input[name].sel(region=numerator)
-            denom = input['ts'].sel(region=denominator)
+        if wavelength == 'full' and component == '':
+            print(
+                f'Calculating {region}-average surface temperature '
+                f'{wavelength} {boundary} forcing and feedback.'
+            )
+        if (missing := name) not in fluxes or (missing := 'ts') not in fluxes:
+            print(
+                'Warning: Input dataset is missing the feedback '
+                f'dependency {missing!r}. Skipping calculation.'
+            )
+            continue
 
-            # Possibly add forcing masking adjustments
-            # NOTE: Since forcing is constant this has no effect on feedback estimate
-            # but does effect the '..._cl_erf2x' cloud adjustment forcing estimates.
-            # NOTE: Soden et al. (2008) used standard horizontally uniform value of 15%
-            # the full forcing but no reason not to use regressed forcing estimates.
-            if component in ('cl', 'resid'):
-                if message := ', '.join(
-                    repr(erf) for sky in ('', 'cs')
-                    if (erf := f'{flux}{sky}_erf2x') not in output
-                ):
-                    print(
-                        'Warning: Output dataset is missing cloud-masking forcing '
-                        f'adjustment variable(s) {message}. Cannot make adjustment.'
-                    )
-                else:
-                    all_, clear = output[f'{flux}_erf2x'], output[f'{flux}cs_erf2x']
-                    prop = (mask := all_ - clear) / all_
-                    if wavelength == 'full' and component == 'cl':
-                        min_, max_, mean = mask.min().item(), mask.max().item(), mask.mean().item()  # noqa: E501
-                        print(format('  masking flux:', ' <15s'), end=' ')
-                        print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')  # noqa: E501
-                        min_, max_, mean = prop.min().item(), prop.max().item(), prop.mean().item()  # noqa: E501
-                        print(format('  masking frac:', ' <15s'), end=' ')
-                        print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')  # noqa: E501
-                    with xr.set_options(keep_attrs=True):
-                        if component == 'cl':  # remove masking effect
-                            numer = numer - mask * ureg('W m^-2')
-                        else:  # add back masking effect
-                            numer = numer + mask * ureg('W m^-2')
-
-            # Perform the regression or division. Calculate climate sensitivity for
-            # net fluxes only and always calculate forcing to include adjustments.
-            # See: https://en.wikipedia.org/wiki/Simple_linear_regression
-            # See: https://doi.org/10.1175/JCLI-D-12-00544.1 (Equation 2)
-            # NOTE: Previously did separate regressions with and without intercept...
-            # but piControl regressions are *always* centered on origin because they
-            # are deviations from the average by *construction*. So unnecessary.
-            if forcing is not None:
-                forcing = Path(forcing).expanduser()
-                erf = xr.open_dataset(forcing, use_cftime=True)[f'{name}_erf2x']
-                erf = erf.climo.quantify()
-                lam = (numer.mean('time') - 2.0 * erf) / denom.mean('time')
+        # Get the components and possibly adjust for forcing masking
+        # NOTE: Soden et al. (2008) used standard horizontally uniform value of 15%
+        # the full forcing but no reason not to use regressed forcing estimates.
+        numer = fluxes[name]  # pointwise radiative flux
+        denom = denoms.sel(region=region)  # possibly averaged temperature
+        prefix = boundary if wavelength == 'full' else f'{boundary} {wavelength}'
+        descrip = 'net' if wavelength == 'full' and component == '' else descrip
+        component = 'net' if component == '' else component
+        if component in ('cl', 'resid'):
+            if message := ', '.join(
+                repr(erf) for sky in ('', 'cs')
+                if (erf := f'{rad}{sky}_erf') not in output
+            ):
+                print(
+                    'Warning: Output dataset is missing cloud-masking forcing '
+                    f'adjustment variable(s) {message}. Cannot make adjustment.'
+                )
             else:
-                nm = numer.mean('time', skipna=False)  # require data for entire period
-                dm = denom.mean('time', skipna=False)
-                lam = ((denom - dm) * (numer - nm)).sum('time') / ((denom - dm) ** 2).sum('time')  # noqa: E501
-                erf = 0.5 * (nm - lam * dm)  # possibly zero minus zero
-            descrip = descrip or 'net'  # for long names
-            component = component or 'net'  # for print messages
-            lam = lam.climo.to_units('W m^-2 K^-1')
-            lam = lam.climo.dequantify()
-            lam.name = f'{name}_lambda'
-            lam.attrs['long_name'] = f'{descrip} feedback'
-            output[lam.name] = lam
-            if wavelength == 'full':
-                min_, max_, mean = lam.min().item(), lam.max().item(), lam.mean().item()
-                print(format(f'  {component} lambda:', ' <15s'), end=' ')
-                print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
-            erf = erf.climo.to_units('W m^-2')
-            erf = erf.climo.dequantify()
-            erf.name = f'{name}_erf2x'  # halved from quadrupled co2
-            erf.attrs['long_name'] = f'{descrip} effective forcing'
-            output[erf.name] = erf
-            if wavelength == 'full':
-                min_, max_, mean = erf.min().item(), erf.max().item(), erf.mean().item()
-                print(format(f'  {component} erf2x:', ' <15s'), end=' ')
-                print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
-            if wavelength == 'full' and component == '':  # for convenience only
-                ecs = -1 * (erf / lam)  # already standardized and dequantified
-                ecs.name = f'{name}_ecs2x'  # already halved relative to quadrupled co2
-                ecs.attrs['units'] = 'K'
-                ecs.attrs['long_name'] = f'{descrip} effective sensitivity'
-                output[ecs.name] = ecs
-                min_, max_, mean = ecs.min().item(), ecs.max().item(), ecs.mean().item()  # noqa: E501
-                print(format(f'  {component} ecf2x:', ' <15s'), end=' ')
-                print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
+                all_, clear = output[f'{rad}_erf'], output[f'{rad}cs_erf']
+                prop = (mask := all_ - clear) / all_
+                if wavelength == 'full' and component == 'cl':
+                    min_, max_, mean = mask.min().item(), mask.max().item(), mask.mean().item()  # noqa: E501
+                    print(format('  masking flux:', ' <15s'), end=' ')
+                    print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
+                    min_, max_, mean = prop.min().item(), prop.max().item(), prop.mean().item()  # noqa: E501
+                    print(format('  masking frac:', ' <15s'), end=' ')
+                    print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
+                with xr.set_options(keep_attrs=True):
+                    if component == 'cl':  # remove masking effect
+                        numer = numer - mask * ureg('W m^-2')
+                    else:  # add back masking effect
+                        numer = numer + mask * ureg('W m^-2')
+
+        # Perform the regression or division. Calculate climate sensitivity for
+        # net fluxes only and always calculate forcing to include adjustments.
+        # See: https://en.wikipedia.org/wiki/Simple_linear_regression
+        # See: https://doi.org/10.1175/JCLI-D-12-00544.1 (Equation 2)
+        # NOTE: Previously did separate regressions with and without intercept...
+        # but piControl regressions are *always* centered on origin because they
+        # are deviations from the average by *construction*. So unnecessary.
+        if forcing is not None:
+            erf = forcing[f'{name}_erf']
+            erf = erf.climo.quantify()
+            lam = (numer.mean('time') - 2.0 * erf) / denom.mean('time')
+        else:
+            nm, dm = numer.mean('time', skipna=False), denom.mean('time', skipna=False)
+            lam = ((denom - dm) * (numer - nm)).sum('time') / ((denom - dm) ** 2).sum('time')  # noqa: E501
+            erf = 0.5 * (nm - lam * dm)  # possibly zero minus zero
+        lam = lam.climo.to_units('W m^-2 K^-1')
+        lam = lam.climo.dequantify()
+        lam.name = f'{name}_lam'
+        lam.attrs['long_name'] = f'{prefix} {descrip} feedback parameter'
+        output[lam.name] = lam
+        if wavelength == 'full':
+            min_, max_, mean = lam.min().item(), lam.max().item(), lam.mean().item()
+            print(format(f'  {component} lam:', ' <12s'), end=' ')
+            print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
+        erf = erf.climo.to_units('W m^-2')
+        erf = erf.climo.dequantify()
+        erf.name = f'{name}_erf'  # halved from quadrupled co2
+        erf.attrs['long_name'] = f'{prefix} {descrip} effective forcing'
+        output[erf.name] = erf
+        if wavelength == 'full':
+            min_, max_, mean = erf.min().item(), erf.max().item(), erf.mean().item()
+            print(format(f'  {component} erf:', ' <12s'), end=' ')
+            print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
 
     # Concatenate result along 'region' axis
-    # NOTE: This should have skipped impossible combinations like
+    # NOTE: This should have skipped impossible combinations
     coord = xr.DataArray(
-        pd.MultiIndex.from_tuples(outputs, names=('numerator', 'denominator')),
+        list(outputs),
         dims='region',
         name='region',
-        attrs={'long_name': 'spatial averaging regions'}
+        attrs={'long_name': 'temperature averaging region'}
     )
     output = xr.concat(
         outputs.values(),
@@ -717,16 +712,25 @@ def response_feedbacks(input, forcing=None, printer=None):
         coords='minimal',
         compat='equals',
     )
-    output.attrs['title'] = title
-    output.update({'plev_bot': plev_bot, 'plev_top': plev_top})
+    output.attrs['title'] = (
+        f'{statistic}-derived forcing-feedback decompositions'
+    )
+    for key in ('plev_bot', 'plev_top'):
+        if key not in fluxes:
+            continue
+        data = fluxes[key]
+        data = data.mean(dim='time', keep_attrs=True)
+        data = data.climo.dequantify()
+        output[key] = data
     return output
 
 
 def compute_feedbacks(
-    input='~/data',
-    output='~/data',
-    kernels=None,
+    feedbacks='~/data',
+    fluxes='~/data',
+    kernels='~/data',
     ratio=None,
+    source=None,
     project=None,
     experiment=None,
     ensemble=None,
@@ -735,26 +739,28 @@ def compute_feedbacks(
     nodrift=False,
     overwrite=False,
     printer=None,
-    testing=False,
+    dryrun=False,
     **inputs
 ):
     """
-    Calculate the feedbacks and generate three files containing local vs. local,
-    local vs. global, and global vs. global comparisons of net surface or
-    top-of-atmosphere radiative flux against surface temperature.
+    Calculate the net surface and top-of-atmosphere feedback components with a variety
+    of averaging conventions and save the result in an automatically-named file. Also
+    save the flux component calculations in an intermediate location.
 
     Parameters
     ----------
-    input : path-like, optional
-        The kernel data directory. The subfolder ``cmip-kernels`` is used.
-    output : path-like, optional
-        The output data directory. The subfolder ``cmip[56]-feedbacks`` is used.
-    kernels : str, default: 'eraint'
-        The source for the kernel data (e.g. ``'eraint'``). This searches for files
-        in the `kernels` directory formatted as ``kernels_{kernels}.nc``.
+    feedbacks : path-like, optional
+        The feedback directory (subfolder ``{project}-{experiment}-feedbacks`` is used).
+    fluxes : path-like, optional
+        The flux directory (subfolder ``{project}-{experiment}-feedbacks`` is used).
+    kernels : path-like, optional
+        The kernel data directory (subfolder ``cmip-kernels`` is used).
     ratio : bool, optional
         Whether to compute feedbacks with a ratio of a regression. The latter is
         only possible with abrupt response data where there is timescale separation.
+    source : str, default: 'eraint'
+        The source for the kernel data (e.g. ``'eraint'``). This searches for files
+        in the `kernels` directory formatted as ``kernels_{source}.nc``.
     **inputs : tuple of path-like lists
         Tuples of ``(control_inputs, response_inputs)`` for the variables
         required to compute the feedbacks, passed as keyword arguments for
@@ -766,34 +772,33 @@ def compute_feedbacks(
         The project. Used in the output folder and for level checking.
     experiment : str, optional
         The experiment. Used in the output folder and file name.
-    ensemble, model : str, optional
-        The ensemble and model name. Used in the output file name.
+    table, ensemble, model : str, optional
+        The table id, ensemble name, model name. Used in the output file name.
     nodrift : bool, optional
         Whether to append a ``-nodrift`` indicator to the end of the filename.
     overwrite : bool, default: False
-        Whether to overwrite existing output files.
+        Whether to overwrite existing output flux and feedback files.
     printer : callable, default: `print`
         The print function.
-    testing : bool, optional
-        Whether to run this in 'testing mode' with only three years of data.
+    dryrun : bool, optional
+        Whether to run with only three years of data.
 
     Returns
     -------
-    *paths : Path
-        The paths of the three output files. They file names are formatted as
-        ``feedbacks_{model}_{experiment}_{regions}_{options}.nc`` where
-        `model` and `experiment` are applied only if passed by the user, `regions`
-        is set to ``local-local``, ``local-global``, or ``global-global`` for each
-        feedback type, `options` is set to ``{kernels}-{statistic}-{nodrift}`` where
-        `kernels` is the kernel source; `statistic` is one of ``regression`` or
-        ``ratio``; and ``-nodrift`` is added only if ``nodrift`` is ``True``.
+    path : Path
+        The path of the output file, formatted according to cmip conventions as
+        ``feedbacks_{table}_{model}_{experiment}_{ensemble}_{options}.nc`` where
+        `table`, `model`, `experiment`, and `ensemble` are applied only if passed
+        by the user and `options` is set to ``{source}-{statistic}-{nodrift}``,
+        where `source` is the kernel source; `statistic` is one of ``regression``
+        or ``ratio``; and ``-nodrift`` is added only if ``nodrift`` is ``True``.
 
     Important
     ---------
-    Each file will contain the results of three different feedback breakdowns. For
-    each breakdown, a residual is computed by subtracting the canonical net feedback,
-    calculated as net all-sky longwave plus shortwave versus surface temperature,
-    from the sum of the notional component feedbacks.
+    The output file will contain the results of three different feedback breakdowns.
+    For the latter two breakdowns, a residual is computed by subtracting the canonical
+    net feedback, calculated as net all-sky longwave plus shortwave versus surface
+    temperature, from the sum of the individual component feedbacks.
 
     1. Simple all-sky and clear-sky regressions of the net longwave and net shortwave
        response against surface temperature. The clear-sky regressions are needed
@@ -813,25 +818,31 @@ def compute_feedbacks(
     ``ratio=True`` this function looks for ``'regression'`` files to retrieve the
     forcing estimates). The all-sky and clear-sky regressions are both needed for an
     estimate of cloud masking of the radiative forcing to plug into the Soden et al.
-    adjusted cloud radiative forcing estimates of the cloud feedback parameters.
+    adjusted cloud radiative effect estimates to get the effective cloud forcing.
     """
     # Parse input arguments
     # NOTE: Here 'ratio' should only ever be used with abrupt forcing experiments
     # where there is timescale separation of anomaly magnitudes.
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
-    kernels = kernels or 'eraint'
+    source = source or 'eraint'
     statistic = 'ratio' if ratio else 'regression'
-    output = Path(output).expanduser()
-    output = output / _item_join((project, experiment, 'feedbacks'))
-    output.mkdir(exist_ok=True)
-    prefix = '_'.join(filter(None, ('feedbacks', table, model, experiment, ensemble)))
-    suffix = '-'.join(filter(None, (kernels, statistic, nodrift and 'nodrift' or '')))
-    output = output / f'{prefix}_{suffix}.nc'
-    print(f'Creating output file: {output.name}')
-    if not overwrite and not testing and output.is_file() and output.stat().st_size > 0:
-        print('Output file already exists.')
-        return output
+    folder = _item_join((project, experiment, 'feedbacks'))
+    file = _item_join(
+        'feedbacks', table, model, experiment, ensemble,
+        (source, statistic, nodrift and 'nodrift' or ''),
+        modify=False
+    ) + '.nc'
+    feedbacks = Path(feedbacks).expanduser() / folder / file
+    feedbacks.parent.mkdir(exist_ok=True)
+    folder = _item_join((project, experiment, 'fluxes'))
+    file = _item_join(
+        'fluxes', table, model, experiment, ensemble,
+        (source, nodrift and 'nodrift' or ''),
+        modify=False
+    ) + '.nc'
+    fluxes = Path(fluxes).expanduser() / folder / file
+    fluxes.parent.mkdir(exist_ok=True)
     if message := ', '.join(
         f'{variable}={paths}' for variable, paths in inputs.items()
         if not isinstance(paths, (tuple, list))
@@ -839,46 +850,63 @@ def compute_feedbacks(
     ):
         raise TypeError(f'Unexpected kwargs {message}. Must be 2-tuple of paths.')
 
-    # Load kernels and flux components and compute feedback estimates
+    # Load kernels and cimpute flux components and feedback estimates
+    # NOTE: Try to permit updating feedback conventions from expensive flux component
+    # calculations, but never record new flux data potentially inconsistent with saved
+    # feedback data, so always overwrite if at least flux data is missing.
     # NOTE: Even for kernel-derived flux responses, rapid adjustments and associated
-    # pattern effects may make the effective radiative forcing estimate non-zero
-    # (see Andrews et al.) so we always permit a non-zero regression intercept.
-    input = Path(input).expanduser()
-    input = input / 'cmip-kernels' / f'kernels_{kernels}.nc'
-    kernels = open_file(input, project=project, validate=False)
-    print(f'Loaded kernel data from file: {input}')
-    anoms = response_anomalies(project=project, printer=print, testing=testing, **inputs)  # noqa: E501
-    forcing = None
-    if ratio:
-        input = output.parent
-        input = input / output.name.replace('ratio', 'regression')
-        forcing = open_file(input, project=project, validate=False)
-        print(f'Loaded forcing data from file: {input}')
-    fluxes = response_fluxes(anoms, kernels, printer=print)
-    feedbacks = response_feedbacks(fluxes, forcing=forcing, printer=print)
-    if not testing:  # save after compressing repeated NaN values
-        output.unlink(missing_ok=True)
-        comp = dict(zlib=True, complevel=5)
-        encoding = {var: comp for var in feedbacks.data_vars}
-        feedbacks = feedbacks.reset_index('region')  # cannot save regions
-        feedbacks.to_netcdf(output, engine='netcdf4', encoding=encoding)
-        feedbacks = feedbacks.set_index(region=('numerator', 'denominator'))
-        print(f'Created output file: {output.name}')
-    return feedbacks
+    # pattern effects may make the effective radiative forcing estimate non-zero (see
+    # Andrews et al.) so we always save the regression intercept data.
+    fluxes_exist = fluxes.is_file() and fluxes.stat().st_size > 0
+    feedbacks_exist = feedbacks.is_file() and feedbacks.stat().st_size > 0
+    overwrite = overwrite or feedbacks_exist and not fluxes_exist
+    print(f'Output flux file: {fluxes.name}')
+    if not overwrite and not dryrun and fluxes_exist:
+        print(f'Loading flux data from file: {fluxes.name}')
+        dataset = open_file(fluxes, validate=False)
+    else:
+        kernels = Path(kernels).expanduser() / 'cmip-kernels' / f'kernels_{source}.nc'
+        print(f'Loading kernel data from file: {kernels.name}')
+        kernels = open_file(kernels, project=project, validate=False)
+        dataset = response_anomalies(project=project, printer=print, dryrun=dryrun, **inputs)  # noqa: E501
+        dataset = response_fluxes(dataset, kernels=kernels, printer=print)
+        if not dryrun:  # save after compressing repeated values
+            encoding = {k: {'zlib': True, 'complevel': 5} for k in dataset.data_vars}
+            fluxes.unlink(missing_ok=True)
+            dataset.to_netcdf(fluxes, engine='netcdf4', encoding=encoding)
+            print(f'Created output file: {fluxes.name}')
+    print(f'Output feedback file: {feedbacks.name}')
+    if not overwrite and not dryrun and feedbacks_exist:
+        print(f'Loading feedback data from file: {feedbacks.name}')
+        feedbacks = open_file(feedbacks, validate=False)
+    else:
+        if ratio:
+            forcing = feedbacks.parent / feedbacks.name.replace('ratio', 'regression')
+            print(f'Loading forcing data from file: {forcing.name}')
+            forcing = open_file(forcing, project=project, validate=False)
+        else:
+            forcing = None
+        dataset = response_feedbacks(dataset, forcing=forcing, printer=print)
+        if not dryrun:  # save after compressing repeated values
+            encoding = {k: {'zlib': True, 'complevel': 5} for k in dataset.data_vars}
+            feedbacks.unlink(missing_ok=True)
+            dataset.to_netcdf(feedbacks, engine='netcdf4', encoding=encoding)
+            print(f'Created feedbacks file: {feedbacks.name}')
+    return feedbacks, fluxes
 
 
 def process_feedbacks(
     *paths,
-    kernels=None,
     ratio=None,
+    source=None,
     series=None,
     control=None,
     response=None,
     experiment=None,
     project=None,
     nodrift=False,
-    printer=None,
-    testing=False,
+    logging=False,
+    dryrun=False,
     **kwargs
 ):
     """
@@ -888,10 +916,10 @@ def process_feedbacks(
     ----------
     *paths : path-like, optional
         Location(s) of the climate and series data.
-    kernels : str, default: 'eraint'
-        The source for the kernels.
     ratio : bool, optional
         Whether to use ratio feedbacks.
+    source : str, default: 'eraint'
+        The source for the kernels.
     series : 2-tuple of int, default: (0, 150)
         The year range for the "response" time series data.
     control : 2-tuple of int, default: (0, 150)
@@ -904,10 +932,10 @@ def process_feedbacks(
         The project to search for.
     nodrift : bool, default: False
         Whether to use drift-corrected data.
-    printer : callable, default: `print`
-        The print function.
-    testing : bool, optional
-        Whether testing is enabled.
+    logging : bool, optional
+        Whether to build a custom logger.
+    dryrun : bool, optional
+        Whether to run with only three years of data.
     **kwargs
         Passed to `compute_feedbacks`.
     """
@@ -918,17 +946,17 @@ def process_feedbacks(
     # NOTE: Paradigm is to use climate monthly mean surface pressure when interpolating
     # to model levels and keep surface pressure time series when getting feedback
     # kernel integrals. Helps improve accuracy since so much stuff depends on kernels.
-    printer = testing and not printer and builtins.print or printer
+    logging = logging and not dryrun
     statistic = 'ratio' if ratio else 'regression'
     experiment = experiment or 'abrupt4xCO2'
-    kernels = kernels or 'eraint'
+    source = source or 'eraint'
     series = series or (0, 150)
     control = control or (0, 150)
     response = response or (120, 150)
     nodrift = 'nodrift' if nodrift else ''
     suffix = nodrift and '-' + nodrift
-    parts = ('feedbacks', experiment, kernels, statistic, nodrift)
-    print = printer or Printer('summary', *parts, project=project)
+    parts = ('feedbacks', experiment, source, statistic, nodrift)
+    print = Logger('summary', *parts, project=project) if logging else builtins.print
     control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
     if ratio:  # ratio-type
         response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
@@ -941,10 +969,13 @@ def process_feedbacks(
         'experiment': ['piControl', experiment],
         **{key: kwargs.pop(key) for key in tuple(kwargs) if 'flagship' in key}
     }
-    files, *_ = _glob_files(*paths, project=project)
+    files, *_ = glob_files(*paths, project=project)
     facets = ('project', 'model', 'ensemble', 'grid')
     database = Database(files, facets, **constraints)
-    control_experiment, response_experiment = database.constraints['experiment']
+    if experiment == 'piControl':  # otherwise translate for cmip5 or cmip6
+        control_experiment = response_experiment = 'piControl'
+    else:
+        control_experiment, response_experiment = database.constraints['experiment']
 
     # Calculate clear and all-sky feedbacks surface and TOA files
     # NOTE: Unlike the method that uses a fixed SST experiment to deduce forcing and
@@ -981,10 +1012,10 @@ def process_feedbacks(
                 table=_item_parts['table'](tuple(files.values())[0][1]),
                 model=group['model'],
                 ratio=ratio,
-                kernels=kernels,
+                source=source,
                 nodrift=nodrift,
                 printer=print,
-                testing=testing,
+                dryrun=dryrun,
                 **kwargs,
                 **files,
             )

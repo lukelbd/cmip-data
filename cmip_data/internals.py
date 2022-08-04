@@ -9,22 +9,21 @@ from pathlib import Path
 import numpy as np
 
 __all__ = [
+    'glob_files',
     'Database',
-    'Printer',
+    'Logger',
 ]
 
-# Corrupt files that have to be manually deleted after bulk downloads. Can test using
-# e.g. for file in ta*nc; do echo $file && ncvardump ta $file >/dev/null; done
-# since often get HDF5 errors during processing but header can be read without error.
-# NOTE: As of 2022-07-07 having trouble downloading CAS-ESM2-0 model level, integrated,
-# and surface drag files, and skipping downloading too-high-resolution CNRM-CM6-1-HR
-# data (see download_process.py notes). Also missing CMIP5 GFDL data but sent email.
+# Corrupt files that have to be manually ignored after bulk downloads. Can test using
+# e.g. for file in ta*nc; do echo $file && ncvardump ta $file 1>/dev/null; done
+# since can get HDF5 errors during processing but header can be read without error.
 # NOTE: At one point filtered out these files inside Database._init() to prevent even
 # downloading them but this just triggers downloading the 150+ year files during the
-# script filtering step. Now permit downloads and only filter out in _glob_files().
+# script filtering step. Now permit downloads and only filter out in glob_files().
+# NOTE: As of 2022-07-20 cannot download CAS-ESM2-0 data (surface drag and integrated
+# and model-level cloud data), skip downloading too-high-resolution CNRM-CM6-1-HR data,
+# and auto-correct specific humidity GISS missing values in repair_files().
 CORRUPT_FILES = [
-    # 'ta_Amon_E3SM-1-0_*',  # out-of-range (fixed in latest file download)
-    # 'hus_Amon_GISS-E2-1-[GH]_*',  # out-of-range (fixed with missing value kludge)
     'cct_Amon_IITM-ESM_piControl_r1i1p1f1_gn_192601-193512.nc',  # identical values
     'cct_Amon_IITM-ESM_piControl_r1i1p1f1_gn_193601-194512.nc',  # not sure of issue
     'cct_Amon_IITM-ESM_piControl_r1i1p1f1_gn_194601-195012.nc',
@@ -75,52 +74,6 @@ CORRUPT_FILES = [
     'clwvi_Amon_IITM-ESM_piControl_r1i1p1f1_gn_207101-208012.nc',
 ]
 
-# ESGF facets obtained with get_facet_options() for SearchContext(project='CMIP5')
-# then SearchContext(project='CMIP6') with host https://esgf-node.llnl.gov/esg-search.
-# See this page for all vocabularies: https://github.com/WCRP-CMIP/CMIP6_CVs
-# Experiments: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_experiment_id.html
-# Institutions: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_institution_id.html
-# Models/sources: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_source_id.html
-FACETS_FOLDER = ('project', 'experiment', 'table')  # folder naming
-FACETS_SUMMARY = ('project', 'experiment', 'table', 'variable')  # summary reports
-FACETS_CMIP5 = [
-    'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
-    'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
-    'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
-    'variable', 'variable_long_name', 'version'
-]
-FACETS_CMIP6 = [
-    'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
-    'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
-    'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
-    'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
-    'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
-    'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
-]
-FACET_ALIASES = {
-    ('CMIP5', 'table'): 'cmor_table',
-    ('CMIP5', 'institution'): 'institute',
-    ('CMIP5', 'frequency'): 'time_frequency',
-    ('CMIP6', 'variable'): 'variable_id',
-    ('CMIP6', 'table'): 'table_id',
-    ('CMIP6', 'model'): 'source_id',
-    ('CMIP6', 'experiment'): 'experiment_id',
-    ('CMIP6', 'ensemble'): 'variant_label',
-    ('CMIP6', 'institution'): 'institution_id',
-}
-FACET_RENAMES = {
-    ('CMIP5', 'hist-nat'): 'historicalNat',
-    ('CMIP5', 'hist-GHG'): 'historicalGHG',
-    ('CMIP5', 'esm-hist'): 'esmHistorical',
-    ('CMIP5', 'esm-piControl'): 'esmControl',
-    ('CMIP5', 'abrupt-4xCO2'): 'abrupt4xCO2',
-    ('CMIP6', 'historicalNat'): 'hist-nat',
-    ('CMIP6', 'historicalGHG'): 'hist-GHG',
-    ('CMIP6', 'esmHistorical'): 'esm-hist',
-    ('CMIP6', 'esmControl'): 'esm-piControl',
-    ('CMIP6', 'abrupt4xCO2'): 'abrupt-4xCO2',
-}
-
 # Ensemble labels associated with flagship versions of the pre-industrial control
 # and abrupt 4xCO2 experiments. Note the CNRM, MIROC, and UKESM models run both their
 # control and abrupt experiments with 'f2' forcing, HadGEM runs the abrupt experiment
@@ -128,9 +81,9 @@ FACET_RENAMES = {
 # EC-Earth3 strangely only runs the abrupt experiment with the 'r8' realization
 # and the (parent) control experiment with the 'r1' control realiztion.
 # NOTE: See the download_process.py script for details on available models.
-FLAGSHIP_ENSEMBLES = {
-    'CMIP5': 'r1i1p1',
-    'CMIP6': 'r1i1p1f1',
+ENSEMBLES_FLAGSHIP = {
+    ('CMIP5', None, None): 'r1i1p1',
+    ('CMIP6', None, None): 'r1i1p1f1',
     ('CMIP6', 'piControl', 'CNRM-CM6-1'): 'r1i1p1f2',
     ('CMIP6', 'piControl', 'CNRM-CM6-1-HR'): 'r1i1p1f2',
     ('CMIP6', 'piControl', 'CNRM-ESM2-1'): 'r1i1p1f2',
@@ -150,11 +103,77 @@ FLAGSHIP_ENSEMBLES = {
     ('CMIP6', 'abrupt-4xCO2', 'EC-Earth3'): 'r8i1p1f1',
 }
 
-# Facet ordering inside names, and priorities when sorting (see download.py for nodes)
+# ESGF facets obtained with get_facet_options() for SearchContext(project='CMIP5')
+# and SearchContext(project='CMIP6'). See: https://github.com/WCRP-CMIP/CMIP6_CVs
+# Includes mappings between shorthand 'aliases' (used with databases and other internal
+# utilities) and standard names (used when searching with pyesgf), between cmip5 and
+# cmip6 experiment names (so that the same string can be specified in function calls),
+# and between cmip5 model identifiers (may differ between dataset ids and file names).
+# The 'storage' and 'summarize' are for storage folder names and summarize reports.
+# Experiments: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_experiment_id.html
+# Institutions: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_institution_id.html
+# Models/sources: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_source_id.html
+FACETS_CMIP5 = [
+    'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
+    'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
+    'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
+    'variable', 'variable_long_name', 'version'
+]
+FACETS_CMIP6 = [
+    'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
+    'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
+    'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
+    'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
+    'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
+    'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
+]
+FACETS_ALIASES = {
+    ('CMIP5', 'table'): 'cmor_table',
+    ('CMIP5', 'institution'): 'institute',
+    ('CMIP5', 'frequency'): 'time_frequency',
+    ('CMIP6', 'variable'): 'variable_id',
+    ('CMIP6', 'table'): 'table_id',
+    ('CMIP6', 'model'): 'source_id',
+    ('CMIP6', 'experiment'): 'experiment_id',
+    ('CMIP6', 'ensemble'): 'variant_label',
+    ('CMIP6', 'institution'): 'institution_id',
+}
+FACETS_DOTNAMES = {
+    ('CMIP5', 'ACCESS1-0'): 'ACCESS1.0',
+    ('CMIP5', 'ACCESS1-3'): 'ACCESS1.3',
+    ('CMIP5', 'CSIRO-Mk3-6-0'): 'CSIRO-Mk3.6.0',
+    ('CMIP5', 'bcc-csm1-1'): 'BCC-CSM1.1',
+    ('CMIP5', 'inmcm4'): 'INM-CM4',
+}
+FACETS_RENAMES = {
+    ('CMIP5', 'hist-nat'): 'historicalNat',
+    ('CMIP5', 'hist-GHG'): 'historicalGHG',
+    ('CMIP5', 'esm-hist'): 'esmHistorical',
+    ('CMIP5', 'esm-piControl'): 'esmControl',
+    ('CMIP5', 'abrupt-4xCO2'): 'abrupt4xCO2',
+    ('CMIP6', 'historicalNat'): 'hist-nat',
+    ('CMIP6', 'historicalGHG'): 'hist-GHG',
+    ('CMIP6', 'esmHistorical'): 'esm-hist',
+    ('CMIP6', 'esmControl'): 'esm-piControl',
+    ('CMIP6', 'abrupt4xCO2'): 'abrupt-4xCO2',
+}
+FACETS_STORAGE = (  # naming of storage folders
+    'project',
+    'experiment',
+    'table',
+)
+FACETS_SUMMARIZE = (  # grouping in summarize logs
+    'project',
+    'experiment',
+    'table',
+    'variable',
+)
+
+# Sorting facets in names and options in databases (see download.py for nodes)
 # NOTE: Previously we removed bad or down nodes but this is unreliable and has to be
 # updated regularly. Instead now prioritize local nodes over distant nodes and then
 # wget script automatically skips duplicate files after successful download (see top).
-ORDER_KEYS = [
+SORT_FACETS = [
     'project',  # same as folder
     'model', 'source_id',
     'experiment', 'experiment_id',  # same as folder
@@ -163,7 +182,7 @@ ORDER_KEYS = [
     'variable', 'variable_id',
     'grid_label',
 ]
-ORDER_VALUES = {
+SORT_OPTIONS = {
     'experiment': [  # control runs come first
         'control',
         'historical',
@@ -208,7 +227,81 @@ ORDER_VALUES = {
     ],
 }
 
+# Node hosts for logon and urls for downloading
+# Hosts are listed here: https://esgf.llnl.gov/nodes.html
+# Nodes and statuses are listed here: https://esgf-node.llnl.gov/status/
+# LLNL: 11900116 hits for CMIP6 (best!)
+# DKRZ: 01009809 hits for CMIP6
+# IPSL: 01452125 hits for CMIP6
+URLS_HOSTS = {
+    'llnl': 'esgf-node.llnl.gov',
+    'ceda': 'esgf-index1.ceda.ac.uk',
+    'dkrz': 'esgf-data.dkrz.de',
+    'gfdl': 'esgdata.gfdl.noaa.gov',
+    'ipsl': 'esgf-node.ipsl.upmc.fr',
+    'jpl': 'esgf-node.jpl.nasa.gov',
+    'liu': 'esg-dn1.nsc.liu.se',
+    'nci': 'esgf.nci.org.au',
+    'nccs': 'esgf.nccs.nasa.gov',
+}
+URLS_NODES = [
+    'aims3.llnl.gov',
+    'cmip.bcc.cma.cn',
+    'cmip.dess.tsinghua.edu.cn',
+    'cmip.fio.org.cn',
+    'cordexesg.dmi.dk',
+    'crd-esgf-drc.ec.gc.ca',
+    'data.meteo.unican.es',
+    'dataserver.nccs.nasa.gov',
+    'dist.nmlab.snu.ac.kr',
+    'dpesgf03.nccs.nasa.gov',
+    'eridanus.eoc.dlr.de',
+    'esg-cccr.tropmet.res.in',
+    'esg-dn1.nsc.liu.se',
+    'esg-dn1.ru.ac.th',
+    'esg-dn2.nsc.liu.se',
+    'esg.camscma.cn',
+    'esg.lasg.ac.cn',
+    'esg.pik-potsdam.de',
+    'esg1.umr-cnrm.fr',
+    'esg2.umr-cnrm.fr',
+    'esgdata.gfdl.noaa.gov',
+    'esgf-cnr.hpc.cineca.it',
+    'esgf-data.csc.fi',
+    'esgf-data.ucar.edu',
+    'esgf-data1.ceda.ac.uk',
+    'esgf-data1.diasjp.net',
+    'esgf-data1.llnl.gov',
+    'esgf-data2.ceda.ac.uk',
+    'esgf-data2.diasjp.net',
+    'esgf-data2.llnl.gov',
+    'esgf-data3.ceda.ac.uk',
+    'esgf-data3.diasjp.net',
+    'esgf-ictp.hpc.cineca.it',
+    'esgf-nimscmip6.apcc21.org',
+    'esgf-node.cmcc.it',
+    'esgf-node2.cmcc.it',
+    'esgf.anl.gov',
+    'esgf.apcc21.org',
+    'esgf.bsc.es',
+    'esgf.dwd.de',
+    'esgf.ichec.ie',
+    'esgf.nccs.nasa.gov',
+    'esgf.nci.org.au',
+    'esgf.rcec.sinica.edu.tw',
+    'esgf1.dkrz.de',
+    'esgf2.dkrz.de',
+    'esgf3.dkrz.de',
+    'noresg.nird.sigma2.no',
+    'polaris.pknu.ac.kr',
+    'vesg.ipsl.upmc.fr'
+]
+
 # Horizontal and vertical grid constants
+# NOTE: Level values for various tables are listed in this PDF (where CMIP6 Amon
+# uses the 19 level configuration and CMIP5 Amon uses the 17 level configuration):
+# https://cmip6dr.github.io/Data_Request_Home/Documents/CMIP6_pressure_levels.pdf
+# See process.py header for notes about vertical interpolation of model coordinates.
 # NOTE: Lowest resolution in CMIP5 models is 64 latitudes 128 longitudes (also still
 # used by BCC-ESM1 in CMIP6) and grids are mix of regular lon-lat and guassian (assume
 # that former was interpolated). Select regular grid spacing with similar resolution but
@@ -217,63 +310,17 @@ ORDER_VALUES = {
 # model=$(echo $f | cut -d_ -f3); [[ " ${models[*]} " =~ " $model " ]] && continue
 # models+=("$model"); echo "$model:" && ncdims $f | grep -E 'lat|lon' | tr -s ' ' | xargs; done  # noqa: E501
 # 'r360x180'  # 1.0 deg, 'r180x90'  # 2.0 deg, 'r144x72'  # 2.5 deg
-# NOTE: Some models use hybrid coordinates but have different names. The GFDL and CNRM
-# models have zaxistype 'hybrid' and longname 'atmospheric model level' instead of the
-# 'hybrid sigma pressure coordinate' (seems due to using an 'ap' pressure term instead
-# of an 'a' coefficient times a 'p0' reference), and some FGOALS models have zaxistype
-# 'generic' and longname 'sigma coordinate' instead of zaxistype 'hybrid' (also the
-# CMIP5 hybrid FGOALS-s2 model, but not the CMIP6 hybrid FGOALS-f3-L model, use 'ap'
-# pressure coordinates despite naming them 'a' and indicating 'a' in formula terms).
-# However 'cdo ml2pl' is general so works (seems to parse 'formula'). Relevant files:
-# cmip6-picontrol-amon/cl_Amon_GFDL-CM4_piControl_r1i1p1f1_gr1_015101-025012.nc
-# cmip6-picontrol-amon/cl_Amon_GFDL-ESM4_piControl_r1i1p1f1_gr1_000101-010012.nc
-# cmip6-picontrol-amon/cl_Amon_CNRM-CM6-1_piControl_r1i1p1f2_gr_185001-194912.nc
-# cmip6-picontrol-amon/cl_Amon_CNRM-ESM2-1_piControl_r1i1p1f2_gr_185001-194912.nc
-# cmip5-picontrol-amon/cl_Amon_FGOALS-g2_piControl_r1i1p1_020101-021012.nc
-# cmip6-picontrol-amon/cl_Amon_FGOALS-g3_piControl_r1i1p1f1_gn_020001-020912.nc
-# NOTE: Some models have zaxistype 'generic' and longname 'hybrid height coordinates'
-# and require 'pfull' for vertical interpolation. These consist of ACCESS, KACE, UKESM,
-# and HadGEM. Since CMIP5 only provides 'pfull' for control experiments we use these
-# even for forced experiments. Also HadGEM only provides 'pfull' for control-1950 and
-# UKESM only provides 'pfull' for AERmon instead of Amon so we manually obtained wget
-# scripts using the online interface (see also the filter command). Relevant files:
-# cmip5-picontrol-amon/cl_Amon_ACCESS1-0_piControl_r1i1p1_030001-032412.nc
-# cmip5-picontrol-amon/cl_Amon_ACCESS1-3_piControl_r1i1p1_025001-027412.nc
-# cmip6-picontrol-amon/cl_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_095001-096912.nc
-# cmip6-picontrol-amon/cl_Amon_ACCESS-ESM1-5_piControl_r1i1p1f1_gn_010101-012012.nc
-# cmip6-picontrol-amon/cl_Amon_E3SM-1-0_piControl_r1i1p1f1_gr_000101-002512.nc
-# cmip5-picontrol-amon/cl_Amon_HadGEM2-ES_piControl_r1i1p1_185912-188411.nc
-# cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-MM_piControl_r1i1p1f1_gn_185001-185912.nc
-# cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-LL_piControl_r1i1p1f1_gn_185001-189912.nc
-# cmip6-picontrol-amon/cl_Amon_KACE-1-0-G_piControl_r1i1p1f1_gr_200001-209912.nc
-# cmip6-picontrol-amon/cl_Amon_UKESM1-0-LL_piControl_r1i1p1f2_gn_196001-199912.nc
-# NOTE: Some model data is erroneously interpreted as having pressure levels due to
-# missing CF standard name and formula terms. This includes all CESM2 models except
-# CESM2-WACCM-FV2, so can infer correct attributes for this (note the latter is also
-# messed up, since some have levels with positive descending magnitude and others with
-# negative ascending magnitude, so must manually flip axis before merging and let cdo
-# issue a level mismatch warning). It also includes IPSL models but no point of
-# reference, have to adjust manually. Finally, IITM-ESM and MCM-UA *actually do* provide
-# standard pressure level data when not required by the table protocol. Relevant files:
-# cmip6-picontrol-amon/cl_Amon_CESM2_piControl_r1i1p1f1_gn_000101-009912.nc
-# cmip6-picontrol-amon/cl_Amon_CESM2-FV2_piControl_r1i1p1f1_gn_000101-005012.nc
-# cmip6-picontrol-amon/cl_Amon_CESM2-WACCM_piControl_r1i1p1f1_gn_000101-009912.nc
-# cmip6-picontrol-amon/cl_Amon_CESM2-WACCM-FV2_piControl_r1i1p1f1_gn_000101-004912.nc
-# cmip6-picontrol-amon/cl_Amon_IPSL-CM6A-LR_piControl_r1i1p1f1_gr_185001-234912.nc
-# cmip6-picontrol-amon/clw_Amon_IPSL-CM5A2-INCA_piControl_r1i1p1f1_gr_185001-209912.nc
-# cmip6-picontrol-amon/cl_Amon_IITM-ESM_piControl_r1i1p1f1_gn_192601-193512.nc
-# cmip6-picontrol-amon/cl_Amon_MCM-UA-1-0_piControl_r1i1p1f1_gn_000101-010012.nc
-STANDARD_GRID_CMIP = (
+STANDARD_GRIDSPEC_CMIP = (
     'r72x36'  # 5.0 degree resolution
     # 'r144x72'  # 2.5 degree resolution
 )
-STANDARD_LEVS_CMIP5 = 100 * np.array(
+STANDARD_LEVELS_CMIP5 = 100 * np.array(
     [
         1000, 925, 850, 700, 600, 500, 400, 300, 250,  # tropospheric
         200, 150, 100, 70, 50, 30, 20, 10,  # stratospheric
     ]
 )
-STANDARD_LEVS_CMIP6 = 100 * np.array(
+STANDARD_LEVELS_CMIP6 = 100 * np.array(
     [
         1000, 925, 850, 700, 600, 500, 400, 300, 250,  # tropospheric
         200, 150, 100, 70, 50, 30, 20, 10, 5, 1,  # stratospheric (2 extra)
@@ -281,7 +328,7 @@ STANDARD_LEVS_CMIP6 = 100 * np.array(
 )
 
 
-# Helper functions for parsing and joining log files, netcdf files, and script lines
+# Helper functions for parsing and naming based on facets
 # NOTE: Join function is used for log files, script files, and folder names (which
 # use simply <project_id>-<experiment_id>-<table_id>). Replace the dashes so that
 # e.g. models and experiments with dashes are not mistaken for field delimiters.
@@ -289,32 +336,41 @@ STANDARD_LEVS_CMIP6 = 100 * np.array(
 # ..._<member_id>[_<grid_label>[_<start_date>-<end_date>[-<climate_indicator>]]].nc
 # where grid labels are only in cmip6 and climate indicator is used for e.g. pfull.
 # See: https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json
-_item_part = lambda file, idx: (
-    getattr(file, 'name', file)  # str or Path input
-    .split()[0].strip("'").split('.')[0].split('_')[idx]  # use part before .nc suffix
+_item_file = lambda line: (
+    getattr(line, 'name', line).split()[0].strip("'")
+)
+_item_node = lambda line: (
+    line.split()[1].strip("'").split('thredds')[0]
+)
+_item_dates = lambda file: (
+    d if (d := _item_piece(file, -1))[0].isdecimal() else ''
+)
+_item_years = lambda file: tuple(
+    int(s[:4]) for s in _item_dates(file).split('-')[:2]
+)
+_item_piece = lambda file, idx: (
+    _item_file(file).split('.')[0].split('_')[idx]  # use part before .nc suffix
 )
 _item_parts = {
-    'model': lambda file: _item_part(file, 2),
-    'experiment': lambda file: _item_part(file, 3),
-    'ensemble': lambda file: _item_part(file, 4),
-    'table': lambda file: _item_part(file, 1),
-    'variable': lambda file: _item_part(file, 0),
-    'grid': lambda file: g if (g := _item_part(file, -2))[0] == 'g' else 'g',
+    'model': lambda file: _item_piece(file, 2),
+    'experiment': lambda file: _item_piece(file, 3),
+    'ensemble': lambda file: _item_piece(file, 4),
+    'table': lambda file: _item_piece(file, 1),
+    'variable': lambda file: _item_piece(file, 0),
+    'grid': lambda file: g if (g := _item_piece(file, -2))[0] == 'g' else 'g',
 }
-_item_dates = lambda file: d if (d := _item_part(file, -1))[0].isdecimal() else ''
-_item_years = lambda file: tuple(int(s[:4]) for s in _item_dates(file).split('-')[:2])
-_item_file = lambda line: getattr(line, 'name', line).split()[0].strip("'")
-_item_node = lambda line: line.split()[1].strip("'").split('thredds')[0]
 _item_join = lambda *options, modify=True: '_'.join(
-    item for opts in options if (item := '-'.join(
-        opt.lower().replace('-', '') if modify else opt
-        for opt in filter(None, ((opts,) if isinstance(opts, str) else tuple(opts)))
-    ))
+    item for opts in options if (
+        item := '-'.join(
+            re.sub(r'\W+', '', opt.lower()) if modify else opt
+            for opt in filter(
+                None, opts.split(',') if isinstance(opts, str) else tuple(opts)
+            )
+        )
+    )
 )
-_file_parts = {**_item_parts, 'dates': _item_dates}
-_node_parts = {**_item_parts, 'dates': _item_dates, 'node': _item_node}
 
-# Helper functions for sorting netcdf file names and wget script lines
+# Helper function for sorting based on facets
 # NOTE: Previously we sorted files alphabetically but this means when processing
 # files for the first time we iterate over abrupt variables before the control
 # variables required for drift correction are available. The generalized priority
@@ -323,70 +379,25 @@ _node_parts = {**_item_parts, 'dates': _item_dates, 'node': _item_node}
 # but this was terrible idea. The scripts will auto-skip files that both exist and are
 # recorded in the .wget cache file, so as they loop over files they ignore already
 # downloaded entries. This lets us maximize probability and speed of retrieving files
-# without having to explicitly filter bad nodes. Example indices for identical files:
-# ('00_ACCESS-ESM1-5', '00_piControl',...,'00_010101-012012', '02_esgf-data1.llnl.gov')
-# ('00_ACCESS-ESM1-5', '00_piControl',...,'00_010101-012012', '22_esgf.nci.org.au')
+# without having to explicitly filter bad nodes. Example indices for identical names:
+# ('00_ACCESS', ..., '02_esgf-data1.llnl.gov'), ('00_ACCESS', ..., '22_esgf.nci.org.au')
+_sort_part = lambda item, facet: (
+    str(item) if '_' not in getattr(item, 'name', item)
+    else _item_dates(item) if facet == 'dates'
+    else _item_node(item) if facet == 'node'
+    else _item_parts[facet](item)
+)
+_sort_index = lambda item, facet: (
+    (part := _sort_part(item, facet))
+    and (opts := (*SORT_OPTIONS.get(facet, ()), part.lower()))  # adds default entry
+    and min(f'{i:02d}_{part}' for i, opt in enumerate(opts) if opt in part.lower())
+)
 _sort_facet = lambda items, facet: sorted(
     set(items), key=lambda item: _sort_index(item, facet)
 )
 _sort_facets = lambda items, facets: sorted(
     items, key=lambda item: tuple(_sort_index(item, facet) for facet in facets)
 )
-_sort_index = lambda item, facet: (
-    (part := _node_parts[facet](item) if '_' in getattr(item, 'name', item) else item)
-    and (opts := (*ORDER_VALUES.get(facet, ()), part.lower()))
-    and min(f'{i:02d}_{part}' for i, opt in enumerate(opts) if opt in part.lower())
-)
-
-
-def _glob_files(*paths, pattern='*', project=None):
-    """
-    Return a list of files matching the input pattern and a second list of files
-    containing corrupt or duplicate files (e.g. with an ``.nc4`` extension).
-
-    Parameters
-    ----------
-    *path : path-like
-        The source path(s).
-    pattern : str, default: '*'
-        The glob pattern preceding the file extension.
-    """
-    # NOTE: Could amend this to not look for subfolders if 'project' was not passed
-    # but prefer consistency with Printer and Database of always using cmip6
-    # as the default, and this is the only way to filter paths by 'project'.
-    project = (project or 'cmip6').lower()
-    paths = paths or ('~/data',)
-    files = _sort_facets(  # have only seen .nc4 but this is in case
-        (
-            file for ext in ('.nc', '.nc[0-9]') for path in paths
-            for folder in Path(path).expanduser().glob(f'{project}*')
-            for file in folder.glob(pattern + ext)
-            if '_standard-' not in file.name  # skip intermediate files
-            and file.name.count('_') >= 4  # skip temporary files
-            and (
-                file.stat().st_size > 0 or file.unlink()
-                or print(f'Warning: Removed empty download file {file.name!r}')
-            )
-        ), facets=tuple(_file_parts)
-    )
-    files_corrupt = []
-    files_duplicate = []
-    files_filtered = [
-        file for file in files if (
-            file.suffix == '.nc' or file.parent / f'{file.stem}.nc' not in files
-            or files_duplicate.append(file)  # always false
-        ) and (
-            file.name not in CORRUPT_FILES
-            or files_corrupt.append(file)  # always false
-        )
-    ]
-    if files_duplicate:
-        message = ' '.join(file.name for file in files_duplicate)
-        print(f'Ignoring duplicate files: {message}.')
-    if files_corrupt:
-        message = ' '.join(file.name for file in files_corrupt)
-        print(f'Ignoring corrupt files: {message}.')
-    return files_filtered, files_duplicate, files_corrupt
 
 
 def _parse_constraints(reverse=False, restrict=True, **constraints):
@@ -411,22 +422,32 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
         facet: list(set(opts.split(',') if isinstance(opts, str) else opts))
         for facet, opts in constraints.items()
     }
-    renames = FACET_RENAMES
-    aliases = FACET_ALIASES
-    aliases_reverse = {(_, facet): alias for (_, alias), facet in aliases.items()}
+    renames = FACETS_RENAMES
+    aliases_decode = FACETS_ALIASES
+    aliases_encode = {(_, facet): alias for (_, alias), facet in aliases_decode.items()}
+    dotnames_decode = FACETS_DOTNAMES
+    dotnames_encode = {(_, dotname): name for (_, name), dotname in dotnames_decode.items()}  # noqa: E501
     projects = constraints.setdefault('project', ['CMIP6'])
     if len(projects) != 1:
         raise NotImplementedError('Non-scalar projects are not supported.')
     projects[:] = [project := projects[0].upper()]
     facets = (
-        *(facet for facet in ORDER_KEYS if facet in constraints),  # impose order
-        *(facet for facet in constraints if facet not in ORDER_KEYS),  # keep order
+        *(facet for facet in SORT_FACETS if facet in constraints),  # impose order
+        *(facet for facet in constraints if facet not in SORT_FACETS),  # retain order
     )
     constraints = {
-        (aliases_reverse if reverse else aliases).get((project, facet), facet):
+        (aliases_encode if reverse else aliases_decode)  # facet translations
+        .get((project, facet), facet):
         _sort_facet(
-            (renames.get((project, opt), opt) for opt in constraints[facet]),
-            aliases_reverse.get((project, facet), facet)  # need standard name here
+            (
+                (dotnames_encode if reverse else dotnames_decode)  # model translations
+                .get(
+                    (project, opt),
+                    renames.get((project, opt), opt)  # experiment translations
+                )
+                for opt in constraints[facet]
+            ),
+            aliases_encode.get((project, facet), facet)  # need standard name here
         )
         for facet in facets
     }
@@ -437,7 +458,7 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
     return project, constraints
 
 
-def _variable_ranges(variable, table='Amon'):
+def _validate_ranges(variable, table='Amon'):
     """
     Return the quality control ranges from the source file.
 
@@ -468,10 +489,59 @@ def _variable_ranges(variable, table='Amon'):
     return tuple(values)
 
 
-class Printer(object):
+def glob_files(*paths, pattern='*', project=None):
     """
-    Simultaneously print the results and print to a log file named
-    automatically based on the input facet constraints.
+    Return a list of files matching the input pattern and a second list of files
+    containing corrupt or duplicate files (e.g. with an ``.nc4`` extension).
+
+    Parameters
+    ----------
+    *path : path-like
+        The source path(s).
+    pattern : str, default: '*'
+        The glob pattern preceding the file extension.
+    """
+    # NOTE: Could amend this to not look for subfolders if 'project' was not passed
+    # but prefer consistency with Logger and Database of always using cmip6
+    # as the default, and this is the only way to filter paths by 'project'.
+    project = (project or 'cmip6').lower()
+    paths = paths or ('~/data',)
+    files = _sort_facets(  # have only seen .nc4 but this is just in case
+        (
+            file for ext in ('.nc', '.nc[0-9]') for path in paths
+            for folder in Path(path).expanduser().glob(f'{project}*')
+            for file in folder.glob(pattern + ext)
+            if '_standard-' not in file.name  # skip intermediate files
+            and file.name.count('_') >= 4  # skip temporary files
+            and (
+                file.stat().st_size > 0 or file.unlink()
+                or print(f'Warning: Removed empty download file {file.name!r}')
+            )
+        ), facets=(*_item_parts, 'dates'),
+    )
+    files_corrupt = []
+    files_duplicate = []
+    files_filtered = [
+        file for file in files if (
+            file.suffix == '.nc' or file.parent / f'{file.stem}.nc' not in files
+            or files_duplicate.append(file)  # always false
+        ) and (
+            file.name not in CORRUPT_FILES
+            or files_corrupt.append(file)  # always false
+        )
+    ]
+    if files_duplicate:
+        message = ' '.join(file.name for file in files_duplicate)
+        print(f'Ignoring duplicate files: {message}.')
+    if files_corrupt:
+        message = ' '.join(file.name for file in files_corrupt)
+        print(f'Ignoring corrupt files: {message}.')
+    return files_filtered, files_duplicate, files_corrupt
+
+
+class Logger(object):
+    """
+    Simultaneously print the results and add them to an automatically named log file.
     """
     def __init__(self, prefix, *suffixes, backup=False, **constraints):
         """
@@ -501,14 +571,14 @@ class Printer(object):
         self.constraints = constraints
 
     def __call__(self, *args, sep=' ', end='\n'):
-        r"""
+        """
         Parameters
         ----------
         *args
-            Objects to print.
+            The objects to print.
         sep : str, default: ' '
             Separation between objects
-        end : str, default: '\n'
+        end : str, default: '\\n'
             Ending after last printed object.
         """
         print(*args, sep=sep, end=end)
@@ -528,6 +598,9 @@ class Database(object):
 
     def __len__(self):  # length of nested lists
         return sum(len(data.values()) for data in self.database.values())
+
+    def __bool__(self):
+        return bool(len(self))
 
     def __iter__(self):  # iterate through nested lists
         for data in self.database.values(): yield from data.values()  # noqa: E701
@@ -551,9 +624,7 @@ class Database(object):
         return self.database.items()
 
     def __init__(
-        self,
-        source,
-        facets,
+        self, source, facets,
         flagship_translate=False,
         flagship_filter=False,
         **constraints
@@ -592,8 +663,8 @@ class Database(object):
             parts = {'project': project}
             parts.update({facet: func(value) for facet, func in _item_parts.items()})
             key_flagship = (project, parts['experiment'], parts['model'])
-            ens_default = FLAGSHIP_ENSEMBLES[project]
-            ens_flagship = FLAGSHIP_ENSEMBLES.get(key_flagship, ens_default)
+            ens_default = ENSEMBLES_FLAGSHIP[project, None, None]
+            ens_flagship = ENSEMBLES_FLAGSHIP.get(key_flagship, ens_default)
             if flagship_translate and parts['ensemble'] == ens_flagship:
                 parts['ensemble'] = 'flagship'  # otherwise retain ensemble
             if any(opt not in constraints.get(facet, (opt,)) for facet, opt in parts.items()):  # noqa: E501
@@ -617,7 +688,7 @@ class Database(object):
             for key, items in tuple(data.items()):
                 data[key] = sorted(items)
 
-    def filter(self, keys, always_include=None, always_exclude=None):
+    def filter(self, keys=None, always_include=None, always_exclude=None):
         """
         Filter the database keys. Compare to `.restrict`.
 
@@ -650,16 +721,14 @@ class Database(object):
         for group, data in self.database.items():
             for key in tuple(data):
                 parts = dict(zip((*self.group, *self.key), (*group, *key)))
-                if (
-                    key not in (keys or data)
-                    and not any(
-                        all(parts[facet] in opts for facet, opts in constraints.items())
-                        for constraints in always_include
-                    )
-                    or any(
-                        all(parts[facet] in opts for facet, opts in constraints.items())
-                        for constraints in always_exclude
-                    )
+                if keys and key not in keys and not any(
+                    all(parts[facet] in opts for facet, opts in constraints.items())
+                    for constraints in always_include
+                ):
+                    del data[key]
+                elif any(
+                    all(parts[facet] in opts for facet, opts in constraints.items())
+                    for constraints in always_exclude
                 ):
                     del data[key]
 
