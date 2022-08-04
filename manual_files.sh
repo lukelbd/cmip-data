@@ -1,33 +1,22 @@
 #!/usr/bin/env bash
-# This file contains scripts for manually downloading missing data not
-# available on main server. Uses either wget or lftp to connect.
+# Scripts for manually downloading and processing missing data.
+mcm=false
 gfdl=false
-mcmua=false
 
-# Missing cmip5 downloads
+# Manually acquire missing CMIP5 GFDL data
+# See: https://data1.gfdl.noaa.gov/faq.html
 # NOTE: Had constant issues trying to download with wget on macbook (triggered 500
 # unknown command errors), with wget on remote server (command would hang), and with
 # lftp on remote server (would connect but hang when trying to list content). Since
 # it worked on macbook tried to use this script: https://serverfault.com/a/25286/427991
 # but transfer to server with lrcp was too slow... another solution was to use curl
 # with in-built globbing patterns using e.g. ts_..._[000000-015012]-[00000-015012].nc
-# but this also failed... so elected to simply iterate over files using name convention.
-# NOTE: Tried to devise similar script for logging into CEDA acrhive using
-# ftp://ftp.ceda.ac.uk/badc/cmip5/data/cmip5/output1/ICHEC/EC-EARTH/ with username
-# lukelbd and password generated from CEDA Webpage->My Account->Configure FTP Account
-# but never worked... instead opted to manually browse and download from HTTP URLs
-# with e.g. https://dap.ceda.ac.uk/badc/cmip5/data/cmip5/output1/ICHEC/. Also for
-# some reason using 'curl -O <link>' with individual files failed everywhere, had
-# to be done interactively, and failed to use curl -O -u 'username:password' or
-# wget with username and password on command line (curl would seem to work but
-# only return tiny files), so only download interactively... however in the end
-# decided not to download this data at all since too much is missing.
+# but this also failed... so elected to explicitly iterate over file names.
 if $gfdl; then
-  # path=$HOME/Downloads  # macbook
-  path=$HOME/scratch2/data-downloads  # server
-  cd $path || { echo "Error: Cannot find destination $path"; exit 1; }
-  for model in GFDL-CM3 GFDL-ESM2G GFDL-ESM2M; do
-    for experiment in piControl abrupt4xCO2; do
+  for experiment in piControl abrupt4xCO2; do
+    path=$HOME/scratch2/cmip5-$experiment-amon
+    cd $path || { echo "Error: Cannot find destination $path"; exit 1; }
+    for model in GFDL-CM3 GFDL-ESM2G GFDL-ESM2M; do
       for variable in rsut rsutcs rsus rsuscs ta ts va vas zg ; do
         url=ftp://anonymous:anonymous@nomads.gfdl.noaa.gov
         url=$url/CMIP5/output1/NOAA-GFDL/$model/$experiment
@@ -50,14 +39,15 @@ if $gfdl; then
   done
 fi
 
-# Missing cmip6 radiative flux data
-# NOTE: Here had to manually download and combine wget scripts... for some reason
-# the online ESGF interface was giving weird results.
-# NOTE: Use the fact that rtmt = rsdt - rsut - rlut --> rsut - rsdt = -1 * (rtmt + rlut)
-# to create nominal 'rsut' files containing 'rsut - rsdt' values... then create a
-# zero-valued dummy rsdt file and the places where we compute net 'rsdt - rsut' flux
-# (e.g. for ocean + atmosphere energy transport) give the same result as true rsdt.
-if $mcmua; then
+# Manually build missing CMIP6 MCM-UA radiative flux data
+# NOTE: Here had to manually download and combine wget scripts... for some reason the
+# web interface was giving weird results. Use the fact that rtmt = rsdt - rsut - rlut
+# --> rsut - rsdt = -1 * (rtmt + rlut) to create nominal 'rsut' files containing
+# 'rsut - rsdt' values... then create a zero-valued dummy rsdt file, and the places
+# where we compute net 'rsdt - rsut' flux (e.g. for ocean + atmosphere energy transport)
+# give the same result as true rsdt. Also critical to add a kludge in open_file() and
+# summarize_ranges() so that range validation is skipped for these files.
+if $mcm; then
   for experiment in picontrol abrupt4xco2; do
     path=$HOME/scratch5/cmip6-$experiment-amon
     cd $path || { echo "Error: Cannot find location $path"; exit 1; }

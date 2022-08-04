@@ -1,9 +1,9 @@
 Valid Ranges
 ------------
 The below text was copied from https://clipc-services.ceda.ac.uk/dreq/index/qcranges.html
-although links on that page are dead so had to actually go through individual variables
+although links on that page are dead, so had to actually go through individual variables
 in the Amon table and navigate to Quality Control Ranges tab then follow those links.
-This data is automatically parsed by the summarize_ranges function in process.py.
+This data is automatically parsed by summarize_ranges() and open_file() for validation.
 
 [Amon-cct] Guide ranges for cct (table Amon)
 valid_max[i]: 115000.0
@@ -17,7 +17,7 @@ valid_min_status[i]: robust
 
 [Amon-cl] Cloud Area Fraction
 valid_max[i]: 105.0
-valid_min[i]: -0.1  # modified from 0.0 (triggered without nodrift)
+valid_min[i]: -5.0  # modified from 0.0 (triggered without nodrift)
 ok_max_mean_abs[i]: 26.07
 valid_max_status[i]: suggested
 ok_max_mean_abs_status[i]: suggested
