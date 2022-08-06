@@ -360,7 +360,7 @@ _item_parts = {
     'grid': lambda file: g if (g := _item_piece(file, -2))[0] == 'g' else 'g',
 }
 _item_join = lambda *options, modify=True: '_'.join(
-    item for opts in options if (
+    item for opts in options if opts and (
         item := '-'.join(
             re.sub(r'\W+', '', opt.lower()) if modify else opt
             for opt in filter(

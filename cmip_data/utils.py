@@ -167,7 +167,7 @@ def open_file(path, variable=None, validate=True, project=None, printer=None):
     if variable is None:  # demote precision for speed
         return dataset
     else:
-        return dataset[variable].astype(np.float32)
+        return dataset[variable].astype(np.float64)
 
 
 def average_periods(input, annual=True, seasonal=True, monthly=True):

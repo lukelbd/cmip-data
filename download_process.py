@@ -116,19 +116,19 @@ kw_circulation = {
     'table': 'Amon',
     'experiment': ['piControl', 'abrupt-4xCO2'],
     'variable': [  # NOTE: tauu is balanced by cemf, tauv by Coriolis torque
-        'pr',  # water/ice precipitation for transport (Lv+Ls gained)
-        'prsn',  # ice precipitation for transport (Ls gained, use to isolate Lv)
-        'evspsbl',  # water/ice evaporation for transport (Lv+Ls lost)
         'hfls',  # surface upward LH flux for transport (Lv+Ls gained)
         'hfss',  # surface upward SH flux for transport (heat gained)
+        'evspsbl',  # water/ice evaporation for transport (Lv+Ls lost)
         'sbl',  # ice evaporation for transport (Ls lost, use to isolate Lv)
+        'pr',  # water/ice precipitation for transport (Lv+Ls gained)
+        'prsn',  # ice precipitation for transport (Ls gained, use to isolate Lv)
         'ua',  # zonal wind for circulation
         'va',  # meridional wind for circulation
         'uas',  # surface wind for circulation
         'vas',  # surface wind for circlation
-        'psl',  # sea-level pressure for circulation
         'tauu',  # surface friction for circulation (indicates eddy jet strength)
         'tauv',  # surface friction for circulation (indicates zonal jet strength)
+        'psl',  # sea-level pressure for circulation
         'zg',  # geopotential height for circulation
     ]
 }
