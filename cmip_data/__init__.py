@@ -2,7 +2,17 @@
 """
 Shared package for working with CMIP experiments.
 """
-# Initialize cdo and nco bindings
+# Automatically updated mapping from model names to institution ids
+# NOTE: This is used inside plotting functions to group cmip5 and/or cmip6 models from
+# the same center. Previously tried to detect alike models from their names but this
+# was unreliable (for example ACCESS and CSIRO models are both from CSIRO in Australia,
+# MPI and ICON are both from MPI in Germany, and CESM and CCSM are both from NCAR). Can
+# survey diferent institution ids with following code: { models=(); for f in ts_Amon_*;
+# do model=$(echo $f | cut -d_ -f3); [[ " ${models[*]} " =~ " $model " ]] && continue;
+# models+=("$model"); echo $f; ncinfo $f | grep -E 'institut(e|ion)_id'; done; } | less
+MODELS_INSTITUTIONS = {}
+
+# Initialized cdo and nco bindings
 # NOTE: Use 'conda install cdo' and 'conda install nco' for the command-line
 # tools. Use 'conda install python-cdo' and 'conda install pynco' (or 'pip
 # install cdo' and 'pip install pynco') for only the python bindings. Note for

@@ -154,9 +154,10 @@ def combine_era_kernels(
         # Standardize data
         # NOTE: Unlike CAM5 there are no notes about which fluxes are positive upward
         # or downward. Instead tested manually by comparing with cam5 and seems all
-        # kernels are positive down. So convert longwave to positive up. Try this code:
-        # for var in alb ts ta hus; do for flux in rlnt rlns rsnt rsns; do for file in
-        # kernels_eraint.nc kernels_cam5.nc; do name=${var}_${flux}; echo
+        # kernels are positive down (also noted in Yi Huang paper that introduces
+        # the kernels). So convert longwave to positive up. Try this code:
+        # for var in alb ts ta hus; do for flux in rlnt rlns rsnt rsns; do
+        # for file in kernels_eraint.nc kernels_cam5.nc; do name=${var}_${flux}; echo
         # "$file: $name"; ncvartable $name $file | tail -n +2; done; done; done
         da = xr.open_dataarray(file)
         with xr.set_options(keep_attrs=True):

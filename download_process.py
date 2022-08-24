@@ -329,7 +329,7 @@ if process:
                         folder,
                         output='~/scratch2/data-processed',
                         search='~/scratch2/data-dependencies',
-                        constants='~/data',
+                        constants='~/scratch2',
                         method='gencon',
                         years=years,
                         climate=False,
@@ -358,6 +358,7 @@ if feedbacks:
         )
         for experiment, ratio in experiments:
             projects = ('CMIP6', 'CMIP5')
+            # projects = ('CMIP5',)
             for project in projects:
                 cmip_data.process_feedbacks(
                     '~/data',  # source climate location
@@ -419,8 +420,10 @@ if feedbacks:
 #   models Mark *does* use also have date differences (e.g. UKESM-1-0 abrupt data
 #   starts at 1850 and control data starts at 1960) so not sure why they are excluded.
 # * Missing data (after adding rsut and rsdt MCM data with residual):
+#   Note that CCSM4 rldscs seems to be available but processing was yielding zero
+#   timesteps and its initial time is 50 years after literally every other variable.
 #   rlds: MCM-UA-1-0
-#   rldscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0, NorESM2-LM, NorESM2-MM, TaiESM1
+#   rldscs: CCSM4, CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0, NorESM2-LM, NorESM2-MM, TaiESM1
 #   rlus: MCM-UA-1-0
 #   rlutcs: MCM-UA-1-0
 #   rsds: MCM-UA-1-0
@@ -448,3 +451,42 @@ if summarize:
             project=project,
             flagship_translate=True,
         )
+
+
+# Temporary calls
+# Place re-processing steps for individual files here
+# if True:
+#     folder = '~/scratch2'
+#     kwargs = {
+#         'project': 'CMIP5',
+#         'variable': [
+#             'ps', 'ta', 'ts', 'hus',
+#             'rsdt', 'rlut', 'rsut', 'rlds', 'rsds', 'rlus', 'rsus',
+#             'rlutcs', 'rsutcs', 'rsuscs', 'rldscs', 'rsdscs'
+#         ],
+#         'model': ['GFDL-CM3', 'GFDL-ESM2G', 'GFDL-ESM2M'],
+#     }
+#     experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
+#     for experiment, years in experiments.items():
+#         kw = {**kwargs, 'experiment': experiment}
+#         cmip_data.process_files(
+#             folder,
+#             output='~/data',
+#             search='~/scratch2/data-dependencies',
+#             method='gencon',
+#             years=years,
+#             climate=True,
+#             flagship_filter=True,
+#             **kw,
+#         )
+#     experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
+#     for experiment, years in experiments.items():
+#         kw = {**kwargs, 'experiment': experiment}
+#         cmip_data.process_files(
+#             folder,
+#             output='~/scratch2/data-processed',
+#             years=years,
+#             climate=False,
+#             flagship_filter=True,
+#             **kw,
+#         )

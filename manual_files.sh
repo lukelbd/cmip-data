@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Scripts for manually downloading and processing missing data.
+gfdl=true
 mcm=false
-gfdl=false
 
 # Manually acquire missing CMIP5 GFDL data
 # See: https://data1.gfdl.noaa.gov/faq.html
@@ -14,10 +14,10 @@ gfdl=false
 # but this also failed... so elected to explicitly iterate over file names.
 if $gfdl; then
   for experiment in piControl abrupt4xCO2; do
-    path=$HOME/scratch2/cmip5-$experiment-amon
+    path=$HOME/scratch2/cmip5-${experiment,,}-amon
     cd $path || { echo "Error: Cannot find destination $path"; exit 1; }
     for model in GFDL-CM3 GFDL-ESM2G GFDL-ESM2M; do
-      for variable in rsut rsutcs rsus rsuscs ta ts va vas zg ; do
+      for variable in ta va zg ts vas rsut rsutcs rsus rsuscs; do
         url=ftp://anonymous:anonymous@nomads.gfdl.noaa.gov
         url=$url/CMIP5/output1/NOAA-GFDL/$model/$experiment
         url=$url/mon/atmos/Amon/r1i1p1/v20110601/$variable
@@ -25,8 +25,13 @@ if $gfdl; then
         for year in $(seq 5 5 150); do
           date=$(printf %04d $((year - 4)))01-$(printf %04d $year)12
           file=${head}_${date}.nc
-          echo "Getting file: $url/$file"
-          curl -O "$url/$file"
+          if [ -r "$file" ]; then
+            echo "Already downloaded: $url/$file"
+            true
+          else
+            echo "Getting file: $url/$file"
+            curl -O "$url/$file"
+          fi
         done
         # for i in 0 1; do  # globbing approach
         #   [[ $i -eq 0 ]] && glob='0-9' || glob='0-4'

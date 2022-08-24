@@ -75,9 +75,10 @@ VARIABLE_DEPENDENCIES = {
     'ta': ('ta',),  # anomaly data
     'hus': ('hus',),  # anomaly data
     'alb': ('rsus', 'rsds'),  # out of and into the surface
-    'tapi': ('ta',),  # control data for humidity kernels
-    'ta4x': ('ta',),  # response data for integration bounds
-    'ps4x': ('ps',),  # response data for integration bounds
+    'tapi': ('ta',),  # control data for humidity kernels and integration bounds
+    'pspi': ('ps',),  # control data for integration bounds
+    # 'ta4x': ('ta',),  # response data for integration bounds
+    # 'ps4x': ('ps',),  # response data for integration bounds
     'rlnt': ('rlut',),  # out of the atmosphere
     'rsnt': ('rsut',),  # out of the atmosphere (ignore constant rsdt)
     'rlntcs': ('rlutcs',),  # out of the atmosphere
@@ -133,7 +134,7 @@ def _file_pairs(data, *args, printer=None):
     return pairs
 
 
-def clausius_clapeyron(ta):
+def clausius_clapeyron(ta, pa=None):
     r"""
     Return the inverse of the approximate change in the logarithm saturation specific
     humidity associated with a 1 Kelvin change in atmospheric temperature, defined as
@@ -142,7 +143,14 @@ def clausius_clapeyron(ta):
     Parameters
     ----------
     ta : xarray.DataArray
-        The temperature.
+        The air temperature.
+    pa : xarray.DataArray, optional
+        The air pressure. If provided an exact specific humidity conversion is used.
+
+    Returns
+    -------
+    scale : xarray.DataArray
+        The scaling in units Kelvin.
 
     Note
     ----
@@ -151,43 +159,18 @@ def clausius_clapeyron(ta):
     scale factor :math:`(\log q_1 - \log q_0) / (\mathrm{d} \log q / \mathrm{d} T)`
     since the radiative response is roughly proportional to the logarithm of water vapor
     and thus linearity of the response to perturbations is a better assumption in log
-    space. This is also more convenient, since under constant relative humidity the
-    scale factor is independent of base state relative humidity or specific humidity:
-
-    .. math::
-
-       \mathrm{d} \log e
-       = \mathrm{d} \log(r e_\mathrm{s})
-       = \mathrm{d} \log r + \mathrm{d} \log e_\mathrm{s}
-       = \mathrm{d} \log e_\mathrm{s}
-
-    i.e. we only need temperature to calculate the scale factor (which helps address
-    issues with negative specific humidities or invalid relative humidities induced by
-    drift corrections). Note that this also neglects second-order terms by assuming
-    :math:`\mathrm{d}\log e_\mathrm{s} \approx \mathrm{d}\log q_\mathrm{s}` as follows:
-
-    .. math::
-
-       q_\mathrm{s} = (\epsilon * e_\mathrm{s}) / (p - (1 - \epsilon) * e_\mathrm{s}) \\
-       \mathrm{d} q_\mathrm{s} / q_\mathrm{s}
-       = \mathrm{d} e_\mathrm{s} * \left(%
-         1 / e_\mathrm{s} + (1 - \epsilon) / (p - (1 - \epsilon) * e_\mathrm{s})
-       \right) \approx \mathrm{d} e_\mathrm{s} / e_\mathrm{s}
-
-    which is valid since picontrol has a maximum :math:`T \approx 305 \, \mathrm{K}`,
-    which implies :math:`e_\mathrm{s} = 50 \, \mathrm{hPa}` and an approximation error
-    of only :math:`(0.204 - 0.200) / 0.204 \approx 0.02` i.e. just 2 percent.
+    space. See written notes for details on approximation and replacing `q` with `e`.
     """
+    # Add helper functions
     # NOTE: In example NCL script Angie uses ta and hus from 'basefields.nc' for dq/dt
     # (metadata indicates these were fields from kernel calculations) while Yi uses
     # temperature from the picontrol climatology. Here we use latter methodology.
-    # WARNING: Critical to replace climopy units with metpy units if using metpy methods
-    # or else get hard-to-debug errors, e.g. temperature units mysteriously stripped.
-    # However use manual calc since metpy uses less accurate Bolton (1980) method.
-    # WARNING: Critical to build separate array and only preserve dimension coordinates
-    # or else can get 'cell_height' conflict if this is called before gravity-scaled
-    # 'cell_height' are assigned which later causes issues with vertical integration.
-    ta = ta.climo.to_units('K').climo.dequantify()
+    ta = ta.climo.to_units('K')
+    ta = ta.climo.dequantify()
+    if pa is not None:
+        pa = pa.climo.to_units('Pa')
+        pa = pa.climo.dequantify()
+        pa, ta = xr.broadcast(pa, ta)
     es_liq = lambda t: np.exp(  # input kelvin, output pascals
         54.842763
         - 6763.22 / t
@@ -202,16 +185,27 @@ def clausius_clapeyron(ta):
         + 3.53068 * np.log(t)
         - 0.00728332 * t
     )
-    el, ei = es_liq(ta.data), es_ice(ta.data)
-    el1, ei1 = es_liq(ta.data + 1), es_ice(ta.data + 1)
-    es, es1 = el.copy(), el1.copy()
-    es[mask] = ei[mask := ta.data < 273.15]
-    es1[mask] = ei1[mask := ta.data + 1 < 273.15]
-    scale = es / (es1 - es)  # i.e. 1 / d(log(es)) = es / d(es)
+
+    # Get scaling
+    # WARNING: If using metpy, critical to replace climopy units with metpy units, or
+    # else get hard-to-debug errors, e.g. temperature units mysteriously stripped. In
+    # the end decided to go manual since metpy uses inaccurate Bolton (1980) method.
+    el0, el1 = es_liq(ta.data - 0.5), es_liq(ta.data + 0.5)
+    ei0, ei1 = es_ice(ta.data - 0.5), es_ice(ta.data + 0.5)
+    es0, es1 = el0.copy(), el1.copy()
+    es0[mask] = ei0[mask := ta.data - 0.5 < 273.15]
+    es1[mask] = ei1[mask := ta.data + 0.5 < 273.15]
+    es_hus = lambda e, p: (
+        const.eps.magnitude * e / (p.data - (1 - const.eps.magnitude) * e)
+    )
+    if pa is None:  # i.e. d(K) / d(log(es)) = es / d(es)
+        scale = 1 / np.log(es1 / es0)
+    else:  # i.e. 1 / d(log(qs)) = 1 / (log(qs1) - log(qs))
+        scale = 1 / np.log(es_hus(es1, pa.data) / es_hus(es0, pa.data))
     scale = xr.DataArray(
         scale,
         dims=tuple(ta.sizes),
-        coords={dim: ta.coords[dim] for dim in ta.sizes},
+        coords=dict(ta.coords),
         attrs={'units': 'K', 'long_name': 'inverse Clausius-Clapeyron scaling'}
     )
     return scale.climo.quantify()
@@ -233,17 +227,16 @@ def response_anomalies(printer=None, project=None, dryrun=False, **inputs):
     dryrun : bool, optional
         Whether to run with only three years of data.
     """
+    # Iterate over dependencies
+    # NOTE: Since incoming solar is constant, and since all our regressions are
+    # with anomalies with respect to base climate, the incoming solar terms cancel
+    # out and we can just consider upwelling solar at the top-of-atmosphere.
     print = printer or builtins.print
-    print = lambda *args, **kwargs: None
     project = (project or 'cmip6').lower()
     output = xr.Dataset()
     print('Calculating response minus control anomalies.')
     for variable, dependencies in VARIABLE_DEPENDENCIES.items():
         # Load datasets and prepare the variables
-        # NOTE: Some datasets have a pressure 'bounds' variable but appears calculated
-        # naively as halfway points between levels. Since inconsistent between files
-        # just strip all bounds attribute and rely on climopy calculations. See:
-        # ta_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_0000-0150-climate-nodrift.nc
         # NOTE: The signs of the kernels are matched so that negative always means
         # tending to cool the atmosphere and positive means tending to warm the
         # atmosphere. We scale the positive-definite upwelling and dowwelling
@@ -261,28 +254,21 @@ def response_anomalies(printer=None, project=None, dryrun=False, **inputs):
                 path = Path(path).expanduser()
                 data = open_file(path, dependency, project=project, printer=print)
                 if dryrun:
-                    data = data.isel(lon=slice(None, None, 6))
-                    data = data.isel(lat=slice(None, None, 6))
-                    data = data.isel(time=slice(None, None))
-                    # data = data.isel(time=slice(None, 36))
+                    data = data.isel(time=slice(None, 36))
                 data.name = variable
                 datas.append(data)
 
         # Calculate variable anomalies using dependencies
-        # NOTE: Since incoming solar is constant, and since all our regressions are
-        # with anomalies with respect to base climate, the incoming solar terms cancel
-        # out and we can just consider upwelling solar at the top-of-atmosphere.
         # NOTE: Here subtraction from 'groupby' objects can only be used if the array
         # has a coordinate with the corresponding indices, i.e. in this case 'month'
-        # instead of 'time'. Use the dummy operation .groupby('time.month').mean()
-        # to turn time indices into month indices. Note this also makes this function
-        # robust to using control data time series rather than climatologies.
+        # instead of 'time'. Use .groupby('time.month').mean() to turn time indices
+        # into month indices (works for both control time series and pre-averaged data).
         with xr.set_options(keep_attrs=True):
-            if variable in ('tapi',):  # control data matched to response data times
+            if variable in ('tapi', 'pspi'):  # control data matched to response times
                 (control,), (response,) = controls, responses
                 control = (0 * response).groupby('time.month') + control.groupby('time.month').mean()  # noqa: E501
                 response = None
-            elif variable in ('ta4x', 'ps4x'):  # the response data itself
+            elif variable in ('ta4x', 'ps4x'):  # response data itself
                 (control,), (response,) = controls, responses
                 control = None
                 response = response
@@ -310,21 +296,13 @@ def response_anomalies(printer=None, project=None, dryrun=False, **inputs):
         # Add attributes and update dataset
         # NOTE: Albedo is taken above from ratio of upwelling to downwelling all-sky
         # surface shortwave radiation. Feedback is simply (rsus - rsds) / (rsus / rsds)
-        # WARNING: Critical to store
         with xr.set_options(keep_attrs=True):
             if response is None:
                 data = control
             elif control is None:
                 data = response
             else:
-                data = (
-                    response.groupby('time.month')
-                    - control.groupby('time.month').mean()  # month coordinates
-                )
-                if variable == 'ta':
-                    ic()
-                    ic(response.sizes)
-                    ic(data.sizes)
+                data = response.groupby('time.month') - control.groupby('time.month').mean()  # noqa: E501
         if variable == 'alb':  # enforce new name and new units
             long_name = 'surface albedo'
             data.attrs['units'] = '%'
@@ -334,15 +312,16 @@ def response_anomalies(printer=None, project=None, dryrun=False, **inputs):
         else:  # enforce lower-case name for consistency
             parts = data.attrs['long_name'].split()
             long_name = ' '.join(s if s == 'TOA' else s.lower() for s in parts)
-        if variable in ('tapi',):
+        if variable in ('tapi', 'pspi'):
             long_name = f'control {long_name}'
+            pass  # WARNING: keep standard name to use as tropopause
         elif variable in ('ta4x', 'ps4x'):
             long_name = f'response {long_name}'
+            data.attrs.pop('standard_name', None)  # WARNING: remove to use tropopause
         else:
             long_name = f'{long_name} anomaly'
-        data.attrs['long_name'] = long_name
-        if variable not in ('ta4x', 'ps4x'):  # keep standard name for cell heights
             data.attrs.pop('standard_name', None)
+        data.attrs['long_name'] = long_name
         output[variable] = data
         print(f'  {variable} ({long_name}): {len(data.time)}')
 
@@ -363,71 +342,73 @@ def response_fluxes(anoms, kernels, printer=None):
     printer : callable, default: `print`
         The print function.
     """
-    # Initial stuff
-    # NOTE: Currently cell_height() in physics.py automatically adds surface bounds,
-    # tropopause bounds, and cell heights as coordinates for consistency. Here want
-    # to store just the bounds in output dataset for debugging, so promote from
-    # coordinate variable to data variable before adding to output.
-    # WARNING: Cell height returns zero everywhere for the descending levs consistent
-    # with cmip conventions (expects ascending levs consistent with standardize_coords).
-    # Should fix this, support selections like e.g. sel(50, 100) on reversed levs in
-    # .sel wrapper, permit bypassing the automatic scaling to 'kg m^-2' units.
-    print = printer or builtins.print
-    print = lambda *args, **kwargs: None
-    print('Calculating response cell measures for vertical integration.')
-    anoms = anoms.isel(plev=slice(None, None, -1))
-    anoms = anoms.climo.add_cell_measures(surface=True, tropopause=True)
-    anoms = anoms.isel(plev=slice(None, None, -1))
-    anoms = anoms.reset_coords(('plev_bot', 'plev_top'))  # reassign as data vars
-    with xr.set_options(keep_attrs=True):
-        kernels = kernels.groupby('time.month').mean()  # see response_anomalies notes
-    with xr.set_options(keep_attrs=True):
-        height = const.g * anoms.climo.coords['cell_height']
-    ic(anoms.cf['surface_pressure'])
-    height = height.climo.dequantify()
-    height = height.fillna(0.0)
-    min_, max_, mean = height.min().item(), height.max().item(), height.mean().item()
-    print(f'Cell height range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
-
-    # Print information and get Clausius-Clapeyron adjustments
+    # Prepare kernel dataset before combining with anomaly dataset
+    # TODO: Increase efficiency of tropopause calculation now that it is merely
+    # control data repeated onto response data series. Possibly consider assigning
+    # cell measures to kernels and use groupby, or build cell height from a sample
+    # selection of 12 timesteps then assign repetition to anomaly data.
     # WARNING: Had unbelievably frustrating issue where pressure level coordinates
     # on kernels and anomalies would be identical (same type, value, etc.) but then
     # anoms.plev == kernels.plev returned empty array and assigning time-varying cell
     # heights to data before integration in Planck feedback block created array of
     # all NaNs. Still not sure why this happened but assign_coords seems to fix it.
-    pbot = anoms.plev_bot.climo.dequantify()  # response surface pressure
+    print = printer or builtins.print
+    print('Calculating kernel-derived radiative fluxes.')
+    plev = anoms.plev
+    with xr.set_options(keep_attrs=True):
+        kernels = kernels.groupby('time.month').mean()  # see response_anomalies notes
+    levs = kernels.plev.values  # NESM3 abrupt-4xCO2 data contains missing levels
+    if anoms.sizes.get('plev', np.inf) < kernels.sizes['plev']:
+        levs = [lev for lev in levs if np.any(np.isclose(lev, plev.values))]
+    kernels = kernels.sel(plev=levs)  # note open_file() already restricts levels
+    kernels = kernels.climo.quantify()
+    kernels = kernels.assign_coords(plev=plev)  # critical (see above)
+
+    # Get cell height measures and Clausius-Clapeyron adjustments
+    # NOTE: Initially used response time series for tropopause consistent with
+    # Zelinka stated methodology of 'time-varying tropopause' but got bizarre issue
+    # with Planck feedback biased positive for certain models (seemingly due to higher
+    # surface temperature associated with higher tropopause and more negative
+    # fluxes... so should be negative bias... but whatever). This also made little
+    # sense because it corrected for changing troposphere depth without correcting
+    # for reduced strength of kernels under increased depth. Now try with both control
+    # data and response data average (note that groupby operations may be no-ops if
+    # we are already working with control data matched to the response times).
+    # WARNING: Currently cell_height() in physics.py automatically adds surface bounds,
+    # tropopause bounds, and cell heights as *coordinates* (for consistency with xarray
+    # objects). Promote to variable before working with other arrays to avoid conflicts.
+    print('Calculating cell measures for vertical integration.')
+    anoms = anoms.climo.add_cell_measures(surface=True, tropopause=True)
+    anoms = anoms.reset_coords(('plev_bot', 'plev_top'))  # critical (see above)
+    with xr.set_options(keep_attrs=True):  # critical (preserve cell_measures)
+        height = const.g * anoms.climo.coords.cell_height
+        height = height.climo.to_units('Pa').climo.dequantify()
+    anoms = anoms.assign_coords(cell_height=height)
+    anoms = anoms.climo.quantify()
+    min_, max_, mean = height.min().item(), height.max().item(), height.mean().item()
+    print(f'Cell height range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
+    pbot = anoms.plev_bot.climo.dequantify()
     pbot.attrs['long_name'] = 'surface pressure'
     min_, max_, mean = pbot.min().item(), pbot.max().item(), pbot.mean().item()
     print(f'Surface pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
-    ptop = anoms.plev_top.climo.dequantify()  # response tropopause pressure
+    ptop = anoms.plev_top.climo.dequantify()
     ptop.attrs['long_name'] = 'tropopause pressure'
     min_, max_, mean = ptop.min().item(), ptop.max().item(), ptop.mean().item()
     print(f'Tropopause pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
-    temp = anoms.tapi.climo.dequantify()
-    scale = clausius_clapeyron(temp)
+    ta, pa = anoms.tapi.climo.dequantify(), anoms.climo.coords.plev.climo.dequantify()
+    scale = clausius_clapeyron(ta, pa)
     min_, max_, mean = scale.min().item(), scale.max().item(), scale.mean().item()
     print(f'Clausius-Clapeyron range: min {min_:.2f} max {max_:.2f} mean {mean:.2f}')
-    plev = anoms.plev
-    if anoms.sizes.get('plev', np.inf) < kernels.sizes['plev']:
-        levs = kernels.plev.values  # NESM3 abrupt-4xCO2 data contains missing levels
-        levs = [lev for lev in levs if np.any(np.isclose(lev, plev.values))]
-        kernels = kernels.sel(plev=levs)
-    kernels = kernels.climo.quantify()
-    kernels = kernels.assign_coords(plev=plev)  # critical (see above)
-    anoms = anoms.climo.quantify()
-    anoms = anoms.assign_coords(cell_height=height)  # critical (see above)
-    temp = anoms.ts.climo.dequantify()
-    output = xr.Dataset({'ts': temp, 'plev_bot': pbot, 'plev_top': ptop})
 
     # Iterate over flux components
     # NOTE: Here cloud feedback comes about from change in cloud radiative forcing (i.e.
     # R_cloud_abrupt - R_cloud_control where R_cloud = R_clear - R_all) then corrected
     # for masking of clear-sky effects (e.g. by adding dt * K_t_cloud where similarly
-    # K_t_cloud = K_t_clear - K_t_all). Additional greenhouse forcing masking correction
-    # is applied when we estimate feedbacks. Note that since shortwave clear-sky effects
-    # are just albedo and small water vapor effect, the mask correction is far less
-    # important. Only longwave component will have huge masked clear-sky effects.
-    for boundary, wavelength, (component, descrip) in itertools.product(  # noqa: E501
+    # K_t_cloud = K_t_clear - K_t_all). Additional greenhouse forcing masking
+    # correction is applied when we estimate feedbacks.
+    dict_ = {'pbot': pbot, 'ptop': ptop, 'ts': anoms.ts.climo.dequantify()}
+    output = xr.Dataset(dict_)
+    for boundary, wavelength, (component, descrip) in itertools.product(
         ('TOA', 'surface'), ('longwave', 'shortwave'), FEEDBACK_DESCRIPTIONS.items()
     ):
         # Skip feedbacks without shortwave or longwave components.
@@ -440,16 +421,15 @@ def response_fluxes(anoms, kernels, printer=None):
         dependencies = list(variables)  # anomaly and kernel variables
         if component == '':
             dependencies.append(rad)
-        elif component == 'cs':
-            dependencies.append(rad := f'{rad}cs')
-        elif component == 'cl' or component == 'resid':
-            dependencies.extend(rads := (rad, f'{rad}cs'))  # used for cloud masking
-        elif not dependencies:
-            continue
-        if component == '':
             running = 0.0 * ureg('W m^-2')
-        if component == '':
             print(f'Calculating {wavelength} {boundary} fluxes using kernel method.')
+        else:
+            if component == 'cs':
+                dependencies.append(rad := f'{rad}cs')
+            elif component == 'cl' or component == 'resid':
+                dependencies.extend(rads := (rad, f'{rad}cs'))  # used for cloud masking
+            elif not dependencies:
+                continue
         if message := ', '.join(
             repr(name) for name in dependencies if name not in anoms
         ):
@@ -468,65 +448,61 @@ def response_fluxes(anoms, kernels, printer=None):
             )
             continue
 
-        # Comopnent fluxes
-        # NOTE: This data is then fed into response_feedbacks and converted
-        # into feedback parameter and forcing estimates using these names.
-        # WARNING: Ran into very bizarre issues when trying to reuse
-        # groupby more than once and only for resopnse feedbacks.
-        if component == 'alb':  # albedo flux (longwave skipped above)
+        # Component fluxes
+        # NOTE: Need to assign cell height coordinates for Planck feedback since
+        # they are not defined on the kernel data array before multiplication.
+        if component == '' or component == 'cs':  # net flux
+            data = 1.0 * anoms[rad]
+        elif component == 'resid':  # residual flux
+            data = anoms[rad] - running
+        elif component == 'alb':  # albedo flux (longwave skipped above)
             anom = anoms['alb']
             data = anom.groupby('time.month') * kernels[f'alb_{rad}']
         elif component[:2] == 'pl':  # planck flux (shortwave skipped for 'pl')
-            anom = anoms['ts']
-            data = 0.0 * ureg('W m^-2 Pa^-1')
+            kernel = 0.0 * ureg('W m^-2 Pa^-1 K^-1')
             if wavelength[0] == 'l':
-                if component == 'pl':
-                    ic('in', anom.sizes, kernels[f'ta_{rad}'].sizes)
-                data = data + anom.groupby('time.month') * kernels[f'ta_{rad}']
-                if component == 'pl':
-                    ic('out', data.sizes)
+                kernel = kernel + kernels[f'ta_{rad}']
             if component == 'pl*':
-                data = data + anom.groupby('time.month') * kernels[f'hus_{rad}']
-            data = data.assign_coords(cell_height=height)  # necessary
-            data = data.climo.integral('plev')
+                kernel = kernel + kernels[f'hus_{rad}']
+            anom = anoms['ts']  # has no cell height
+            data = kernel * anom.groupby('time.month')
+            data = data.assign_coords(cell_height=height).climo.integral('plev')
             if wavelength[0] == 'l':
-                if component == 'pl':
-                    ic('in', data.sizes, kernels[f'ts_{rad}'].sizes)
-                data = data + anom.groupby('time.month') * kernels[f'ts_{rad}']
-                if component == 'pl':
-                    ic('out', data.sizes)
+                kernel = kernels[f'ts_{rad}']
+                data = data + kernel * anom.groupby('time.month')
         elif component[:2] == 'lr':  # lapse rate flux (shortwave skipped for 'lr')
-            anom = anoms['ta'] - anoms['ts']
-            data = 0.0 * ureg('W m^-2 Pa^-1')
+            kernel = 0.0 * ureg('W m^-2 Pa^-1 K^-1')
             if wavelength[0] == 'l':
-                data = data + anom.groupby('time.month') * kernels[f'ta_{rad}']
+                kernel = kernel + kernels[f'ta_{rad}']
             if component == 'lr*':
-                data = data + anom.groupby('time.month') * kernels[f'hus_{rad}']
+                kernel = kernel + kernels[f'hus_{rad}']
+            anom = anoms['ta'] - anoms['ts']
+            data = kernel * anom.groupby('time.month')
             data = data.climo.integral('plev')
         elif component[:2] == 'hu':  # specific and relative humidity fluxes
-            anom = scale * anoms['hus']
-            data = anom.groupby('time.month') * kernels[f'hus_{rad}']
+            kernel = kernels[f'hus_{rad}']
             if component == 'hur':
-                anom = anoms['ta']
-                data = data - anom.groupby('time.month') * kernels[f'hus_{rad}']
+                anom = scale * anoms['hus'] - anoms['ta']
+            else:
+                anom = scale * anoms['hus']
+            data = kernel * anom.groupby('time.month')
             data = data.climo.integral('plev')
         elif component == 'cl':  # shortwave and longwave cloud fluxes
             data = anoms[rad] - anoms[f'{rad}cs']
             for var in variables:  # relevant longwave or shortwave variables
-                diff = kernels[f'{var}_{rad}'] - kernels[f'{var}_{rad}cs']
-                adj = anoms[var].groupby('time.month') * diff  # cloud mask adjustment
+                kernel = kernels[f'{var}_{rad}'] - kernels[f'{var}_{rad}cs']
+                part = kernel * anoms[var].groupby('time.month')  # mask adjustment
                 if var == 'hus':
-                    adj = scale * adj
+                    part = scale * part
                 if var in ('ta', 'hus'):
-                    adj = adj.climo.integral('plev')
-                data = data - adj.climo.to_units('W m^-2')  # apply adjustment
-        elif component == 'resid':  # residual flux
-            data = anoms[rad] - running
-        else:  # net flux
-            data = 1.0 * anoms[rad]
+                    part = part.climo.integral('plev')
+                data = data - part.climo.to_units('W m^-2')  # apply adjustment
+        else:
+            raise RuntimeError
 
-        # Update the input dataset with resulting component fluxes. Add select
-        # components to the running total for use with the residual flux.
+        # Update the input dataset with resulting component fluxes.
+        # NOTE: Calculate residual feedback by summing traditional component
+        # feedbacks from Soden and Held.
         name = rad if component in ('', 'cs') else f'{component}_{rad}'
         descrip = descrip and f'{descrip} flux' or 'flux'  # for lon gname
         component = component or 'net'  # for print message
@@ -585,13 +561,10 @@ def response_fluxes(anoms, kernels, printer=None):
         print(format(f'  {component} flux:', ' <15s'), end=' ')
         print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')
 
-    height = height.groupby('time.month').mean(keep_attrs=True)
-    kernels = kernels.climo.add_cell_measures()
-    kernels = kernels.assign_coords(cell_height=height)
-    return output, kernels
+    return output
 
 
-def response_feedbacks(fluxes, kernels=None, forcing=None, printer=None):
+def response_feedbacks(fluxes, forcing=None, printer=None):
     """
     Return a dataset containing feedbacks calculated along all `average_periods` periods
     (annual averages, seasonal averages, and month averages) and along all combinations
@@ -613,17 +586,19 @@ def response_feedbacks(fluxes, kernels=None, forcing=None, printer=None):
     # NOTE: Need to extract 'plev' top and bottom because for some reason they get
     # dropped from 'input' since they are defined on the coordinate dictionary.
     print = printer or builtins.print
-    print = lambda *args, **kwargs: None
     statistic = 'regression' if forcing is None else 'ratio'
     print(f'Calculating radiative feedbacks using {statistic}s.')
     fluxes = fluxes.climo.add_cell_measures()
     fluxes = fluxes.climo.quantify()
+    print('Getting average time periods and spatial regions.')
     fluxes = average_periods(fluxes)
     denoms = average_regions(fluxes['ts'])  # concatenate possible averages
 
     # Iterate over fluxes
-    # NOTE: Since forcing is constant the cloud masking adjustment has no effect on
-    # feedback estimates, but does affect the 'cl_erf' cloud adjustment forcing.
+    # NOTE: Since forcing is constant, the cloud masking adjustment has no effect on
+    # feedback estimates, but does affect the 'cl_erf' cloud adjustment forcing. Also
+    # shortwave clear-sky effects are just albedo and small water vapor effect, so very
+    # small, but longwave component is always very significant.
     outputs = {}
     for region, boundary, wavelength, component in itertools.product(
         ('point', 'latitude', 'hemisphere', 'globe'),
@@ -634,8 +609,6 @@ def response_feedbacks(fluxes, kernels=None, forcing=None, printer=None):
         # Get the flux names
         # NOTE: Here if a component has no 'dependencies' it does not
         # exist so skip (e.g. temperature shortwave).
-        if wavelength != 'full':
-            asfdsafsa
         if boundary == 'TOA' and wavelength == 'full' and component == '':
             outputs[region] = output = xr.Dataset()
         rad = f'r{wavelength[0]}n{boundary[0].lower()}'
@@ -668,30 +641,31 @@ def response_feedbacks(fluxes, kernels=None, forcing=None, printer=None):
         prefix = boundary if wavelength == 'full' else f'{boundary} {wavelength}'
         descrip = 'net' if wavelength == 'full' and component == '' else descrip
         component = 'net' if component == '' else component
-        if component in ('cl', 'resid'):
-            if message := ', '.join(
-                repr(erf) for sky in ('', 'cs')
-                if (erf := f'{rad}{sky}_erf') not in output
-            ):
-                print(
-                    'Warning: Output dataset is missing cloud-masking forcing '
-                    f'adjustment variable(s) {message}. Cannot make adjustment.'
-                )
-            else:
-                all_, clear = output[f'{rad}_erf'], output[f'{rad}cs_erf']
-                prop = (mask := all_ - clear) / all_
-                if wavelength == 'full' and component == 'cl':
-                    min_, max_, mean = mask.min().item(), mask.max().item(), mask.mean().item()  # noqa: E501
-                    print(format('  mask flux:', ' <12s'), end=' ')
-                    print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
-                    min_, max_, mean = prop.min().item(), prop.max().item(), prop.mean().item()  # noqa: E501
-                    print(format('  mask frac:', ' <12s'), end=' ')
-                    print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
-                with xr.set_options(keep_attrs=True):
-                    if component == 'cl':  # remove masking effect
-                        numer = numer - mask * ureg('W m^-2')
-                    else:  # add back masking effect
-                        numer = numer + mask * ureg('W m^-2')
+        if component not in ('cl', 'resid'):
+            pass
+        elif message := ', '.join(
+            repr(erf) for sky in ('', 'cs')
+            if (erf := f'{rad}{sky}_erf') not in output
+        ):
+            print(
+                'Warning: Output dataset is missing cloud-masking forcing '
+                f'adjustment variable(s) {message}. Cannot make adjustment.'
+            )
+        else:
+            all_, clear = output[f'{rad}_erf'], output[f'{rad}cs_erf']
+            prop = (mask := all_ - clear) / all_
+            if wavelength == 'full' and component == 'cl':
+                min_, max_, mean = mask.min().item(), mask.max().item(), mask.mean().item()  # noqa: E501
+                print(format('  mask flux:', ' <12s'), end=' ')
+                print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
+                min_, max_, mean = prop.min().item(), prop.max().item(), prop.mean().item()  # noqa: E501
+                print(format('  mask frac:', ' <12s'), end=' ')
+                print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
+            with xr.set_options(keep_attrs=True):
+                if component == 'cl':  # remove masking effect
+                    numer = numer - mask * ureg('W m^-2')
+                else:  # add back masking effect
+                    numer = numer + mask * ureg('W m^-2')
 
         # Perform the regression or division. Calculate climate sensitivity for
         # net fluxes only and always calculate forcing to include adjustments.
@@ -706,16 +680,7 @@ def response_feedbacks(fluxes, kernels=None, forcing=None, printer=None):
             lam = (numer - 2.0 * erf) / denom  # time already averaged
         else:
             nm, dm = numer.mean('time', skipna=False), denom.mean('time', skipna=False)
-            if region == 'point' and component == 'pl':
-                ic(numer.sizes, denom.sizes, nm.sizes, dm.sizes)
-                ic(((denom - dm) * (numer - nm)).sizes)
             lam = ((denom - dm) * (numer - nm)).sum('time') / ((denom - dm) ** 2).sum('time')  # noqa: E501
-            if component == 'pl':
-                check = kernels['ts_rlnt']
-                check = check + kernels['ta_rlnt'].climo.integral('plev')
-                ic(lam.sizes)
-                ic(lam.climo.average().sel(period='jan'))
-                ic(check.climo.average().sel(month=1))
             erf = 0.5 * (nm - lam * dm)  # possibly zero minus zero
         lam = lam.climo.to_units('W m^-2 K^-1')
         lam = lam.climo.dequantify()
@@ -753,7 +718,7 @@ def response_feedbacks(fluxes, kernels=None, forcing=None, printer=None):
     output.attrs['title'] = (
         f'{statistic}-derived forcing-feedback decompositions'
     )
-    for key in ('plev_bot', 'plev_top'):
+    for key in ('pbot', 'ptop'):
         if key not in fluxes:
             continue
         data = fluxes[key]
@@ -879,7 +844,7 @@ def compute_feedbacks(
     folder = _item_join((project, experiment, 'fluxes'))
     file = _item_join(
         'fluxes', table, model, experiment, ensemble,
-        (source, statistic, nodrift and 'nodrift' or ''),
+        (source, statistic, nodrift and 'nodrift'),
         modify=False
     ) + '.nc'
     fluxes = Path(fluxes).expanduser() / folder / file
@@ -911,7 +876,7 @@ def compute_feedbacks(
         print(f'Loading kernel data from file: {kernels.name}')
         kernels = open_file(kernels, project=project, validate=False)
         fluxes = response_anomalies(project=project, printer=print, dryrun=dryrun, **inputs)  # noqa: E501
-        fluxes, kernels = response_fluxes(fluxes, kernels=kernels, printer=print)
+        fluxes = response_fluxes(fluxes, kernels=kernels, printer=print)
         if not dryrun:  # save after compressing repeated values
             encoding = {k: {'zlib': True, 'complevel': 5} for k in fluxes.data_vars}
             output.unlink(missing_ok=True)
@@ -929,7 +894,7 @@ def compute_feedbacks(
             forcing = open_file(forcing, project=project, validate=False)
         else:
             forcing = None
-        feedbacks = response_feedbacks(fluxes, kernels=kernels, forcing=forcing, printer=print)  # noqa: E501
+        feedbacks = response_feedbacks(fluxes, forcing=forcing, printer=print)
         if not dryrun:  # save after compressing repeated values
             encoding = {k: {'zlib': True, 'complevel': 5} for k in feedbacks.data_vars}
             output.unlink(missing_ok=True)
@@ -1051,7 +1016,7 @@ def process_feedbacks(
             printer=print,
         )
         try:
-            compute_feedbacks(
+            datasets = compute_feedbacks(
                 project=group['project'],
                 experiment=_item_parts['experiment'](tuple(files.values())[0][1]),
                 ensemble=_item_parts['ensemble'](tuple(files.values())[0][1]),
@@ -1065,6 +1030,8 @@ def process_feedbacks(
                 **kwargs,
                 **files,
             )
+            for dataset in datasets:
+                dataset.close()
         except Exception as error:
             if dryrun:
                 raise error
