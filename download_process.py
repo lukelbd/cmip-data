@@ -34,17 +34,17 @@ import cmip_data
 # because it is missing too much data from branch time 300 (see bottom), providing a
 # total of 5 models more than Mark (58 instead of 53). Note that for MCM-UA-1-0, we
 # download 'rtmt' and compute 'rsut - rsdt' from the difference (see 'manual_data.sh').
-climate = True
+climate = False
 series = True
-analysis = True  # control and response data for feedback analysis?
+analysis = False  # control and response data for feedback analysis?
 circulation = True  # control and response data for implicit circulation stuff?
-constraints = True  # control data for emergent constraints?
-dependencies = True  # dependency data for emergent constraintss?
-explicit = True  # control and response data for explicit circulation stuff?
+constraints = False  # control data for emergent constraints?
+dependencies = False  # dependency data for emergent constraintss?
+explicit = False  # control and response data for explicit circulation stuff?
 download = False
 filter = False
-process = False
-feedbacks = True
+process = True
+feedbacks = False
 summarize = False
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
@@ -275,6 +275,9 @@ if filter:
             filtered.extend(scripts)
 
 # Average and standardize the resulting files
+# NOTE: The time series files are used for calculating both feedback files and
+# files containing averages and standard deviations of derived quantities like moist
+# static transport in the 'coupled' project. Should store inside '-derived'.
 # NOTE: Here follow Armour et al. 2019 methodology of taking difference between final
 # 30 years of the 150 years required by the DECK abrupt-4xco2 experiment protocol. Also
 # again exclude constraint data from processing (pfull is excluded in process_files).
@@ -319,7 +322,7 @@ if process:
                         **kw,
                     )
                 experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
-                if kwargs is not kw_analysis:
+                if kwargs is not kw_analysis and kwargs is not kw_circulation:
                     experiments.clear()
                 if not series:
                     experiments.clear()

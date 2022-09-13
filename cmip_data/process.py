@@ -990,6 +990,12 @@ def standardize_time(
         if kwtime.pop('climate'):
             method = average
             prefix, suffix = '-mergetime ', ''
+        elif kwtime.pop('seasonal', None):  # TODO: remove?
+            method = 'timstd'
+            prefix, suffix = f'{average} -mergetime ', ''
+        elif kwtime.pop('interannual', None):  # TODO: remove?
+            method = 'timstd'
+            prefix, suffix = '-ymonsub -mergetime ', f' {average} -mergetime {input}'
         else:
             method = 'mergetime'
             prefix = suffix = ''

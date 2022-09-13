@@ -165,7 +165,9 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
     return output
 
 
-def open_file(path, variable=None, validate=True, project=None, printer=None):
+def open_file(
+    path, variable=None, validate=True, project=None, printer=None, demote=True,
+):
     """
     Open an output dataset and repair possible coordinate issues.
 
@@ -181,31 +183,35 @@ def open_file(path, variable=None, validate=True, project=None, printer=None):
         The project. If passed vertical levels are restricted.
     printer : callable, optional
         The printer.
+    demote : bool, optional
+        Whether to demote the precision to float32.
     """
     # Initial stuff
-    # NOTE: Since cmip6 includes 2 extra levels have to drop them to get it to work
-    # with cmip5 data (this is used to get standard kernels to work with cmip5 data).
-    # NOTE: Here drop_duplicates is only available for arrays. Monitor this
-    # thread for updates: https://github.com/pydata/xarray/pull/5239
-    # WARNING: Here the model id recorded under 'source_id' or 'model_id' often differs
+    # NOTE: Here the model id recorded under 'source_id' or 'model_id' often differs
     # from the model id in the file name. Annoying but have to use the file version.
+    # NOTE: Some models from the same lineage have different suffixes in their
+    # institution id (for example ACCESS in CMIP6 is CSIRO-ARCCSS while ACCESS
+    # in CMIP5 is CSIRO-BOM). Therefore only preserve first part of id.
     print = printer or builtins.print
-    project = project and project.lower()
     dataset = xr.open_dataset(path, use_cftime=True)
-    if 'numerator' in dataset and 'denominator' in dataset and 'region' in dataset.sizes:  # noqa: E501
-        dataset = dataset.set_index(region=('numerator', 'denominator'))
     dataset = dataset.drop_vars(dataset.coords.keys() - dataset.sizes.keys())
     for coord in dataset.coords.values():  # remove missing bounds variables
         coord.attrs.pop('bounds', None)
     model = path.name.split('_')[2] if path.name.count('_') >= 4 else None
+    project = project and project.lower()
     institution = dataset.attrs.get('institute_id', dataset.attrs.get('institution_id'))
-    if institution:
-        if 'FGOALS' in model and 'CAS' in institution:
-            institution = 'LASG'  # changed in cmip6 to accomodate CAS (Chinese center)
-        else:
-            institution = institution.split()[0].split('-')[0]
+    if not institution:
+        pass
+    elif 'FGOALS' in model and 'CAS' in institution:
+        institution = 'LASG'  # changed in cmip6 to accomodate CAS (Chinese center)
+    else:
+        institution = institution.split()[0].split('-')[0]
+    if model and institution:
+        MODELS_INSTITUTIONS[model] = institution
 
     # Validate pressure coordinates
+    # NOTE: Since CMIP6 includes 2 extra levels have to drop them to get it to work
+    # with CMIP5 data (this is used to get standard kernels to work with cmip5 data).
     # NOTE: Merging files with ostensibly the same pressure levels can result in
     # new staggered levels due to inexact float pressure coordinates. Fix this when
     # building multi-model datasets by using the standard level array for coordinates.
@@ -247,7 +253,7 @@ def open_file(path, variable=None, validate=True, project=None, printer=None):
     if 'time' in dataset.coords and dataset.time.size > 1:
         time = dataset.time.values
         mask = dataset.get_index('time').duplicated(keep='first')
-        if message := ', '.join(format(t, '.0f') for t in time[mask]):
+        if message := ', '.join(str(t) for t in time[mask]):
             dataset = dataset.isel(time=~mask)  # WARNING: drop_isel fails here
             print(
                 f'Warning: File {path.name!r} has {mask.sum().item()} duplicate '
@@ -276,7 +282,7 @@ def open_file(path, variable=None, validate=True, project=None, printer=None):
             'incorrect units by 1e3 (guess to recover correct units).'
         )
         dataset['pr'].data *= 1e3
-    if 'hus' in dataset.data_vars and np.any(dataset.hus.values < 0.0):
+    if 'hus' in dataset.data_vars and np.any(dataset.hus.values <= 0.0):
         print(
             'Warning: Adjusting negative specific humidity values by enforcing '
             'absolute minimum of 1e-6 (consistent with other model stratospheres).'
@@ -315,13 +321,13 @@ def open_file(path, variable=None, validate=True, project=None, printer=None):
                 f'valid cmip range ({pmin}, {pmax}). Set all data to NaN.'
             )
 
-    # Possibly retrieve variable and update mapping
-    # NOTE: Some models from the same lineage have different suffixes in their
-    # institution id (for example ACCESS in CMIP6 is CSIRO-ARCCSS while ACCESS
-    # in CMIP5 is CSIRO-BOM). Therefore only preserve first part of id.
-    if model and institution:
-        MODELS_INSTITUTIONS[model] = institution
-    if variable is None:  # demote precision for speed
-        return dataset
+    # Optionally retrieve variable and demote precision
+    # NOTE: Here .astype() on datasets applies only to the data variables. All
+    # coordinate variable types are retained as e.g. string, int64, float64.
+    if variable is None:
+        data = dataset
     else:
-        return dataset[variable].astype(np.float32)
+        data = dataset[variable]
+    if demote:
+        data = data.astype(np.float32)
+    return data

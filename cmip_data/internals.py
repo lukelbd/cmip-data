@@ -670,7 +670,9 @@ class Database(object):
             if any(opt not in constraints.get(facet, (opt,)) for facet, opt in parts.items()):  # noqa: E501
                 continue  # item not in constraints
             if parts['variable'] == 'feedbacks' and 'feedbacks' not in constraints.get('variable', ()):  # noqa: E501
-                continue  # special consideration for feedbacks
+                continue  # require explicitly requesting bulk feedbacks file
+            if parts['variable'] == 'derived' and 'derived' not in constraints.get('variable', ()):  # noqa: E501
+                continue  # require explicitly requesting bulk derived file
             group = tuple(parts[facet] for facet in facets_group)
             data = self.database.setdefault(group, {})
             key = tuple(parts[facet] for facet in facets_key)

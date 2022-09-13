@@ -9,7 +9,7 @@ import numpy as np
 import xarray as xr
 from icecream import ic  # noqa: F401
 
-from . import process
+from .process import standardize_horizontal, standardize_vertical
 
 __all__ = [
     'combine_cam_kernels',
@@ -86,8 +86,8 @@ def _standardize_kernels(
         if pressure := ('a' not in ds and 'b' not in ds):
             ds = ds.climo.standardize_coords(**kw_std)  # for pressure interpolation
         ds.to_netcdf(path)
-        process.standardize_vertical(path, output=temp, overwrite=True, **kw_vert)
-        process.standardize_horizontal(temp, output=path, overwrite=True, **kw_hori)
+        standardize_vertical(path, output=temp, overwrite=True, **kw_vert)
+        standardize_horizontal(temp, output=path, overwrite=True, **kw_hori)
         ds = xr.open_dataset(path)
         if not pressure:
             ds = ds.climo.standardize_coords(**kw_std)  # after hybrid interpolation
