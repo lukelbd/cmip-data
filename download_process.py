@@ -44,7 +44,6 @@ explicit = False  # control and response data for explicit circulation stuff?
 download = False
 filter = False
 process = True
-feedbacks = False
 summarize = False
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
@@ -208,7 +207,7 @@ if download:
                 folder = '~/scratch2/data-dependencies'
             elif project == 'CMIP5':
                 folder = '~/scratch2'
-            elif project == 'CMIP6':
+            else:
                 folder = '~/scratch5'
             script = cmip_data.download_script(
                 folder,
@@ -259,7 +258,7 @@ if filter:
                 folder = '~/scratch2/data-dependencies'
             elif project == 'CMIP5':
                 folder = '~/scratch2'
-            elif project == 'CMIP6':
+            else:
                 folder = '~/scratch5'
             scripts = cmip_data.filter_script(
                 folder,
@@ -302,13 +301,13 @@ if process:
                     experiments.clear()
                 if project == 'CMIP5':
                     folder = '~/scratch2'
-                elif project == 'CMIP6':
+                else:
                     folder = '~/scratch5'
                 for experiment, years in experiments.items():
                     kw = {**kwargs, 'experiment': experiment}
                     cmip_data.process_files(
                         folder,
-                        output='~/data',
+                        output='~/scratch2/data-processed',
                         search='~/scratch2/data-dependencies',
                         method='gencon',
                         years=years,
@@ -344,41 +343,6 @@ if process:
                         dryrun=False,
                         **kw,
                     )
-
-# Calculate the response, control, and anomaly feedbacks (note control anomaly
-# feedbacks are impossible because cannot select a period to use for anomalies).
-# NOTE: The residual feedback will only be calculated if all kernels
-# for the associated flux are requested. Otherwise this is bypassed.
-if feedbacks:
-    nodrifts = (False,)
-    # nodrifts = (True,)
-    # nodrifts = (False, True)
-    for nodrift in nodrifts:
-        experiments = (
-            ('abrupt4xCO2', False),  # regression of series
-            ('piControl', False),  # regression of series
-            ('abrupt4xCO2', True),  # ratio of anomalies
-        )
-        for experiment, ratio in experiments:
-            projects = ('CMIP6', 'CMIP5')
-            # projects = ('CMIP5',)
-            for project in projects:
-                cmip_data.process_feedbacks(
-                    '~/data',  # source climate location
-                    '~/scratch2/data-processed',  # source series location
-                    feedbacks='~/data',  # output feedback location
-                    kernels='~/data',  # input kernels location
-                    fluxes='~/scratch2/data-processed',  # output flux location
-                    ratio=ratio,
-                    source='eraint',
-                    project=project,
-                    experiment=experiment,
-                    flagship_filter=True,
-                    nodrift=nodrift,
-                    overwrite=False,
-                    logging=True,  # ignored if dryrun true
-                    dryrun=False,
-                )
 
 # Update the summary logs once finished
 # NOTE: Have 'intvadse' and 'intvaw' for IPSL-CM6A-LR, CNRM-CM6-1, CNRM-ESM2-1, and

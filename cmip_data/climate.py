@@ -2,6 +2,138 @@
 """
 Create files containing combined time-mean and time-variance quantities.
 """
+import builtins
+import itertools
+import traceback
+import re
+
+import climopy as climo  # noqa: F401  # add accessor
+import numpy as np
+import xarray as xr
+from climopy import diff, const, ureg
+from icecream import ic  # noqa: F401
+from metpy import calc, units
+
+from .utils import average_periods, open_file
+from .internals import Database, Logger, glob_files, _item_dates, _item_parts
+
+# Transport constants
+# NOTE: See Donohoe et al. (2020) for details on transport terms. Precipitation appears
+# in the dry static energy formula because unlike surface evaporation, it deposits heat
+# inside the atmosphere, i.e. it remains after subtracting surface and TOA loss terms.
+# NOTE: Duffy et al. (2018) and Mayer et al. (2020) suggest a snow correction of
+# energy budget is necessary, and Armour et al. (2019) suggests correcting for
+# "latent heat associated with falling snow", but this is relative to estimate of
+# hfls from idealized expression for *evaporation over ocean* based on temperature
+# and humidity differences between surface and boundary layer. Since model output
+# hfls = Lv * evsp + Ls * sbl exactly (compare below terms), where the sbl term is
+# equivalent to adding the latent heat of fusion required to melt snow before a
+# liquid-vapor transition, an additional correction is not needed here.
+TRANSPORT_DESCRIPS = {
+    'gse': 'potential static',
+    'hse': 'sensible static',
+    'dse': 'dry static',
+    'lse': 'latent static',
+    'mse': 'moist static',
+    'ocean': 'storage + ocean',
+    'total': 'total',
+}
+TRANSPORT_INTEGRATED = {
+    'dse': (1, 'intuadse', 'intvadse'),
+    'lse': (const.Lv, 'intuaw', 'intvaw'),
+}
+TRANSPORT_INDIVIDUAL = {
+    'gse': ('zg', const.g, 'dam m s^-1'),
+    'hse': ('ta', const.cp, 'K m s^-1'),
+    'lse': ('hus', const.Lv, 'g kg^-1 m s^-1'),
+}
+TRANSPORT_IMPLICIT = {
+    'dse': (('hfss', 'rlns', 'rsns', 'rlnt', 'rsnt', 'pr', 'prsn'), ()),
+    'lse': (('hfls',), ('pr', 'prsn')),
+    'ocean': ((), ('hfss', 'hfls', 'rlns', 'rsns')),  # flux into atmosphere
+    'total': (('rlnt', 'rsnt'), ()),
+}
+TRANSPORT_RADIATION = {
+    'rlnt': ('rlut',),  # out of the atmosphere
+    'rsnt': ('rsut', 'rsdt'),  # out of the atmosphere (include constant rsdt)
+    'rlntcs': ('rlutcs',),  # out of the atmosphere
+    'rsntcs': ('rsutcs', 'rsdt'),  # out of the atmosphere (include constant rsdt)
+    'rlns': ('rlds', 'rlus'),  # out of and into the atmosphere
+    'rsns': ('rsds', 'rsus'),  # out of and into the atmosphere
+    'rlnscs': ('rldscs', 'rlus'),  # out of and into the atmosphere
+    'rsnscs': ('rsdscs', 'rsuscs'),  # out of and into the atmosphere
+    'albedo': ('rsds', 'rsus'),  # full name to differentiate from 'alb' feedback
+}
+
+# Water cycle constants
+# NOTE: Here the %s is filled in with water, liquid, or ice depending on the
+# component of the particular variable category.
+WATER_DEPENDENCIES = {
+    'hur': ('plev', 'ta', 'hus'),
+    'hurs': ('ps', 'ts', 'huss'),
+}
+WATER_COMPONENTS = [
+    ('clw', 'cll', 'cli', 'clp', 'mass fraction cloud %s'),
+    ('clwvi', 'cllvi', 'clivi', 'clpvi', 'condensed %s water path'),
+    ('pr', 'prra', 'prsn', 'prp', '%s precipitation'),
+    ('evspsbl', 'evsp', 'sbl', 'sblp', '%s evaporation'),
+]
+
+# Transformation constants
+# NOTE: For now use the standard 1e3 kg/m3 water density (i.e. snow and ice terms
+# represent melted equivalent depth) but could also use 1e2 kg/m3 snow density where
+# relevant. See: https://www.sciencelearn.org.nz/resources/1391-snow-and-ice-density
+SCALES_IMPLICIT = {  # scaling prior to implicit transport calculations
+    'pr': const.Lv,
+    'prra': const.Lv,
+    'prsn': const.Ls - const.Lv,  # remove the 'prsn * Lv' implied inside 'pr' term
+    'evspsbl': const.Lv,
+    'evsp': const.Lv,
+    'sbl': const.Ls - const.Lv,  # remove the 'evspsbl * Lv' implied inside 'pr' term
+}
+
+
+def _file_pairs(data, *args, printer=None):
+    """
+    Return a dictionary mapping of variables to ``(climate, series)`` file
+    pairs from a database of files with ``(..., variable)`` keys.
+
+    Parameters
+    ----------
+    data : dict
+        The database of file lists.
+    *args : str
+        The suffixes to use.
+    printer : callable, default: `print`
+        The print function.
+    """
+    print = printer or builtins.print
+    pairs = []
+    for suffix in args:
+        paths = {
+            var: [file for file in files if _item_dates(file) in args]
+            for (*_, var), files in data.items()
+        }
+        for variable, files in tuple(paths.items()):
+            names = ', '.join(file.name for file in files)
+            print(f'  {suffix} {variable} files ({len(files)}):', names)
+            if message := not files and 'Missing' or len(files) > 1 and 'Ambiguous':
+                print(f'Warning: {message} files (expected 1, found {len(files)}).')
+                del paths[variable]
+            else:
+                (file,) = files
+                paths[variable] = file
+        pairs.append(paths)
+    if message := ', '.join(pairs[0].keys() - pairs[1].keys()):
+        pass  # ignore common situation of more climate files than series files
+    if message := ', '.join(pairs[1].keys() - pairs[0].keys()):
+        print(f'Warning: Missing climate files for series data {message}.')
+    pairs = {
+        variable: (pairs[0].get(variable, None), pairs[1].get(variable, None))
+        for variable in sorted(pairs[0].keys() | pairs[1].keys())
+    }
+    return pairs
+
 
 def _transport_implicit(data, descrip=None, prefix=None, adjust=True):
     """
@@ -347,3 +479,183 @@ def _update_climate_water(dataset):
     return dataset
 
 
+def compute_climate(climate, series=None, output=None, **inputs):
+    """
+    Compute climate variables for a given model time series and climate data.
+
+    Parameters
+    ----------
+    output : path-like
+        The output file.
+    **inputs : tuple of path-like lists
+        Tuples of ``(climate_inputs, series_inputs)`` for the variables
+        required to be added to the combined file, passed as keyword arguments for
+        each variable. The variables computed will depend on the variables passed.
+    """
+    # Initial stuff
+    # NOTE: Critical to overwrite the time coordinates after loading or else xarray
+    # coordinate matching will apply all-NaN values for climatolgoies with different
+    # base years (e.g. due to control data availability or response calendar diffs).
+
+    # Load the data
+    # NOTE: Here open_file automatically populates the mapping MODELS_INSTITUTIONS
+    att = {'axis': 'T', 'standard_name': 'time'}
+    time = pd.date_range('2000-01-01', '2000-12-01', freq='MS')
+    time = xr.DataArray(time, name='time', dims='time', attrs=att)
+    output = {}
+    for variable, files in inputs.items():
+        variable = key[database.key.index('variable')]
+        paths = [path for path in paths if _item_dates(path) == dates]
+        if not paths:
+            continue
+        if len(paths) > 1:
+            print(f'Warning: Skipping ambiguous duplicate paths {list(map(str, paths))}.', end=' ')  # noqa: E501
+            continue
+        array = open_file(paths[0], variable, project=database.project)
+        if array.time.size != 12:
+            print(f'Warning: Skipping path {paths[0]} with time length {array.time.size}.', end=' ')  # noqa: E501
+            continue
+        months = array.time.dt.month
+        if sorted(months.values) != sorted(range(1, 13)):
+            print(f'Warning: Skipping path {paths[0]} with month values {months.values}.', end=' ')  # noqa: E501
+            continue
+        array = array.assign_coords(time=time)
+        descrip = array.attrs.pop('title', variable)  # in case long_name missing
+        descrip = array.attrs.pop('long_name', descrip)
+        descrip = ' '.join(s if s == 'TOA' else s.lower() for s in descrip.split())
+        array.attrs['long_name'] = descrip
+        dataset[variable] = array
+
+    # Standardize the data
+    # NOTE: Empirical testing revealed limiting integration to troposphere
+    # often prevented strong transient heat transport showing up in overturning
+    # cells due to aliasing of overemphasized stratospheric geopotential transport.
+    # WARNING: Critical to place average_periods after adjustments so that
+    # time-covariance of surface pressure and near-surface flux terms is
+    # effectively factored in (since average_periods only includes explicit
+    # month-length weights and ignores implicit cell height weights).
+    if 'ps' not in dataset:
+        print('Warning: Surface pressure is unavailable.', end=' ')
+    dataset = dataset.climo.add_cell_measures(surface=('ps' in dataset))
+    dataset = _update_climate_radiation(dataset)  # must come before transport
+    dataset = _update_climate_transport(dataset)
+    dataset = _update_climate_water(dataset)
+    if 'time' in dataset:
+        dataset = average_periods(dataset, **kw_times)
+    if 'plev' in dataset:
+        dataset = dataset.sel(plev=slice(None, 7000))
+    drop = ['cell_', '_bot', '_top']
+    drop = [key for key in dataset.coords if any(o in key for o in drop)]
+    dataset = dataset.drop_vars(drop)
+    dataset = dataset.squeeze()
+    return dataset
+
+
+def process_climate(
+    *paths,
+    series=None,
+    climate=None,
+    experiment=None,
+    project=None,
+    nodrift=False,
+    logging=False,
+    dryrun=False,
+    **kwargs
+):
+    """
+    Generate combined climate files using the output of `process_files`.
+
+    Parameters
+    ----------
+    *paths : path-like, optional
+        Location(s) for the climate and series data.
+    series : 2-tuple of int, default: (0, 150)
+        The year range for the series data.
+    climate : 2-tuple of int, default: (0, 150)
+        The year range for the climate data.
+    experiment : str, optional
+        The experiment to use.
+    project : str, optional
+        The project to use.
+    nodrift : bool, default: False
+        Whether to use drift-corrected data.
+    logging : bool, optional
+        Whether to build a custom logger.
+    dryrun : bool, optional
+        Whether to run with only three years of data.
+    **kwargs
+        Passed to `compute_feedbacks`.
+    """
+    # Find files and restrict to unique constraints
+    # NOTE: This requires flagship translation or else models with different control
+    # and abrupt runs are not grouped together. Not sure how to handle e.g. non-flagship
+    # abrupt runs from flagship control runs but cross that bridge when we come to it.
+    # NOTE: Paradigm is to use climate monthly mean surface pressure when interpolating
+    # to model levels and keep surface pressure time series when getting feedback
+    # kernel integrals. Helps improve accuracy since so much stuff depends on kernels.
+    logging = logging and not dryrun
+    experiment = experiment or 'piControl'
+    series = series or (0, 150)
+    climate = climate or (0, 150)
+    nodrift = 'nodrift' if nodrift else ''
+    suffix = nodrift and '-' + nodrift
+    parts = ('climate', experiment, 'derived', nodrift)
+    print = Logger('summary', *parts, project=project) if logging else builtins.print
+    series_suffix = f'{series[0]:04d}-{series[1]:04d}-series{suffix}'
+    climate_suffix = f'{climate[0]:04d}-{climate[1]:04d}-climate{suffix}'
+    print('Generating database.')
+    constraints = {'project': project, 'experiment': experiment}
+    constraints.update({
+        key: kwargs.pop(key) for key in tuple(kwargs)
+        if any(s in key for s in ('model', 'flagship', 'ensemble'))
+    })
+    files, *_ = glob_files(*paths, project=project)
+    facets = ('project', 'model', 'experiment', 'ensemble', 'grid')
+    database = Database(files, facets, **constraints)
+
+    # Calculate clear and all-sky feedbacks surface and TOA files
+    # NOTE: Unlike the method that uses a fixed SST experiment to deduce forcing and
+    # takes the ratio of local radiative flux change to global temperature change as
+    # the feedback, the average of a regression of radiative flux change against global
+    # temperature change will not necessarily equal the regression of average radiative
+    # flux change. Therefore compute both and compare to get idea of the residual. Also
+    # consider local temperature change for point of comparison (Hedemman et al. 2022).
+    print(f'Input files ({len(database)}):')
+    print(*(f'{key}: ' + ' '.join(opts) for key, opts in database.constraints.items()), sep='\n')  # noqa: E501
+    print(f'Climate data: experiment {experiment} suffix {climate_suffix}')
+    print(f'Series data: experiment {experiment} suffix {series_suffix}')
+    _print_error = lambda error: print(
+        ' '.join(traceback.format_exception(None, error, error.__traceback__))
+    )
+    for group, data in database.items():
+        group = dict(zip(database.group, group))
+        print()
+        print('Computing climate variables:')
+        print(', '.join(f'{key}: {value}' for key, value in group.items()))
+        files = _file_pairs(
+            data,
+            climate_suffix,
+            series_suffix,
+            printer=print,
+        )
+        try:
+            datasets = compute_climate(
+                project=group['project'],
+                experiment=_item_parts['experiment'](tuple(files.values())[0][1]),
+                ensemble=_item_parts['ensemble'](tuple(files.values())[0][1]),
+                table=_item_parts['table'](tuple(files.values())[0][1]),
+                model=group['model'],
+                printer=print,
+                dryrun=dryrun,
+                **kwargs,
+                **files,
+            )
+            for dataset in datasets:
+                dataset.close()
+        except Exception as error:
+            if dryrun:
+                raise error
+            else:
+                _print_error(error)
+            print('Warning: Failed to compute feedbacks.')
+            continue

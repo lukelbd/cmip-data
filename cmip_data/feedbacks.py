@@ -12,7 +12,7 @@ import numpy as np  # noqa: F401
 import xarray as xr
 from climopy import const, ureg
 from icecream import ic  # noqa: F401
-from idealized import physics  # noqa: F401
+from idealized import definitions  # noqa: F401
 from metpy import calc  # noqa: F401
 from metpy.units import units as mreg  # noqa: F401
 from numpy import ma  # noqa: F401
@@ -102,7 +102,7 @@ def _file_pairs(data, *args, printer=None):
         The database of file lists.
     *experiments : str
         The two control and response experiments.
-    *suffixes
+    *suffixes : str
         The two experiment suffixes.
     printer : callable, default: `print`
         The print function.
@@ -980,7 +980,7 @@ def process_feedbacks(
     Parameters
     ----------
     *paths : path-like, optional
-        Location(s) of the climate and series data.
+        Location(s) for the climate and series data.
     ratio : bool, optional
         Whether to use ratio feedbacks.
     source : str, default: 'eraint'
@@ -994,7 +994,7 @@ def process_feedbacks(
     experiment : str, optional
         The experiment to use for the "response" data.
     project : str, optional
-        The project to search for.
+        The project to use.
     nodrift : bool, default: False
         Whether to use drift-corrected data.
     logging : bool, optional
