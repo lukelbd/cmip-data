@@ -9,7 +9,6 @@ import numpy as np
 import xarray as xr
 from icecream import ic  # noqa: F401
 
-from . import MODELS_INSTITUTIONS  # found in __init__.py to avoid autoreload reset
 from .internals import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
 
 __all__ = [
@@ -186,29 +185,6 @@ def open_file(
     demote : bool, optional
         Whether to demote the precision to float32.
     """
-    # Initial stuff
-    # NOTE: Here the model id recorded under 'source_id' or 'model_id' often differs
-    # from the model id in the file name. Annoying but have to use the file version.
-    # NOTE: Some models from the same lineage have different suffixes in their
-    # institution id (for example ACCESS in CMIP6 is CSIRO-ARCCSS while ACCESS
-    # in CMIP5 is CSIRO-BOM). Therefore only preserve first part of id.
-    print = printer or builtins.print
-    dataset = xr.open_dataset(path, use_cftime=True)
-    dataset = dataset.drop_vars(dataset.coords.keys() - dataset.sizes.keys())
-    for coord in dataset.coords.values():  # remove missing bounds variables
-        coord.attrs.pop('bounds', None)
-    model = path.name.split('_')[2] if path.name.count('_') >= 4 else None
-    project = project and project.lower()
-    institution = dataset.attrs.get('institute_id', dataset.attrs.get('institution_id'))
-    if not institution:
-        pass
-    elif 'FGOALS' in model and 'CAS' in institution:
-        institution = 'LASG'  # changed in cmip6 to accomodate CAS (Chinese center)
-    else:
-        institution = institution.split()[0].split('-')[0]
-    if model and institution:
-        MODELS_INSTITUTIONS[model] = institution
-
     # Validate pressure coordinates
     # NOTE: Since CMIP6 includes 2 extra levels have to drop them to get it to work
     # with CMIP5 data (this is used to get standard kernels to work with cmip5 data).
@@ -219,8 +195,14 @@ def open_file(
     # naively as halfway points between levels. Since inconsistent between files
     # just strip all bounds attribute and rely on climopy calculations. Try file:
     # ta_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_0000-0150-climate-nodrift.nc
+    print = printer or builtins.print
+    dataset = xr.open_dataset(path, use_cftime=True)
+    dataset = dataset.drop_vars(dataset.coords.keys() - dataset.sizes.keys())
+    for coord in dataset.coords.values():  # remove missing bounds variables
+        coord.attrs.pop('bounds', None)
     if project and 'plev' in dataset.coords and dataset.plev.size > 1:
         plev = dataset.plev.values
+        project = project and project.lower()
         if project == 'cmip5':
             levels = STANDARD_LEVELS_CMIP5
         elif project == 'cmip6':
@@ -268,12 +250,15 @@ def open_file(
             dataset = dataset.sortby('time')  # sort in case months are non-monotonic
 
     # Validate variable data
+    # NOTE: Here the model id recorded under 'source_id' or 'model_id' often differs
+    # from the model id in the file name. Annoying but have to use the file version.
     # NOTE: Found negative radiative flux values for rldscs in IITM-ESM model. For
     # now just automatically invert these values but should contact developer.
     # NOTE: Found negative specific humidity values in IITM-ESM model. Add constant
     # offset to avoid insane humidity kernels (inspection of abrupt time series with
     # cdo -infon -timmin -selname,hus revealed pretty large anomalies up to -5e-4
     # at the surface so use dynamic adjustment with floor offset of 1e-6).
+    model = path.name.split('_')[2] if path.name.count('_') >= 4 else None
     names = dataset.data_vars if validate else ()
     ranges = {name: _validate_ranges(name, 'Amon') for name in names}
     if 'pr' in dataset.data_vars and model == 'CIESM':  # kludge

@@ -479,7 +479,7 @@ def _update_climate_water(dataset):
     return dataset
 
 
-def compute_climate(climate, series=None, output=None, **inputs):
+def compute_climate(output=None, project=None, **inputs):
     """
     Compute climate variables for a given model time series and climate data.
 
@@ -487,44 +487,31 @@ def compute_climate(climate, series=None, output=None, **inputs):
     ----------
     output : path-like
         The output file.
+    project : str, optional
+        The project.
     **inputs : tuple of path-like lists
         Tuples of ``(climate_inputs, series_inputs)`` for the variables
         required to be added to the combined file, passed as keyword arguments for
         each variable. The variables computed will depend on the variables passed.
     """
-    # Initial stuff
+    # Load the data
+    # NOTE: Here open_file automatically populates the mapping MODELS_INSTITUTIONS
     # NOTE: Critical to overwrite the time coordinates after loading or else xarray
     # coordinate matching will apply all-NaN values for climatolgoies with different
     # base years (e.g. due to control data availability or response calendar diffs).
-
-    # Load the data
-    # NOTE: Here open_file automatically populates the mapping MODELS_INSTITUTIONS
-    att = {'axis': 'T', 'standard_name': 'time'}
-    time = pd.date_range('2000-01-01', '2000-12-01', freq='MS')
-    time = xr.DataArray(time, name='time', dims='time', attrs=att)
-    output = {}
-    for variable, files in inputs.items():
-        variable = key[database.key.index('variable')]
-        paths = [path for path in paths if _item_dates(path) == dates]
-        if not paths:
-            continue
-        if len(paths) > 1:
-            print(f'Warning: Skipping ambiguous duplicate paths {list(map(str, paths))}.', end=' ')  # noqa: E501
-            continue
-        array = open_file(paths[0], variable, project=database.project)
-        if array.time.size != 12:
-            print(f'Warning: Skipping path {paths[0]} with time length {array.time.size}.', end=' ')  # noqa: E501
-            continue
-        months = array.time.dt.month
-        if sorted(months.values) != sorted(range(1, 13)):
-            print(f'Warning: Skipping path {paths[0]} with month values {months.values}.', end=' ')  # noqa: E501
-            continue
-        array = array.assign_coords(time=time)
-        descrip = array.attrs.pop('title', variable)  # in case long_name missing
-        descrip = array.attrs.pop('long_name', descrip)
-        descrip = ' '.join(s if s == 'TOA' else s.lower() for s in descrip.split())
-        array.attrs['long_name'] = descrip
-        dataset[variable] = array
+    keys_times = ('annual', 'seasonal', 'monthly')
+    kw_times = {key: inputs.pop(key, True) for key in keys_times}
+    climate, series = {}, {}
+    for variable, paths in inputs.items():
+        for path, output in zip(paths, (climate, series)):
+            if path is None:  # missing climate or series
+                continue
+            array = open_file(path, variable, project=project)
+            descrip = array.attrs.pop('title', variable)  # in case long_name missing
+            descrip = array.attrs.pop('long_name', descrip)
+            descrip = ' '.join(s if s == 'TOA' else s.lower() for s in descrip.split())
+            array.attrs['long_name'] = descrip
+            output[variable] = array
 
     # Standardize the data
     # NOTE: Empirical testing revealed limiting integration to troposphere
@@ -534,12 +521,12 @@ def compute_climate(climate, series=None, output=None, **inputs):
     # time-covariance of surface pressure and near-surface flux terms is
     # effectively factored in (since average_periods only includes explicit
     # month-length weights and ignores implicit cell height weights).
+    dataset = xr.Dataset(output)
     if 'ps' not in dataset:
         print('Warning: Surface pressure is unavailable.', end=' ')
     dataset = dataset.climo.add_cell_measures(surface=('ps' in dataset))
     dataset = _update_climate_radiation(dataset)  # must come before transport
     dataset = _update_climate_transport(dataset)
-    dataset = _update_climate_water(dataset)
     if 'time' in dataset:
         dataset = average_periods(dataset, **kw_times)
     if 'plev' in dataset:

@@ -3,6 +3,7 @@
 File for downloading and merging relevant data.
 """
 import cmip_data
+import socket
 
 # Toggle various activities
 # NOTE: The analogy with dynamical core git packages is cmip_data:drycore for data
@@ -18,15 +19,26 @@ feedbacks = False
 # variables since most abrupt 4xCO2 experiments are not fully equilibriated. Only
 # use them for year 120-150 climate estimates.
 if climate:
-        experiments = ('piControl', 'abrupt4xCO2')
-        experiments = ('piControl',)
+    nodrifts = (False,)
+    # nodrifts = (False, True)
+    for nodrift in nodrifts:
+        experiments = (
+            'piControl',
+            'abrupt4xCO2',
+        )
         for experiment in experiments:
             projects = ('CMIP6', 'CMIP5')
             # projects = ('CMIP5',)
             for project in projects:
+                if 'monde' in socket.gethostname():
+                    series = '~/scratch2/data-processed'
+                elif 'local' in socket.gethostname():
+                    series = '~/data/cmip-series'
+                else:
+                    raise RuntimeError
                 cmip_data.process_feedbacks(
                     '~/data',  # source climate location
-                    '~/scratch2/data-processed',  # source series location
+                    series,  # source series location
                     climate='~/data',  # output feedback location
                     source='eraint',
                     project=project,
@@ -43,7 +55,6 @@ if climate:
 # for the associated flux are requested. Otherwise this is bypassed.
 if feedbacks:
     nodrifts = (False,)
-    # nodrifts = (True,)
     # nodrifts = (False, True)
     for nodrift in nodrifts:
         experiments = (
@@ -55,12 +66,18 @@ if feedbacks:
             projects = ('CMIP6', 'CMIP5')
             # projects = ('CMIP5',)
             for project in projects:
+                if 'monde' in socket.gethostname():
+                    series = '~/scratch2/data-processed'
+                elif 'local' in socket.gethostname():
+                    series = '~/data/cmip-series'
+                else:
+                    raise RuntimeError
                 cmip_data.process_feedbacks(
                     '~/data',  # source climate location
-                    '~/scratch2/data-processed',  # source series location
+                    series,  # source series location
                     feedbacks='~/data',  # output feedback location
                     kernels='~/data',  # input kernels location
-                    fluxes='~/scratch2/data-processed',  # output flux location
+                    fluxes=series,  # output flux location
                     ratio=ratio,
                     source='eraint',
                     project=project,

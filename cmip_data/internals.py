@@ -127,7 +127,14 @@ FACETS_CMIP6 = [
     'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
     'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
 ]
-FACETS_ALIASES = {
+FACETS_DOTNAMES = {
+    ('CMIP5', 'ACCESS1-0'): 'ACCESS1.0',
+    ('CMIP5', 'ACCESS1-3'): 'ACCESS1.3',
+    ('CMIP5', 'CSIRO-Mk3-6-0'): 'CSIRO-Mk3.6.0',
+    ('CMIP5', 'bcc-csm1-1'): 'BCC-CSM1.1',
+    ('CMIP5', 'inmcm4'): 'INM-CM4',
+}
+FACETS_LONGNAMES = {
     ('CMIP5', 'table'): 'cmor_table',
     ('CMIP5', 'institution'): 'institute',
     ('CMIP5', 'frequency'): 'time_frequency',
@@ -137,13 +144,6 @@ FACETS_ALIASES = {
     ('CMIP6', 'experiment'): 'experiment_id',
     ('CMIP6', 'ensemble'): 'variant_label',
     ('CMIP6', 'institution'): 'institution_id',
-}
-FACETS_DOTNAMES = {
-    ('CMIP5', 'ACCESS1-0'): 'ACCESS1.0',
-    ('CMIP5', 'ACCESS1-3'): 'ACCESS1.3',
-    ('CMIP5', 'CSIRO-Mk3-6-0'): 'CSIRO-Mk3.6.0',
-    ('CMIP5', 'bcc-csm1-1'): 'BCC-CSM1.1',
-    ('CMIP5', 'inmcm4'): 'INM-CM4',
 }
 FACETS_RENAMES = {
     ('CMIP5', 'hist-nat'): 'historicalNat',
@@ -169,7 +169,137 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
     'variable',
 )
 
-# Sorting facets in names and options in databases (see download.py for nodes)
+# Model institutes
+# NOTE: This was copied from the INSTITUTES.txt file produced by manual_checks.py and
+# include the project so we can filter models to both unique institutes and projects.
+# Currently used in 'coupled' plotting functions (previously tried to just use names
+# but this was unreliable -- for example ACCESS/CSIRO are both from CSIRO in Australia,
+# MPI/ICON are both from MPI in Germany, and CESM/CCSM are both from NCAR in Colorado).
+# NOTE: Some of the institutes changed due to new collaborators or syntax choices (e.g.
+# dash instead of space) between cmip5 or cmip6. Fixed this so institutes can be
+# identified uniquely across projects, and put the original names in comments.
+# NOTE: Here the preferred model variants from the same institution are arranged
+# last (see _parse_projects in templates.py). Roughly similar to original alphabetical
+# order; prefer more complex (ESMs over CMs), higher resolution, and later versions.
+# NOTE: Prefer ACCESS to CSIRO becase latter is more complex.
+# See: https://www.researchgate.net/publication/258763480_The_ACCESS_coupled_model_Description_control_climate_and_evaluation  # noqa: E501
+# Prefer ESM2M to ESM2G since it simulates surface climate better.
+# See: https://journals.ametsoc.org/view/journals/clim/25/19/jcli-d-11-00560.1.xml
+# Prefer more updated GISS-E2-H ocean model to GISS-E2-R ocean model.
+# See: https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2013MS000265
+# Prefer MPI-ESM-MR to MPI-ESM-LR since it has higher resolution.
+# See: https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/jame.20038
+# Prefer NorESM1-ME to NorESM1-M because latter includes biogeochecmial stuff
+# See: https://gmd.copernicus.org/articles/6/687/2013/
+# Prefer bcc-csm1-1-m to bcc-csm1-1 because this is 'moderate resolution' t106 over t63
+# See: http://forecast.bcccsm.ncc-cma.net/web/channel-63.htm
+# Prefer CESM2 without FV2 designations because these are 2 degree instead of 1 degree
+# See: https://bb.cgd.ucar.edu/cesm/threads/difference-between-cesm2-and-cesm2-fv.5549/
+# Prefer CNRM CMIP6 earth system model even though cmip5 had only climate model.
+# See: https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2019MS001791
+# Prefer EC-Earth3-Veg because air chemistry and carbon cycle physics not relevant.
+# See: https://gmd.copernicus.org/articles/15/2973/2022/
+# Prefer latest version MIROC-ES2H to older version ES2L (resolution seems to be same).
+# See: https://progearthplanetsci.springeropen.com/articles/10.1186/s40645-020-00369-5
+# Classify MPI-Ham variant under the same institution since it derives from there.
+# See: https://ui.adsabs.harvard.edu/abs/2017EGUGA..19.7132F/abstract
+# Prefer NorESM-MM to LM because has 1 degree resolution instead of 2
+# See: https://noresm-docs.readthedocs.io/en/latest/start.html
+# Prefer UKESM to HadGEM because former is full earth system model
+# See: https://www.metoffice.gov.uk/research/approach/modelling-systems/new-flagship-climate-models  # noqa: E501
+MODELS_INSTITUTES = {
+    ('CMIP5', 'BNU-ESM'): 'BNU',
+    ('CMIP5', 'CCSM4'): 'NCAR',
+    ('CMIP5', 'CNRM-CM5'): 'CNRM-CERFACS',
+    ('CMIP5', 'CNRM-CM5-2'): 'CNRM-CERFACS',  # latest version
+    ('CMIP5', 'CanESM2'): 'CCCma',
+    ('CMIP5', 'CSIRO-Mk3-6-0'): 'CSIRO',  # 'CSIRO-QCCCE',  # overwritten by ACCESS
+    ('CMIP5', 'ACCESS1-0'): 'CSIRO',  # 'CSIRO-BOM',
+    ('CMIP5', 'ACCESS1-3'): 'CSIRO',  # 'CSIRO-BOM',  # latest version
+    ('CMIP5', 'FGOALS-s2'): 'CAS',  # 'LASG-IAP',
+    ('CMIP5', 'FGOALS-g2'): 'CAS',  # 'LASG-CESS',  # highest resolution
+    ('CMIP5', 'GFDL-CM3'): 'NOAA',  # 'NOAA GFDL',
+    ('CMIP5', 'GFDL-ESM2G'): 'NOAA',  # 'NOAA GFDL',
+    ('CMIP5', 'GFDL-ESM2M'): 'NOAA',  # 'NOAA GFDL',
+    ('CMIP5', 'GISS-E2-R'): 'NASA',  # 'NASA-GISS',
+    ('CMIP5', 'GISS-E2-H'): 'NASA',  # 'NASA-GISS',  # more complex
+    ('CMIP5', 'HadGEM2-ES'): 'MOHC',
+    ('CMIP5', 'IPSL-CM5A-LR'): 'IPSL',
+    ('CMIP5', 'IPSL-CM5B-LR'): 'IPSL',
+    ('CMIP5', 'IPSL-CM5A-MR'): 'IPSL',  # highest resolution
+    ('CMIP5', 'MIROC5'): 'MIROC',
+    ('CMIP5', 'MIROC-ESM'): 'MIROC',  # most complex
+    ('CMIP5', 'MPI-ESM-P'): 'MPI-M',
+    ('CMIP5', 'MPI-ESM-LR'): 'MPI-M',
+    ('CMIP5', 'MPI-ESM-MR'): 'MPI-M',  # highest resolution
+    ('CMIP5', 'MRI-CGCM3'): 'MRI',
+    ('CMIP5', 'NorESM1-ME'): 'NCC',
+    ('CMIP5', 'NorESM1-M'): 'NCC',  # highest resolution
+    ('CMIP5', 'bcc-csm1-1'): 'BCC',
+    ('CMIP5', 'bcc-csm1-1-m'): 'BCC',  # highest resoution
+    ('CMIP5', 'inmcm4'): 'INM',
+    ('CMIP6', 'ACCESS-CM2'): 'CSIRO',  # 'CSIRO-ARCCSS',
+    ('CMIP6', 'ACCESS-ESM1-5'): 'CSIRO',  # most complex
+    ('CMIP6', 'AWI-CM-1-1-MR'): 'AWI',
+    ('CMIP6', 'BCC-CSM2-MR'): 'BCC',
+    ('CMIP6', 'BCC-ESM1'): 'BCC',  # most complex
+    ('CMIP6', 'CAMS-CSM1-0'): 'CAMS',
+    ('CMIP6', 'CAS-ESM2-0'): 'CAS',
+    ('CMIP6', 'CESM2-FV2'): 'NCAR',
+    ('CMIP6', 'CESM2'): 'NCAR',
+    ('CMIP6', 'CESM2-WACCM-FV2'): 'NCAR',
+    ('CMIP6', 'CESM2-WACCM'): 'NCAR',  # highest resolution
+    ('CMIP6', 'CIESM'): 'THU',
+    ('CMIP6', 'CMCC-CM2-SR5'): 'CMCC',
+    ('CMIP6', 'CMCC-ESM2'): 'CMCC',  # most complex
+    ('CMIP6', 'CNRM-CM6-1'): 'CNRM-CERFACS',
+    ('CMIP6', 'CNRM-CM6-1-HR'): 'CNRM-CERFACS',
+    ('CMIP6', 'CNRM-ESM2-1'): 'CNRM-CERFACS',  # most complex
+    ('CMIP6', 'CanESM5'): 'CCCma',
+    ('CMIP6', 'E3SM-1-0'): 'E3SM-Project',
+    ('CMIP6', 'EC-Earth3'): 'EC-Earth-Consortium',  # collaborative incl. many centers
+    ('CMIP6', 'EC-Earth3-AerChem'): 'EC-Earth-Consortium',
+    ('CMIP6', 'EC-Earth3-CC'): 'EC-Earth-Consortium',
+    ('CMIP6', 'EC-Earth3-Veg-LR'): 'EC-Earth-Consortium',
+    ('CMIP6', 'EC-Earth3-Veg'): 'EC-Earth-Consortium',  # most relevant
+    ('CMIP6', 'FGOALS-f3-L'): 'CAS',
+    ('CMIP6', 'FGOALS-g3'): 'CAS',  # highest resolution
+    ('CMIP6', 'GFDL-CM4'): 'NOAA',  # 'NOAA-GFDL',
+    ('CMIP6', 'GFDL-ESM4'): 'NOAA',  # 'NOAA-GFDL',  # most complex
+    ('CMIP6', 'GISS-E2-1-G'): 'NASA',  # 'NASA-GISS',
+    ('CMIP6', 'GISS-E2-1-H'): 'NASA',  # 'NASA-GISS',
+    ('CMIP6', 'GISS-E2-2-G'): 'NASA',  # 'NASA-GISS',
+    ('CMIP6', 'GISS-E2-2-H'): 'NASA',  # 'NASA-GISS',  # highest resolution
+    ('CMIP6', 'IITM-ESM'): 'CCCR-IITM',
+    ('CMIP6', 'INM-CM4-8'): 'INM',
+    ('CMIP6', 'INM-CM5-0'): 'INM',  # latest version
+    ('CMIP6', 'IPSL-CM6A-LR'): 'IPSL',
+    ('CMIP6', 'IPSL-CM5A2-INCA'): 'IPSL',  # highest resolution
+    ('CMIP6', 'KACE-1-0-G'): 'NIMS-KMA',
+    ('CMIP6', 'KIOST-ESM'): 'KIOST',
+    ('CMIP6', 'MCM-UA-1-0'): 'UA',
+    ('CMIP6', 'MIROC6'): 'MIROC',
+    ('CMIP6', 'MIROC-ES2L'): 'MIROC',
+    ('CMIP6', 'MIROC-ES2H'): 'MIROC',  # latest version
+    ('CMIP6', 'ICON-ESM-LR'): 'MPI-M',  # overwritten by MPI
+    ('CMIP6', 'MPI-ESM-1-2-HAM'): 'MPI-M',  # 'HAMMOZ-Consortium',  # started from MPI
+    ('CMIP6', 'MPI-ESM1-2-LR'): 'MPI-M',
+    ('CMIP6', 'MPI-ESM1-2-HR'): 'MPI-M',  # highest resolution
+    ('CMIP6', 'MRI-ESM2-0'): 'MRI',
+    ('CMIP6', 'NESM3'): 'NUIST',
+    ('CMIP6', 'NorCPM1'): 'NCC',
+    ('CMIP6', 'NorESM2-LM'): 'NCC',
+    ('CMIP6', 'NorESM2-MM'): 'NCC',  # highest resolution
+    ('CMIP6', 'SAM0-UNICON'): 'SNU',
+    ('CMIP6', 'TaiESM1'): 'AS-RCEC',
+    ('CMIP6', 'HadGEM3-GC31-LL'): 'MOHC',  # overwritten by UKESM
+    ('CMIP6', 'HadGEM3-GC31-MM'): 'MOHC',
+    ('CMIP6', 'UKESM1-0-LL'): 'MOHC',  # ESM variant of HadGEM
+    ('CMIP6', 'UKESM1-1-LL'): 'MOHC',  # latest version
+}
+
+# Sorting facets in file and folder names, in database groups and sub-groups,
+# and in organizing wget script lines (see download.py for details).
 # NOTE: Previously we removed bad or down nodes but this is unreliable and has to be
 # updated regularly. Instead now prioritize local nodes over distant nodes and then
 # wget script automatically skips duplicate files after successful download (see top).
@@ -423,10 +553,10 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
         for facet, opts in constraints.items()
     }
     renames = FACETS_RENAMES
-    aliases_decode = FACETS_ALIASES
-    aliases_encode = {(_, facet): alias for (_, alias), facet in aliases_decode.items()}
-    dotnames_decode = FACETS_DOTNAMES
-    dotnames_encode = {(_, dotname): name for (_, name), dotname in dotnames_decode.items()}  # noqa: E501
+    dotnames_encode = FACETS_DOTNAMES  # convert dash names to dot names
+    dotnames_decode = {(_, dotname): name for (_, name), dotname in dotnames_encode.items()}  # noqa: E501
+    longnames_encode = FACETS_LONGNAMES  # convert short names to long names
+    longnames_decode = {(_, long): short for (_, short), long in longnames_encode.items()}  # noqa: E501
     projects = constraints.setdefault('project', ['CMIP6'])
     if len(projects) != 1:
         raise NotImplementedError('Non-scalar projects are not supported.')
@@ -436,18 +566,18 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
         *(facet for facet in constraints if facet not in SORT_FACETS),  # retain order
     )
     constraints = {
-        (aliases_encode if reverse else aliases_decode)  # facet translations
+        (longnames_decode if reverse else longnames_encode)  # facet translations
         .get((project, facet), facet):
         _sort_facet(
             (
-                (dotnames_encode if reverse else dotnames_decode)  # model translations
+                (dotnames_decode if reverse else dotnames_encode)  # model translations
                 .get(
                     (project, opt),
                     renames.get((project, opt), opt)  # experiment translations
                 )
                 for opt in constraints[facet]
             ),
-            aliases_encode.get((project, facet), facet)  # need standard name here
+            longnames_decode.get((project, facet), facet)  # need standard name here
         )
         for facet in facets
     }
@@ -471,8 +601,8 @@ def _validate_ranges(variable, table='Amon'):
     """
     # NOTE: This uses the official cmip quality control ranges produced for modeling
     # centers to use for validating simulations and published netcdf files. They
-    # were copied into RANGES.txt from esgf website (see header for details).
-    path = Path(__file__).parent.parent / 'RANGES.txt'
+    # were copied into VALIDATE.txt from esgf website (see header for details).
+    path = Path(__file__).parent.parent / 'VALIDATE.txt'
     data = open(path).read()
     keys = ('valid_min', 'valid_max', 'ok_min_mean_abs', 'ok_max_mean_abs')
     values = [None, None, None, None]
