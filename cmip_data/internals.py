@@ -175,13 +175,19 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 # Currently used in 'coupled' plotting functions (previously tried to just use names
 # but this was unreliable -- for example ACCESS/CSIRO are both from CSIRO in Australia,
 # MPI/ICON are both from MPI in Germany, and CESM/CCSM are both from NCAR in Colorado).
-# NOTE: Some of the institutes changed due to new collaborators or syntax choices (e.g.
-# dash instead of space) between cmip5 or cmip6. Fixed this so institutes can be
-# identified uniquely across projects, and put the original names in comments.
+# NOTE: Some institutes changed their ids between cmip5 and cmip6 due to syntax updates
+# (e.g. dash instead of space) or new collaborators (generally appended with dashes).
+# Fixed this so institues can be uniquely identified, and put original ids in comments.
 # NOTE: Here the preferred model variants from the same institution are arranged
 # last (see _parse_projects in templates.py). Roughly similar to original alphabetical
 # order; prefer more complex (ESMs over CMs), higher resolution, and later versions.
-# NOTE: Prefer ACCESS to CSIRO becase latter is more complex.
+# NOTE: Include 2-character ISO 3166 country codes for quick reference.
+# See: https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
+# There are several Chinese models from academies, ministries, and universities.
+# See: http://jmr.cmsjournal.net/article/doi/10.1007/s13351-020-9164-0
+# Here MCM is based on the 'Manabe' model and is very primitive compared to others.
+# See: http://u.arizona.edu/~ronaldstouffer/MCM_Description_Summary.html
+# Prefer ACCESS to CSIRO becase latter is more complex.
 # See: https://www.researchgate.net/publication/258763480_The_ACCESS_coupled_model_Description_control_climate_and_evaluation  # noqa: E501
 # Prefer ESM2M to ESM2G since it simulates surface climate better.
 # See: https://journals.ametsoc.org/view/journals/clim/25/19/jcli-d-11-00560.1.xml
@@ -207,7 +213,38 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 # See: https://noresm-docs.readthedocs.io/en/latest/start.html
 # Prefer UKESM to HadGEM because former is full earth system model
 # See: https://www.metoffice.gov.uk/research/approach/modelling-systems/new-flagship-climate-models  # noqa: E501
-MODELS_INSTITUTES = {
+INSTITUTES_ABBREVS = {  # map institute ids to more familiar model abbreviations
+    'CSIRO': 'CSIRO (AU)',  # 'ACCESS',  # Commonwealth Sci. + Ind. Research Org.
+    'BNU': 'BNU (CN)',  # Beijing N. University, China
+    'NCAR': 'NCAR (US)',  # 'CESM',  # National Center for Atmospheric Research, USA
+    'THU': 'THU (CN)',  # 'CIESM',  # Beijing Tsinghua University, China
+    'CAMS': 'CAMS (CN)',  # Chinese Academy of Meteorological Sciences, China
+    'CAS': 'CAS (CN)',  # 'FGOALS',  # Chinese Academy of Sciences, China
+    'CMCC': 'CMCC (IT)',  # 'CMCC-Esm',  # Cen. Euro-Med. Cambiamenti Climatici, Italy
+    'CNRM-CERFACS': 'CNRM (FR)',  # Cen. National de Recherches Meteorologiques, France
+    'CCCma': 'CCCma (CA)',  # 'CanESM',  # Can. Cen. Clim. Modelling + Analaysis, Canada
+    'E3SM-Project': 'E3SM (US)',  # various USA institutes
+    'EC-Earth-Consortium': 'EC-Earth (EU)',  # various European institutes
+    'NOAA': 'GFDL (US)',  # 'NOAA',  # Geophysical Fluid Dynamics Laboratory, USA
+    'NASA': 'GISS (US)',  # 'NASA',  # Goddard Institute for Space Studies, USA
+    'MOHC': 'MOHC (UK)',  # 'HadGEM',  # Met Office Hadley Centre, UK
+    'CCCR-IITM': 'IITM (IN)',  # Indian Institute of Tropical Meteorology, India
+    'INM': 'INM (RU)',  # Institute for Numerical Mathematics, Moscow
+    'IPSL': 'IPSL (FR)',  # Institut Pierre Simon Laplace, France
+    'KIOST': 'KIOST (KR)',  # Korea Institute of Ocean Science & Technology, Korea
+    'NIMS-KMA': 'KMA (KR)',  # 'KACE',  # Korea Meteorological Administration, Korea
+    'UA': 'UA (US)',  # 'MCM-UA',  # University of Arizonta, USA
+    'MIROC': 'MIROC (JP)',  # jaMstec/nIes/R-ccs/aOri Consortium, Japan
+    'MPI-M': 'MPI (DE)',  # 'MPI-ESM',  # Max Planck Institut, Germany
+    'MRI': 'MRI (JP)',  # Meteorological Research Institute, Japan
+    'NUIST': 'NUIST (CN)',  # 'NESM',  # Nanjing U. of Information Sci. and Tech., China
+    'NCC': 'NCC (NO)',  # 'NorESM',  # NorESM Climate modeling Consortium, Norway
+    'BCC': 'BCC (CN)',  # Beijing Climate Center, China
+    'AWI': 'AWI (DE)',  # Alfred Wegener Institute, Germany
+    'SNU': 'SNU (KR)',  # 'SAM',  # Seoul National University, Korea
+    'AS-RCEC': 'AS (TW)',  # 'AS',  # Taipei Academia Sinica, Taiwan
+}
+MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model last
     ('CMIP5', 'BNU-ESM'): 'BNU',
     ('CMIP5', 'CCSM4'): 'NCAR',
     ('CMIP5', 'CNRM-CM5'): 'CNRM-CERFACS',
@@ -274,6 +311,8 @@ MODELS_INSTITUTES = {
     ('CMIP6', 'INM-CM4-8'): 'INM',
     ('CMIP6', 'INM-CM5-0'): 'INM',  # latest version
     ('CMIP6', 'IPSL-CM6A-LR'): 'IPSL',
+    ('CMIP6', 'IPSL-CM6A-LR-INCA'): 'IPSL',  # NOTE: only found in zelika table
+    ('CMIP6', 'IPSL-CM5A2'): 'IPSL',  # NOTE: not yet found in anything
     ('CMIP6', 'IPSL-CM5A2-INCA'): 'IPSL',  # highest resolution
     ('CMIP6', 'KACE-1-0-G'): 'NIMS-KMA',
     ('CMIP6', 'KIOST-ESM'): 'KIOST',

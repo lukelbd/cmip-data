@@ -224,7 +224,8 @@ if download:
 # Filter the resulting wget files
 # NOTE: Skip EC-EARTH data since it has only partial availability... text file
 # on CEDA server seems to indicate a bunch of data was deleted and improperly
-# backed up and apparently no one else on the planet had copies.
+# backed up and apparently no one else on the planet had copies. For complete
+# errata of all CMIP5 data see: https://pcmdi.llnl.gov/mips/cmip5/errata.html
 # NOTE: Skip model-level cloud data for CNRM-CM6-1-HR since it is much larger than any
 # other source (4GB for 10 years of data compared to next highest of 2GB for 10 years
 # of HadGEM-31-MM data or 300MB to 1GB for 10 years of most other data -- files have
