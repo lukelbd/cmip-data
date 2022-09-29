@@ -495,7 +495,6 @@ def compute_climate(output=None, project=None, **inputs):
         each variable. The variables computed will depend on the variables passed.
     """
     # Load the data
-    # NOTE: Here open_file automatically populates the mapping MODELS_INSTITUTIONS
     # NOTE: Critical to overwrite the time coordinates after loading or else xarray
     # coordinate matching will apply all-NaN values for climatolgoies with different
     # base years (e.g. due to control data availability or response calendar diffs).
