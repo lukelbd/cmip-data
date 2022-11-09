@@ -25,22 +25,18 @@ from .internals import (
     _item_join,
     _item_parts,
 )
-from .utils import open_file, average_periods, average_regions
+from .utils import average_periods, average_regions, load_file
 
 __all__ = [
-    'clausius_clapeyron',
-    'compute_feedbacks',
+    'get_feedbacks',
     'process_feedbacks',
-    'retrieve_anomalies',
-    'retrieve_fluxes',
-    'retrieve_feedbacks',
 ]
 
 
 # Global constants
 # NOTE: Here 'n' stands for net (follows Angie convention). These variables are built
 # from the 'u' and 'd' components of cmip fluxes and to prefix the kernel-implied net
-# fluxes 'alb', 'pl', 'lr', 'hu', 'cl', and 'resid' in retrieve_fluxes.
+# fluxes 'alb', 'pl', 'lr', 'hu', 'cl', and 'resid' in _fluxes_from_anomalies.
 # NOTE: Here all-sky fluxes are used for albedo (follows Angie convention). This is
 # because several models are missing clear-sky surface shortwave fluxes and ratio
 # of upwelling to downwelling should be identical between components (although for some
@@ -82,16 +78,16 @@ VARIABLE_DEPENDENCIES = {
     'alb': ('rsus', 'rsds'),  # out of and into the surface
     'rlnt': ('rlut',),  # out of the atmosphere
     'rsnt': ('rsut',),  # out of the atmosphere (ignore constant rsdt)
-    'rlntcs': ('rlutcs',),  # out of the atmosphere
-    'rsntcs': ('rsutcs',),  # out of the atmosphere (ignore constant rsdt)
     'rlns': ('rlds', 'rlus'),  # out of and into the atmosphere
     'rsns': ('rsds', 'rsus'),  # out of and into the atmosphere
+    'rlntcs': ('rlutcs',),  # out of the atmosphere
+    'rsntcs': ('rsutcs',),  # out of the atmosphere (ignore constant rsdt)
     'rlnscs': ('rldscs', 'rlus'),  # out of and into the atmosphere
     'rsnscs': ('rsdscs', 'rsuscs'),  # out of and into the atmosphere
 }
 
 
-def _file_pairs(data, *args, printer=None):
+def _get_file_pairs(data, *args, printer=None):
     """
     Return a dictionary mapping of variables to ``(control, response)`` file
     pairs from a database of files with ``(experiment, ..., variable)`` keys.
@@ -109,6 +105,8 @@ def _file_pairs(data, *args, printer=None):
     """
     print = printer or builtins.print
     pairs = []
+    if len(args) != 4:
+        raise Exception('Exactly four input arguments required.')
     for experiment, suffix in zip(args[:2], args[2:]):
         paths = {
             var: [file for file in files if _item_dates(file) == suffix]
@@ -135,7 +133,7 @@ def _file_pairs(data, *args, printer=None):
     return pairs
 
 
-def clausius_clapeyron(ta, pa=None, liquid=True):
+def _get_clausius_scaling(ta, pa=None, liquid=True):
     r"""
     Return the inverse of the approximate change in the logarithm saturation specific
     humidity associated with a 1 Kelvin change in atmospheric temperature, defined as
@@ -220,7 +218,9 @@ def clausius_clapeyron(ta, pa=None, liquid=True):
     return scale
 
 
-def retrieve_anomalies(printer=None, project=None, dryrun=False, **inputs):
+def _anomalies_from_files(
+    project=None, select=None, dryrun=False, printer=None, **inputs,
+):
     """
     Return dataset containing response minus control anomalies for the variables given
     pairs of paths to its dependencies (e.g. ``'rlds'`` and ``'rlus'`` for ``'rlns'``).
@@ -231,10 +231,12 @@ def retrieve_anomalies(printer=None, project=None, dryrun=False, **inputs):
         Tuples of response and control paths for the dependencies by name.
     project : str, optional
         The project. Used in level checking.
-    printer : callable, default: `print`
-        The print function.
+    select : int, optional
+        The start and stop years for pattern effects.
     dryrun : bool, optional
         Whether to run with only three years of data.
+    printer : callable, default: `print`
+        The print function.
     """
     # Iterate over dependencies
     # NOTE: Since incoming solar is constant, and since all our regressions are
@@ -242,6 +244,12 @@ def retrieve_anomalies(printer=None, project=None, dryrun=False, **inputs):
     # out and we can just consider upwelling solar at the top-of-atmosphere.
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
+    select = select or (None, None)
+    start, stop = select
+    if start is not None:
+        start = int(start) * 12
+    if stop is not None:
+        stop = int(stop) * 12
     output = xr.Dataset()
     print('Calculating response minus control anomalies.')
     for variable, dependencies in VARIABLE_DEPENDENCIES.items():
@@ -257,13 +265,16 @@ def retrieve_anomalies(printer=None, project=None, dryrun=False, **inputs):
             )
             continue
         controls, responses = [], []
-        for dependency in dependencies:  # upwelling and downwelling component
-            control, response = inputs[dependency]  # control and response paths
+        for name in dependencies:  # upwelling and downwelling component
+            control, response = inputs[name]  # control and response paths
             for path, datas in zip((control, response), (controls, responses)):
                 path = Path(path).expanduser()
-                data = open_file(path, dependency, project=project, printer=print)
-                if dryrun:
-                    data = data.isel(time=slice(None, 36))
+                data = load_file(path, name, project=project, printer=print)
+                if data.sizes.get('time', 12) > 12:
+                    if dryrun:
+                        data = data.isel(time=slice(None, 36))
+                    if start is not None or stop is not None:
+                        data = data.isel(time=slice(start, stop))
                 data.name = variable
                 datas.append(data)
 
@@ -338,7 +349,7 @@ def retrieve_anomalies(printer=None, project=None, dryrun=False, **inputs):
     return output
 
 
-def retrieve_fluxes(anoms, kernels, printer=None):
+def _fluxes_from_anomalies(anoms, kernels, printer=None):
     """
     Return a dataset containing the actual radiative flux responses and the radiative
     flux responses implied by the radiative kernels and input anomaly data.
@@ -366,11 +377,11 @@ def retrieve_fluxes(anoms, kernels, printer=None):
     print('Calculating kernel-derived radiative fluxes.')
     plev = anoms.plev
     with xr.set_options(keep_attrs=True):
-        kernels = kernels.groupby('time.month').mean()  # see retrieve_anomalies notes
+        kernels = kernels.groupby('time.month').mean()  # see _anomalies_from_files
     levs = kernels.plev.values  # NESM3 abrupt-4xCO2 data contains missing levels
     if anoms.sizes.get('plev', np.inf) < kernels.sizes['plev']:
         levs = [lev for lev in levs if np.any(np.isclose(lev, plev.values))]
-    kernels = kernels.sel(plev=levs)  # note open_file() already restricts levels
+    kernels = kernels.sel(plev=levs)  # note load_file() already restricts levels
     kernels = kernels.climo.quantify()
     kernels = kernels.assign_coords(plev=plev)  # critical (see above)
 
@@ -422,7 +433,7 @@ def retrieve_fluxes(anoms, kernels, printer=None):
     print(f'Tropopause pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
     # pa = anoms.climo.coords.plev.climo.dequantify()
     ta = anoms.tapi.climo.dequantify()
-    scale = clausius_clapeyron(ta)  # clausius_clapeyron(ta, pa)
+    scale = _get_clausius_scaling(ta)  # _get_clausius_scaling(ta, pa)
     output['ts'] = anoms.ts.climo.dequantify()
     min_, max_, mean = scale.min().item(), scale.max().item(), scale.mean().item()
     del ta, base  # del pa, ta, base
@@ -604,7 +615,7 @@ def retrieve_fluxes(anoms, kernels, printer=None):
     return output
 
 
-def retrieve_feedbacks(fluxes, forcing=None, printer=None, **kwargs):
+def _feedbacks_from_fluxes(fluxes, forcing=None, printer=None, **kwargs):
     """
     Return a dataset containing feedbacks calculated along all `average_periods` periods
     (annual averages, seasonal averages, and month averages) and along all combinations
@@ -615,7 +626,7 @@ def retrieve_feedbacks(fluxes, forcing=None, printer=None, **kwargs):
     ----------
     fluxes : xarray.Dataset
         The source for the flux anomaly data. Should have been generated
-        in `retrieve_fluxes` using standardized radiative kernel data.
+        in `_fluxes_from_anomalies` using standardized radiative kernel data.
     forcing : path-like, optional
         Source for the forcing data. If passed then the time-average anomalies are
         used rather than regressions. This can be used with response-climate data.
@@ -693,7 +704,6 @@ def retrieve_feedbacks(fluxes, forcing=None, printer=None, **kwargs):
         # Get the components and possibly adjust for forcing masking
         # NOTE: Soden et al. (2008) used standard horizontally uniform value of 15%
         # the full forcing but no reason not to use regressed forcing estimates.
-        mask = None  # ensure exists
         numer = fluxes[name]  # pointwise radiative flux
         denom = denoms.sel(region=region)  # possibly averaged temperature
         component = 'net' if component == '' else component
@@ -713,6 +723,9 @@ def retrieve_feedbacks(fluxes, forcing=None, printer=None, **kwargs):
 
         # Perform the regression or division
         # See: https://en.wikipedia.org/wiki/Simple_linear_regression
+        # NOTE: When forcing is provided time-varying input will produce time-varying
+        # feedbacks similar to Armour 2015 or just simple scalar values if data is
+        # already time-averaged. When not provided time coordinate is required.
         # NOTE: Previously did separate regressions with and without intercept...
         # but piControl regressions are *always* centered on origin because they
         # are deviations from the average by *construction*. So unnecessary.
@@ -722,10 +735,12 @@ def retrieve_feedbacks(fluxes, forcing=None, printer=None, **kwargs):
             erf = forcing[f'{name}_erf'].sel(region=region, drop=True)
             erf = erf.climo.quantify()
             lam = (numer - 2.0 * erf) / denom  # time already averaged
-        else:
+        elif 'time' in numer.sizes:
             nm, dm = numer.mean('time', skipna=False), denom.mean('time', skipna=False)
             lam = ((denom - dm) * (numer - nm)).sum('time') / ((denom - dm) ** 2).sum('time')  # noqa: E501
             erf = 0.5 * (nm - lam * dm)  # possibly zero minus zero
+        else:
+            raise ValueError('Time coordinate required for slope-style feedbacks.')
         del numer, denom
         gc.collect()
 
@@ -751,7 +766,7 @@ def retrieve_feedbacks(fluxes, forcing=None, printer=None, **kwargs):
             min_, max_, mean = erf.min().item(), erf.max().item(), erf.mean().item()
             print(format(f'  {component} erf:', ' <12s'), end=' ')
             print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
-        del erf, lam, mask
+        del erf, lam
         gc.collect()
 
     # Concatenate result along 'region' axis
@@ -782,12 +797,14 @@ def retrieve_feedbacks(fluxes, forcing=None, printer=None, **kwargs):
     return output
 
 
-def compute_feedbacks(
+def get_feedbacks(
     feedbacks='~/data',
     fluxes='~/data',
     kernels='~/data',
-    ratio=None,
+    select=None,
+    response=None,
     source=None,
+    ratio=None,
     project=None,
     experiment=None,
     ensemble=None,
@@ -812,12 +829,18 @@ def compute_feedbacks(
         The flux directory (subfolder ``{project}-{experiment}-feedbacks`` is used).
     kernels : path-like, optional
         The kernel data directory (subfolder ``cmip-kernels`` is used).
-    ratio : bool, optional
-        Whether to compute feedbacks with a ratio of a regression. The latter is
-        only possible with abrupt response data where there is timescale separation.
+    select : 2-tuple of int, optional
+        The start and stop years. Used in the output file name. If relevant the anomaly
+        data is filtered to these years using ``.isel(slice(12 * start, 12 * stop))``.
+    response : 2-tuple of int, optional
+        The full start and stop years for the source data. Used to help load from
+        flux files containing a superset of data required for feedback estimates.
     source : str, default: 'eraint'
         The source for the kernel data (e.g. ``'eraint'``). This searches for files
         in the `kernels` directory formatted as ``kernels_{source}.nc``.
+    ratio : bool, optional
+        Whether to compute feedbacks with a ratio of a regression. The latter is
+        only possible with abrupt response data where there is timescale separation.
     **inputs : tuple of path-like lists
         Tuples of ``(control_inputs, response_inputs)`` for the variables
         required to compute the feedbacks, passed as keyword arguments for
@@ -884,24 +907,27 @@ def compute_feedbacks(
     # is loaded as a time series while latter is loaded as climate averages.
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
+    select = select or (0, 150)
+    response = response or (0, 150)
     source = source or 'eraint'
     statistic = 'ratio' if ratio else 'slope'
-    folder = _item_join((project, experiment, 'feedbacks'))
-    file = _item_join(
-        'feedbacks', table, model, experiment, ensemble,
-        (source, statistic, nodrift and 'nodrift' or ''),
-        modify=False
-    ) + '.nc'
-    feedbacks = Path(feedbacks).expanduser() / folder / file
-    feedbacks.parent.mkdir(exist_ok=True)
-    folder = _item_join((project, experiment, 'fluxes'))
-    file = _item_join(
-        'fluxes', table, model, experiment, ensemble,
-        (source, statistic, nodrift and 'nodrift'),
-        modify=False
-    ) + '.nc'
-    fluxes = Path(fluxes).expanduser() / folder / file
-    fluxes.parent.mkdir(exist_ok=True)
+    nodrift = nodrift and 'nodrift' or ''
+    outputs = []
+    subfolder = _item_join((project, experiment, table))
+    tuples = (  # try to load from parent flux file if possible
+        (fluxes, 'fluxes', select),
+        (fluxes, 'fluxes', response),
+        (feedbacks, 'feedbacks', select),
+    )
+    for folder, prefix, times in tuples:
+        file = _item_join(
+            prefix, table, model, experiment, ensemble,
+            (*(format(int(t), '04d') for t in times), source, statistic, nodrift),
+            modify=False
+        ) + '.nc'
+        path = Path(folder).expanduser() / subfolder / file
+        path.parent.mkdir(exist_ok=True)
+        outputs.append(path)
     if message := ', '.join(
         f'{variable}={paths}' for variable, paths in inputs.items()
         if not isinstance(paths, (tuple, list))
@@ -910,26 +936,42 @@ def compute_feedbacks(
         raise TypeError(f'Unexpected kwargs {message}. Must be 2-tuple of paths.')
 
     # Load kernels and cimpute flux components and feedback estimates
-    # NOTE: Try to permit updating feedback conventions from expensive flux component
-    # calculations, but never record new flux data potentially inconsistent with saved
-    # feedback data, so always overwrite if at least flux data is missing.
+    # NOTE: Try to load from same fluxes files for feedbacks estimated from subset
+    # of full time series to avoid duplicating expensive calculations.
+    # NOTE: Always overwrite if at least flux data is missing so that we never have
+    # feedback data inconsistent with the flux data on storage.
     # NOTE: Even for kernel-derived flux responses, rapid adjustments and associated
     # pattern effects may make the effective radiative forcing estimate non-zero (see
     # Andrews et al.) so we always save the regression intercept data.
-    fluxes_exist = fluxes.is_file() and fluxes.stat().st_size > 0
+    *fluxes, feedbacks = outputs
+    fluxes_exist = tuple(flux.is_file() and flux.stat().st_size > 0 for flux in fluxes)
     feedbacks_exist = feedbacks.is_file() and feedbacks.stat().st_size > 0
-    overwrite = overwrite or feedbacks_exist and not fluxes_exist
-    output = fluxes  # use the name 'fluxes' for dataset
-    print(f'Output flux file: {output.name}')
-    if not overwrite and not dryrun and fluxes_exist:
+    overwrite = overwrite or feedbacks_exist and not any(fluxes_exist)
+    if not overwrite and not dryrun and any(fluxes_exist):
+        output = fluxes[0] if fluxes_exist[0] else fluxes[1]
         print(f'Loading flux data from file: {output.name}')
-        fluxes = open_file(output, validate=False)
-    else:
+        fluxes = load_file(output, validate=False)
+        if not fluxes_exist[0]:  # must subselect from loaded data
+            init, start, stop = *response[:1], *select
+            if init is not None:
+                init = int(init) * 12
+            if start is not None:
+                start = int(start) * 12
+            if stop is not None:
+                stop = int(stop) * 12
+            if init is not None:
+                start, stop = start - init, stop - init  # convert to relative years
+            if fluxes.sizes.get('time', 12) > 12:
+                fluxes = fluxes.isel(time=slice(start, stop))
+    else:  # here _anomalies_from_files will filter time selection
+        output = fluxes[0]  # fluxes[1] only used as a source; saved file is fluxes[0]
+        print(f'Output flux file: {output.name}')
         kernels = Path(kernels).expanduser() / 'cmip-kernels' / f'kernels_{source}.nc'
         print(f'Loading kernel data from file: {kernels.name}')
-        kernels = open_file(kernels, project=project, validate=False)
-        anoms = retrieve_anomalies(project=project, printer=print, dryrun=dryrun, **inputs)  # noqa: E501
-        fluxes = retrieve_fluxes(anoms, kernels=kernels, printer=print)
+        kernels = load_file(kernels, project=project, validate=False)
+        kwargs = dict(select=select, project=project, dryrun=dryrun)
+        anoms = _anomalies_from_files(printer=print, **kwargs, **inputs)
+        fluxes = _fluxes_from_anomalies(anoms, kernels=kernels, printer=print)
         for dataset in (anoms, kernels):
             dataset.close()
         if not dryrun:  # save after compressing repeated values
@@ -937,19 +979,20 @@ def compute_feedbacks(
             output.unlink(missing_ok=True)
             fluxes.to_netcdf(output, engine='netcdf4', encoding=encoding)
             print(f'Created output file: {output.name}')
-    output = feedbacks  # use the name 'feedbacks' for dataset
-    print(f'Output feedback file: {output.name}')
     if not overwrite and not dryrun and feedbacks_exist:
+        output = feedbacks
         print(f'Loading feedback data from file: {output.name}')
-        feedbacks = open_file(output, validate=False)
+        feedbacks = load_file(output, validate=False)
     else:
+        output = feedbacks  # use the name 'feedbacks' for dataset
+        print(f'Output feedback file: {output.name}')
         if ratio:
             forcing = output.parent / output.name.replace('ratio', 'slope')
             print(f'Loading forcing data from file: {forcing.name}')
-            forcing = open_file(forcing, project=project, validate=False)
+            forcing = load_file(forcing, project=project, validate=False)
         else:
             forcing = None
-        feedbacks = retrieve_feedbacks(fluxes, forcing=forcing, printer=print)
+        feedbacks = _feedbacks_from_fluxes(fluxes, forcing=forcing, printer=print)
         if forcing:
             forcing.close()
         if not dryrun:  # save after compressing repeated values
@@ -964,7 +1007,6 @@ def process_feedbacks(
     *paths,
     ratio=None,
     source=None,
-    series=None,
     control=None,
     response=None,
     experiment=None,
@@ -972,6 +1014,7 @@ def process_feedbacks(
     nodrift=False,
     logging=False,
     dryrun=False,
+    nowarn=False,
     **kwargs
 ):
     """
@@ -985,11 +1028,9 @@ def process_feedbacks(
         Whether to use ratio feedbacks.
     source : str, default: 'eraint'
         The source for the kernels.
-    series : 2-tuple of int, default: (0, 150)
-        The year range for the "response" time series data.
     control : 2-tuple of int, default: (0, 150)
         The year range for the ``piControl`` climate data.
-    response : 2-tuple of int, default: (120, 150)
+    response : 2-tuple of int, default: (0, 150) or (120, 150)
         The year range for the "response" climate data.
     experiment : str, optional
         The experiment to use for the "response" data.
@@ -1001,8 +1042,10 @@ def process_feedbacks(
         Whether to build a custom logger.
     dryrun : bool, optional
         Whether to run with only three years of data.
+    nowarn : bool, optional
+        Whether to always raise errors instead of warnings.
     **kwargs
-        Passed to `compute_feedbacks`.
+        Passed to `get_feedbacks`.
     """
     # Find files and restrict to unique constraints
     # NOTE: This requires flagship translation or else models with different control
@@ -1015,23 +1058,28 @@ def process_feedbacks(
     statistic = 'ratio' if ratio else 'slope'
     experiment = experiment or 'abrupt4xCO2'
     source = source or 'eraint'
-    series = series or (0, 150)
     control = control or (0, 150)
-    response = response or (120, 150)
+    if ratio:  # ratio-type
+        response = response or (120, 150)
+        response, select, string = response, response, 'climate'
+    else:  # NOTE: get anomaly data from time series file matching control years
+        response = response or (0, 150)
+        response, select, string = control, response, 'series'
     nodrift = 'nodrift' if nodrift else ''
     suffix = nodrift and '-' + nodrift
-    parts = ('feedbacks', experiment, source, statistic, nodrift)
-    print = Logger('summary', *parts, project=project) if logging else builtins.print
     control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
-    if ratio:  # ratio-type
-        response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
+    response_suffix = f'{response[0]:04d}-{response[1]:04d}-{string}{suffix}'
+    suffixes = (*(format(int(t), '04d') for t in select), source, statistic, nodrift)
+    if logging:
+        print = Logger('feedbacks', *suffixes, project=project, experiment=experiment, table='Amon')  # noqa: E501
     else:
-        response_suffix = f'{series[0]:04d}-{series[1]:04d}-series{suffix}'
+        print = builtins.print
     print('Generating database.')
     constraints = {
         'project': project,
         'variable': sorted(set(k for d in VARIABLE_DEPENDENCIES.values() for k in d)),
         'experiment': ['piControl', experiment],
+        'table': 'Amon',
     }
     constraints.update({
         key: kwargs.pop(key) for key in tuple(kwargs)
@@ -1064,7 +1112,7 @@ def process_feedbacks(
         print()
         print(f'Computing {statistic} feedbacks:')
         print(', '.join(f'{key}: {value}' for key, value in group.items()))
-        files = _file_pairs(
+        files = _get_file_pairs(
             data,
             control_experiment,
             response_experiment,
@@ -1073,12 +1121,14 @@ def process_feedbacks(
             printer=print,
         )
         try:
-            datasets = compute_feedbacks(
+            datasets = get_feedbacks(
                 project=group['project'],
                 experiment=_item_parts['experiment'](tuple(files.values())[0][1]),
                 ensemble=_item_parts['ensemble'](tuple(files.values())[0][1]),
                 table=_item_parts['table'](tuple(files.values())[0][1]),
                 model=group['model'],
+                select=select,
+                response=response,
                 ratio=ratio,
                 source=source,
                 nodrift=nodrift,
@@ -1090,7 +1140,7 @@ def process_feedbacks(
             for dataset in datasets:
                 dataset.close()
         except Exception as error:
-            if dryrun:
+            if dryrun or nowarn:
                 raise error
             else:
                 _print_error(error)

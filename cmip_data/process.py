@@ -278,6 +278,7 @@ def process_files(
     overwrite=False,
     logging=False,
     dryrun=False,
+    nowarn=False,
     **kwargs,
 ):
     """
@@ -305,6 +306,8 @@ def process_files(
         Whether to build a custom logger.
     dryrun : bool, optional
         Whether to only print time information and exit.
+    nowarn : bool, optional
+        Whether to always raise errors instead of warnings.
     **kwargs
         Passed to `standardize_time`, `standardize_vertical`, `standardize_horizontal`.
     **constraints
@@ -376,7 +379,10 @@ def process_files(
         try:
             repair_files(*files, dryrun=dryrun, printer=print)
         except Exception as error:
-            _print_error(error)
+            if nowarn:
+                raise error
+            else:
+                _print_error(error)
             print('Warning: Failed to standardize attributes.\n')
             continue
         updated = not overwrite and out.is_file() and (
@@ -385,7 +391,10 @@ def process_files(
         try:
             standardize_time(*files, output=time, dryrun=dryrun or updated, **kwtime, **kw)  # noqa: E501
         except Exception as error:
-            _print_error(error)
+            if nowarn:
+                raise error
+            else:
+                _print_error(error)
             print('Warning: Failed to standardize temporally.\n')
             continue
         if updated:
@@ -404,7 +413,10 @@ def process_files(
             try:
                 standardize_vertical(time, output=vert, **kwvert, **kw)
             except Exception as error:
-                _print_error(error)
+                if nowarn:
+                    raise error
+                else:
+                    _print_error(error)
                 print('Warning: Failed to standardize vertically.\n')
                 continue
         if not horizontal:
@@ -413,7 +425,10 @@ def process_files(
             try:
                 standardize_horizontal(vert, output=hori, **kwhori, **kw)
             except Exception as error:
-                _print_error(error)
+                if nowarn:
+                    raise error
+                else:
+                    _print_error(error)
                 print('Warning: Failed to standardize horizontally.\n')
                 continue
         hori.replace(out)
@@ -909,7 +924,7 @@ def standardize_time(
     ymin, ymax = min(ys[0] for ys in years), max(ys[1] for ys in years)
     print(f'Initial year range: {ymin}-{ymax} ({len(years)} files)')
     rmin, rmax = kwtime.pop('years')  # relative years
-    ymin, ymax = ymin + rmin, ymin + rmax - 1  # e.g. (0, 50) is 49 years
+    ymin, ymax = ymin + rmin, ymin + rmax - 1  # e.g. (0, 50) is up to year 49
     inputs = {}
     for ys, path in zip(years, paths):
         if ys[0] > ymax or ys[1] < ymin:

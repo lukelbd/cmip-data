@@ -204,11 +204,11 @@ if download:
             projects = ('CMIP6', 'CMIP5')
         for project in projects:
             if kwargs is kw_dependencies:
-                folder = '~/scratch2/data-dependencies'
+                folder = '~/scratch2/cmip-dependencies'
             elif project == 'CMIP5':
-                folder = '~/scratch2'
+                folder = '~/scratch2/cmip-downloads'
             else:
-                folder = '~/scratch5'
+                folder = '~/scratch5/cmip-downloads'
             script = cmip_data.download_script(
                 folder,
                 node='llnl',
@@ -256,11 +256,11 @@ if filter:
             elif kwargs is kw_constraints:
                 exclude.append({'model': 'CNRM-CM6-1-HR', 'variable': ['cl', 'clw', 'cli']})  # noqa: E501
             if kwargs is kw_dependencies:
-                folder = '~/scratch2/data-dependencies'
+                folder = '~/scratch2/cmip-dependencies'
             elif project == 'CMIP5':
-                folder = '~/scratch2'
+                folder = '~/scratch2/cmip-downloads'
             else:
-                folder = '~/scratch5'
+                folder = '~/scratch5/cmip-downloads'
             scripts = cmip_data.filter_script(
                 folder,
                 maxyears=150,
@@ -301,24 +301,25 @@ if process:
                 if not climate:
                     experiments.clear()
                 if project == 'CMIP5':
-                    folder = '~/scratch2'
+                    folder = '~/scratch2/cmip-downloads'
                 else:
-                    folder = '~/scratch5'
+                    folder = '~/scratch5/cmip-downloads'
                 for experiment, years in experiments.items():
                     kw = {**kwargs, 'experiment': experiment}
                     cmip_data.process_files(
                         folder,
-                        output='~/scratch2/data-processed',
-                        search='~/scratch2/data-dependencies',
+                        output='~/scratch2/cmip-processed',  # climate in data
+                        search='~/scratch2/cmip-dependencies',
                         method='gencon',
                         years=years,
                         climate=True,
                         nodrift=nodrift,
-                        overwrite=False,  # TODO: change back
-                        dryrun=False,
                         flagship_filter=True,
                         project=project,
+                        overwrite=False,  # TODO: change back
                         logging=True,
+                        dryrun=False,
+                        nowarn=False,
                         **kw,
                     )
                 experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
@@ -330,18 +331,19 @@ if process:
                     kw = {**kwargs, 'experiment': experiment}
                     cmip_data.process_files(
                         folder,
-                        output='~/scratch2/data-processed',
-                        search='~/scratch2/data-dependencies',
+                        output='~/scratch2/cmip-processed',  # time series in scratch
+                        search='~/scratch2/cmip-dependencies',
                         constants='~/scratch2',
                         method='gencon',
                         years=years,
                         climate=False,
                         nodrift=nodrift,
                         flagship_filter=True,
-                        overwrite=False,  # TODO: change back
                         project=project,
+                        overwrite=False,  # TODO: change back
                         logging=True,  # ignored if dryrun true
                         dryrun=False,
+                        nowarn=False,
                         **kw,
                     )
 
@@ -401,8 +403,8 @@ if process:
 #   rsutcs: MCM-UA-1-0
 if summarize:
     for project in ('cmip6', 'cmip5'):
-        folders_downloads = ('~/scratch2', '~/scratch5')
-        folders_processed = ('~/scratch2/data-processed', '~/data')
+        folders_downloads = ('~/scratch2/cmip-downloads', '~/scratch5/cmip-downloads')
+        folders_processed = ('~/scratch2/cmip-processed', '~/data/cmip-climate')
         cmip_data.summarize_downloads(
             *folders_downloads,
             project=project,
@@ -420,10 +422,9 @@ if summarize:
             flagship_translate=True,
         )
 
-
 # Temporary calls
 # Place re-processing steps for individual files here
-# if True:
+# if False:
 #     folder = '~/scratch2'
 #     kwargs = {
 #         'project': 'CMIP5',
@@ -440,7 +441,7 @@ if summarize:
 #         cmip_data.process_files(
 #             folder,
 #             output='~/data',
-#             search='~/scratch2/data-dependencies',
+#             search='~/scratch2/cmip-dependencies',
 #             method='gencon',
 #             years=years,
 #             climate=True,
@@ -452,7 +453,7 @@ if summarize:
 #         kw = {**kwargs, 'experiment': experiment}
 #         cmip_data.process_files(
 #             folder,
-#             output='~/scratch2/data-processed',
+#             output='~/scratch2/cmip-processed',
 #             years=years,
 #             climate=False,
 #             flagship_filter=True,

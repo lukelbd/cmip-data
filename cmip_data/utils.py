@@ -12,9 +12,9 @@ from icecream import ic  # noqa: F401
 from .internals import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
 
 __all__ = [
-    'open_file',
     'average_periods',
     'average_regions',
+    'load_file',
 ]
 
 
@@ -164,11 +164,11 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
     return output
 
 
-def open_file(
+def load_file(
     path, variable=None, validate=True, project=None, printer=None, demote=True,
 ):
     """
-    Open an output dataset and repair possible coordinate issues.
+    Load an output dataset and repair possible coordinate issues.
 
     Parameters
     ----------
@@ -211,9 +211,9 @@ def open_file(
             raise ValueError(f'Invalid {project=} for determining levels.')
         levs = [levels[idx.item()] for p in plev if len(idx := np.where(np.isclose(p, levels))[0])]  # noqa: E501
         levs = xr.DataArray(levs, name='plev', dims='plev', attrs=dataset.plev.attrs)
-        extra = [p for p in plev if not np.any(np.isclose(p, levels))]
+        drop = [p for p in plev if not np.any(np.isclose(p, levels))]
         missing = [p for p in levels if not np.any(np.isclose(p, plev))]
-        dataset = dataset.drop_sel(plev=extra)  # no message since this is common
+        dataset = dataset.drop_sel(plev=drop)  # no message since this is common
         dataset = dataset.assign_coords(plev=levs)  # retain original attributes
         if message := ', '.join(format(p / 100, '.0f') for p in missing):
             print(
@@ -277,8 +277,8 @@ def open_file(
         array = test = dataset[name]
         if 'bnds' in array.sizes or 'bounds' in array.sizes:
             continue
-        if 'time' in array.sizes:
-            test = array.mean('time')
+        if 'time' in array.sizes:  # TODO: ensure robust to individual timesteps
+            test = array.isel(time=0)
         min_, max_ = test.min().item(), test.max().item()
         pmin, pmax, *_ = ranges[name]
         skip_range = name == 'rsut' and model == 'MCM-UA-1-0'

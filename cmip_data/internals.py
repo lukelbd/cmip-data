@@ -134,7 +134,7 @@ FACETS_DOTNAMES = {
     ('CMIP5', 'bcc-csm1-1'): 'BCC-CSM1.1',
     ('CMIP5', 'inmcm4'): 'INM-CM4',
 }
-FACETS_LONGNAMES = {
+FACETS_KEYNAMES = {
     ('CMIP5', 'table'): 'cmor_table',
     ('CMIP5', 'institution'): 'institute',
     ('CMIP5', 'frequency'): 'time_frequency',
@@ -213,7 +213,7 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 # See: https://noresm-docs.readthedocs.io/en/latest/start.html
 # Prefer UKESM to HadGEM because former is full earth system model
 # See: https://www.metoffice.gov.uk/research/approach/modelling-systems/new-flagship-climate-models  # noqa: E501
-INSTITUTES_ABBREVS = {  # map institute ids to more familiar model abbreviations
+INSTITUTES_LABELS = {  # map institute ids to more familiar model abbreviations
     'CSIRO': 'CSIRO (AU)',  # 'ACCESS',  # Commonwealth Sci. + Ind. Research Org.
     'BNU': 'BNU (CN)',  # Beijing N. University, China
     'NCAR': 'NCAR (US)',  # 'CESM',  # National Center for Atmospheric Research, USA
@@ -594,8 +594,8 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
     renames = FACETS_RENAMES
     dotnames_encode = FACETS_DOTNAMES  # convert dash names to dot names
     dotnames_decode = {(_, dotname): name for (_, name), dotname in dotnames_encode.items()}  # noqa: E501
-    longnames_encode = FACETS_LONGNAMES  # convert short names to long names
-    longnames_decode = {(_, long): short for (_, short), long in longnames_encode.items()}  # noqa: E501
+    keynames_encode = FACETS_KEYNAMES  # convert short names to long names
+    keynames_decode = {(_, long): short for (_, short), long in keynames_encode.items()}  # noqa: E501
     projects = constraints.setdefault('project', ['CMIP6'])
     if len(projects) != 1:
         raise NotImplementedError('Non-scalar projects are not supported.')
@@ -605,7 +605,7 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
         *(facet for facet in constraints if facet not in SORT_FACETS),  # retain order
     )
     constraints = {
-        (longnames_decode if reverse else longnames_encode)  # facet translations
+        (keynames_decode if reverse else keynames_encode)  # facet translations
         .get((project, facet), facet):
         _sort_facet(
             (
@@ -616,7 +616,7 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
                 )
                 for opt in constraints[facet]
             ),
-            longnames_decode.get((project, facet), facet)  # need standard name here
+            keynames_decode.get((project, facet), facet)  # need standard name here
         )
         for facet in facets
     }
