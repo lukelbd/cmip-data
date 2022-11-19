@@ -31,7 +31,7 @@ if climate:
             for project in projects:
                 cmip_data.process_climate(
                     '~/scratch2/cmip-processed',  # source climate location
-                    climate='~/data',  # output feedback location
+                    climate='~/data/cmip-climate',  # output feedback location
                     source='eraint',
                     project=project,
                     experiment=experiment,
@@ -52,15 +52,15 @@ if feedbacks:
     nodrifts = (False,)
     # nodrifts = (False, True)
     for nodrift in nodrifts:
-        experiments = (
-            # ('piControl', False, (0, 150)),  # regression of series
-            # ('abrupt4xCO2', False, (0, 150)),  # regression of series
-            # ('abrupt4xCO2', False, (120, 150)),  # ratio of anomalies
+        tuples = (
+            ('piControl', False, (0, 150)),  # regression of series
+            ('abrupt4xCO2', False, (0, 150)),  # regression of series
+            ('abrupt4xCO2', True, (120, 150)),  # ratio of anomalies
             ('abrupt4xCO2', False, (0, 20)),  # regression of series
             ('abrupt4xCO2', False, (20, 150)),  # regression of series
-            # ('abrupt4xco2', False, (0, 50)),  # regression of series
+            ('abrupt4xCO2', False, (0, 50)),  # regression of series
         )
-        for experiment, ratio, response in experiments:
+        for experiment, ratio, response in tuples:
             projects = ('CMIP6', 'CMIP5')
             # projects = ('CMIP5',)
             for project in projects:
@@ -69,8 +69,8 @@ if feedbacks:
                     '~/scratch2/cmip-processed',  # source climate location
                     '~/scratch2/cmip-processed',  # source series location
                     fluxes='~/scratch2/cmip-fluxes',  # intermediate flux location
-                    kernels='~/data',  # dependency kernels location
-                    feedbacks='~/data',  # output feedback location
+                    kernels='~/data/cmip-kernels',  # dependency kernels location
+                    feedbacks='~/data/cmip-feedbacks',  # output feedback location
                     source='eraint',
                     ratio=ratio,
                     response=response,

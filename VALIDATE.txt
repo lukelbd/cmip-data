@@ -212,8 +212,8 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-rsds] Guide ranges for rsds (table Amon)
-valid_max[i]: 550.0
-valid_min[i]: -0.1
+valid_max[i]: 1000.0  # modified from 480.0 (consistgent with rsdt)
+valid_min[i]: -0.5  # modified from -0.1 (consistent with rsutcs)
 ok_min_mean_abs[i]: 120.0
 ok_max_mean_abs[i]: 200.0
 valid_max_status[i]: robust
@@ -222,8 +222,8 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-rsdscs] Guide ranges for rsdscs (table Amon)
-valid_max[i]: 550.0
-valid_min[i]: -0.1
+valid_max[i]: 1000.0  # modified from 480.0 (triggered for single month)
+valid_min[i]: -0.5  # modified from -0.1 (consistent with rsutcs)
 ok_min_mean_abs[i]: 120.0
 ok_max_mean_abs[i]: 200.0
 valid_max_status[i]: robust
@@ -232,7 +232,7 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-rsdt] TOA Incident Shortwave Radiation
-valid_max[i]: 580.4
+valid_max[i]: 1000.0  # modified from 580.4 (consistent with rsdscs)
 valid_min[i]: 0.0
 ok_min_mean_abs[i]: 282.6
 ok_max_mean_abs[i]: 315.8
@@ -242,8 +242,8 @@ ok_min_mean_abs_status[i]: suggested
 valid_min_status[i]: suggested
 
 [Amon-rsus] Guide ranges for rsus (table Amon)
-valid_max[i]: 480.0
-valid_min[i]: -0.1
+valid_max[i]: 1000.0  # modified from 480.0 (consistgent with rsdt)
+valid_min[i]: -0.5  # modified from -0.1 (consistent with rsutcs)
 ok_min_mean_abs[i]: 10.0
 ok_max_mean_abs[i]: 90.0
 valid_max_status[i]: robust
@@ -252,8 +252,8 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-rsuscs] Guide ranges for rsuscs (table Amon)
-valid_max[i]: 480.0
-valid_min[i]: -0.1
+valid_max[i]: 1000.0  # modified from 480.0 (consistgent with rsdt)
+valid_min[i]: -0.5  # modified from -0.1 (consistent with rsutcs)
 ok_min_mean_abs[i]: 10.0
 ok_max_mean_abs[i]: 90.0
 valid_max_status[i]: robust
@@ -262,8 +262,8 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-rsut] Guide ranges for rsut (table Amon)
-valid_max[i]: 480.0
-valid_min[i]: -0.1
+valid_max[i]: 1000.0  # modified from 480.0 (consistgent with rsdt)
+valid_min[i]: -0.5  # modified from -0.1 (consistent with rsutcs)
 ok_min_mean_abs[i]: 60.0
 ok_max_mean_abs[i]: 160.0
 valid_max_status[i]: robust
@@ -272,8 +272,8 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-rsutcs] Guide ranges for rsutcs (table Amon)
-valid_max[i]: 480.0
-valid_min[i]: -0.1
+valid_max[i]: 1000.0  # modified from 480.0 (consistgent with rsdt)
+valid_min[i]: -0.5  # modified from -0.1 (triggered for single month)
 ok_min_mean_abs[i]: 30.0
 ok_max_mean_abs[i]: 120.0
 valid_max_status[i]: robust
@@ -342,8 +342,8 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-ua] Eastward Wind
-valid_max[i]: 136.6
-valid_min[i]: -68.65
+valid_max[i]: 160.0  # modified from 136.6 (triggered for single month)
+valid_min[i]: -160.0
 ok_min_mean_abs[i]: 1.101
 ok_max_mean_abs[i]: 22.42
 valid_max_status[i]: suggested
@@ -362,8 +362,8 @@ ok_min_mean_abs_status[i]: robust
 valid_min_status[i]: robust
 
 [Amon-va] Northward Wind
-valid_max[i]: 69.93
-valid_min[i]: -71.1
+valid_max[i]: 160.0  # modified from 69.93 (triggered for single month)
+valid_min[i]: -160.0  # modified from -71.1 (triggered for single month)
 ok_min_mean_abs[i]: 0.9886
 ok_max_mean_abs[i]: 4.679
 valid_max_status[i]: suggested

@@ -244,8 +244,7 @@ def _anomalies_from_files(
     # out and we can just consider upwelling solar at the top-of-atmosphere.
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
-    select = select or (None, None)
-    start, stop = select
+    start, stop = select or (None, None)
     if start is not None:
         start = int(start) * 12
     if stop is not None:
@@ -270,11 +269,12 @@ def _anomalies_from_files(
             for path, datas in zip((control, response), (controls, responses)):
                 path = Path(path).expanduser()
                 data = load_file(path, name, project=project, printer=print)
-                if data.sizes.get('time', 12) > 12:
-                    if dryrun:
-                        data = data.isel(time=slice(None, 36))
-                    if start is not None or stop is not None:
-                        data = data.isel(time=slice(start, stop))
+                if data.sizes.get('time', 12) <= 12:
+                    pass
+                elif dryrun:
+                    data = data.isel(time=slice(None, 36))
+                elif start is not None or stop is not None:
+                    data = data.isel(time=slice(start, stop))
                 data.name = variable
                 datas.append(data)
 
@@ -434,10 +434,10 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     # pa = anoms.climo.coords.plev.climo.dequantify()
     ta = anoms.tapi.climo.dequantify()
     scale = _get_clausius_scaling(ta)  # _get_clausius_scaling(ta, pa)
-    output['ts'] = anoms.ts.climo.dequantify()
     min_, max_, mean = scale.min().item(), scale.max().item(), scale.mean().item()
     del ta, base  # del pa, ta, base
     print(f'Clausius-Clapeyron range: min {min_:.2f} max {max_:.2f} mean {mean:.2f}')
+    output['ts'] = anoms.ts.climo.dequantify()
 
     # Iterate over flux components
     # NOTE: Here cloud feedback comes about from change in cloud radiative forcing (i.e.
@@ -615,7 +615,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     return output
 
 
-def _feedbacks_from_fluxes(fluxes, forcing=None, printer=None, **kwargs):
+def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **kwargs):
     """
     Return a dataset containing feedbacks calculated along all `average_periods` periods
     (annual averages, seasonal averages, and month averages) and along all combinations
@@ -630,10 +630,12 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, printer=None, **kwargs):
     forcing : path-like, optional
         Source for the forcing data. If passed then the time-average anomalies are
         used rather than regressions. This can be used with response-climate data.
+    pattern : bool, optional
+        Whether to include the local temperature pattern term in the output dataset.
     printer : callable, default: `print`
         The print function.
     **kwargs
-        Passed to `average_periods`.
+        Passed to `average_periods` and `average_regions`.
     """
     # Load data and perform averages
     # NOTE: Need to extract 'plev' top and bottom because for some reason they get
@@ -669,6 +671,8 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, printer=None, **kwargs):
         # Get the flux names
         # NOTE: Here if a component has no 'dependencies' it does not
         # exist so skip (e.g. temperature shortwave).
+        if region not in denoms.region.values:
+            continue
         if wavelength == 'full' and component == '':
             print(f'Calculating {region} {boundary} forcing and feedback.')
         if wavelength == 'full' and component == '' and boundary == 'TOA':
@@ -771,6 +775,7 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, printer=None, **kwargs):
 
     # Concatenate result along 'region' axis
     # NOTE: This should have skipped impossible combinations
+    print('Concatenating feedback regions.')
     coord = xr.DataArray(
         list(outputs),
         dims='region',
@@ -786,6 +791,23 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, printer=None, **kwargs):
     output.attrs['title'] = (
         f'{statistic}-derived forcing-feedback decompositions'
     )
+
+    # Add remaining dependencies and return
+    # NOTE: Region coordinate is necessary for pattern effect so it can be shown
+    # for different feedback versions. Non-globe values get auto-filled with nan.
+    print('Calculating pattern effect term.')
+    if pattern:
+        point, globe = denoms.sel(region='point'), denoms.sel(region='globe')
+        if forcing is not None:
+            data = point / globe  # simply the ratio of differences
+        elif 'time' in point.sizes:
+            pm, gm = point.mean('time', skipna=False), globe.mean('time', skipna=False)
+            data = ((globe - gm) * (point - pm)).sum('time') / ((globe - gm) ** 2).sum('time')  # noqa: E501
+        data = data.climo.dequantify()
+        data.attrs['units'] = 'K / K'
+        data.attrs['long_name'] = 'surface temperature pattern effect'
+        output['ts_pattern'] = data.assign_coords(region='globe').expand_dims('region')
+    print('Calculating average pressure bounds.')
     for key in ('pbot', 'ptop'):
         if key not in fluxes:
             continue
@@ -828,7 +850,7 @@ def get_feedbacks(
     fluxes : path-like, optional
         The flux directory (subfolder ``{project}-{experiment}-feedbacks`` is used).
     kernels : path-like, optional
-        The kernel data directory (subfolder ``cmip-kernels`` is used).
+        The kernel data directory (no subfolder is used by default).
     select : 2-tuple of int, optional
         The start and stop years. Used in the output file name. If relevant the anomaly
         data is filtered to these years using ``.isel(slice(12 * start, 12 * stop))``.
@@ -966,7 +988,7 @@ def get_feedbacks(
     else:  # here _anomalies_from_files will filter time selection
         output = fluxes[0]  # fluxes[1] only used as a source; saved file is fluxes[0]
         print(f'Output flux file: {output.name}')
-        kernels = Path(kernels).expanduser() / 'cmip-kernels' / f'kernels_{source}.nc'
+        kernels = Path(kernels).expanduser() / f'kernels_{source}.nc'
         print(f'Loading kernel data from file: {kernels.name}')
         kernels = load_file(kernels, project=project, validate=False)
         kwargs = dict(select=select, project=project, dryrun=dryrun)
@@ -1076,7 +1098,6 @@ def process_feedbacks(
         print = builtins.print
     print('Generating database.')
     constraints = {
-        'project': project,
         'variable': sorted(set(k for d in VARIABLE_DEPENDENCIES.values() for k in d)),
         'experiment': ['piControl', experiment],
         'table': 'Amon',
@@ -1087,9 +1108,9 @@ def process_feedbacks(
     })
     files, *_ = glob_files(*paths, project=project)
     facets = ('project', 'model', 'ensemble', 'grid')
-    database = Database(files, facets, **constraints)
+    database = Database(files, facets, project=project, **constraints)
     if experiment == 'piControl':  # otherwise translate for cmip5 or cmip6
-        control_experiment = response_experiment = 'piControl'
+        control_experiment = response_experiment = experiment
     else:
         control_experiment, response_experiment = database.constraints['experiment']
 

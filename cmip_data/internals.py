@@ -591,10 +591,10 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
         facet: list(set(opts.split(',') if isinstance(opts, str) else opts))
         for facet, opts in constraints.items()
     }
-    renames = FACETS_RENAMES
-    dotnames_encode = FACETS_DOTNAMES  # convert dash names to dot names
+    renames = FACETS_RENAMES.copy()
+    dotnames_encode = FACETS_DOTNAMES.copy()  # convert dash names to dot names
     dotnames_decode = {(_, dotname): name for (_, name), dotname in dotnames_encode.items()}  # noqa: E501
-    keynames_encode = FACETS_KEYNAMES  # convert short names to long names
+    keynames_encode = FACETS_KEYNAMES.copy()  # convert short names to long names
     keynames_decode = {(_, long): short for (_, short), long in keynames_encode.items()}  # noqa: E501
     projects = constraints.setdefault('project', ['CMIP6'])
     if len(projects) != 1:
@@ -840,7 +840,7 @@ class Database(object):
                 continue  # item not in constraints
             if parts['variable'] == 'feedbacks' and 'feedbacks' not in constraints.get('variable', ()):  # noqa: E501
                 continue  # require explicitly requesting bulk feedbacks file
-            if parts['variable'] == 'derived' and 'derived' not in constraints.get('variable', ()):  # noqa: E501
+            if parts['variable'] == 'climate' and 'climate' not in constraints.get('variable', ()):  # noqa: E501
                 continue  # require explicitly requesting bulk derived file
             group = tuple(parts[facet] for facet in facets_group)
             data = self.database.setdefault(group, {})
