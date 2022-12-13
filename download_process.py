@@ -2,16 +2,20 @@
 """
 File for downloading and merging relevant data.
 """
+import itertools
+
 import cmip_data
 
 # Global arguments
-# NOTE: Mark Zelinka CMIP5 is missing r1i1p1 CNRM-CM5-2 (not sure why) and EC-Earth
+# WARNING: Currently esgf-pyclient seems to require openssl==1.1.1s (3.0.0 and above
+# trigger openssl errors). Make sure to downgrade from default version on new systems.
+# NOTE: Zelinka CMIP5 is missing r1i1p1 CNRM-CM5-2 (not sure why) and EC-EARTH
 # (also skip this one because it provides only partial data and recently disappeared
 # from esgf... even tried downloading from CEDA but missing data), increasing ensemble
 # members from 29 to 30. Also for some reason CSIRO-Mk3L-1-2 has only published abrupt
 # data but not control. Verified that unlike CMIP6 there are no non-r1i1p1 flagships.
-# NOTE: Mark Zelinka CMIP6 is missing r1i1p1f1 CAS-ESM2-0, FIO-ESM-2-0, ICON-ESM-LR,
-# KIOST-ESM, and MCM-UA-1-0 (older versions also missed EC-Earth3-CC, EC-Earth3-Veg-LR,
+# NOTE: Zelinka CMIP6 is missing r1i1p1f1 CanESM5-1, CAS-ESM2-0, E3SM-2-0, FIO-ESM-2-0,
+# ICON-ESM-LR, KIOST-ESM, and MCM-UA-1-0 (once missed EC-Earth3-CC, EC-Earth3-Veg-LR,
 # GISS-E2-2-H but they were recently added). However in initial search, failed to find
 # non-r1i1p1f1 flagship abrupt runs of EC-Earth3 (uses realization 'r8', verified that
 # parent_variant_label is r1i1p1f1, and note 'r3' appears available but web interface
@@ -28,23 +32,23 @@ import cmip_data
 # same r1i1p1f2 variant (no pfull yet but also no model level data available). Verified
 # there are no other missing control-abrupt pairs (candidates are AWI-ESM-1-1-LR,
 # CMCC-CM2-HR4, CanESM5-CanOE, E3SM-1-1, E3SM-1-1-ECA, EC-Earth3-LR, and NorESM1-F,
-# but all are missing abrupt simulations). In sum we added 5 models but missed 9 models
-# for a total of 4 models fewer (49 instead of 53). We can rectify everything but the
+# but all are missing abrupt simulations). In sum we added 7 models but missed 9 models
+# for a total of 2 models fewer (51 instead of 53). We can rectify everything but the
 # IPSL model, plus add the extra MIROC and UKESM models, but *omit* the FIO-ESM2 model
 # because it is missing too much data from branch time 300 (see bottom), providing a
-# total of 5 models more than Mark (58 instead of 53). Note that for MCM-UA-1-0, we
+# total of 7 models more than Mark (60 instead of 53). Note that for MCM-UA-1-0, we
 # download 'rtmt' and compute 'rsut - rsdt' from the difference (see 'manual_data.sh').
-climate = False
-series = True
-analysis = False  # control and response data for feedback analysis?
+analysis = True  # control and response data for feedback analysis?
 circulation = True  # control and response data for implicit circulation stuff?
-constraints = False  # control data for emergent constraints?
-dependencies = False  # dependency data for emergent constraintss?
-explicit = False  # control and response data for explicit circulation stuff?
+constraints = True  # control data for emergent constraints?
+dependencies = True  # dependency data for emergent constraintss?
+explicit = True  # control and response data for explicit circulation stuff?
 download = False
 filter = False
 process = True
 summarize = False
+climate = True
+series = True
 
 # Pre-industrial control and response data for constraints, transport, and feedbacks
 # NOTE: The abrupt and control radiation data is needed for 'local feedback parameter'
@@ -160,7 +164,7 @@ kw_dependencies = {
         'HadGEM3-GC31-MM',  # only available in Amon control-1950 (skip AERmon)
         'KACE-1-0-G',  # available in Amon piControl
         'UKESM1-0-LL',  # only available in AERmon (see process.py)
-        'UKESM1-1-LL',  # not available yet but will likely match UKESM1-0-LL
+        'UKESM1-1-LL',  # pfull and model level data not available yet, wait for now
     ],
 }
 kw_explicit = {
@@ -202,6 +206,8 @@ if download:
             projects = ('CMIP6',)
         else:
             projects = ('CMIP6', 'CMIP5')
+        # kwargs.setdefault('model', 'CanESM5-1')  # TODO: remove
+        # projects = ('CMIP6',)  # TODO: remove
         for project in projects:
             if kwargs is kw_dependencies:
                 folder = '~/scratch2/cmip-dependencies'
@@ -243,6 +249,8 @@ if filter:
             projects = ('CMIP6',)
         else:
             projects = ('CMIP6', 'CMIP5')
+        # kwargs.setdefault('model', 'CanESM5-1')  # TODO: remove
+        # projects = ('CMIP6',)  # TODO: remove
         for project in projects:
             exclude = []
             if kwargs is kw_constraints:
@@ -286,66 +294,70 @@ if process:
     nodrifts = (False,)
     # nodrifts = (True,)
     # nodrifts = (False, True)
-    for nodrift in nodrifts:
-        for kwargs in dicts:
-            if kwargs is kw_dependencies:
-                projects = ()
-            elif kwargs is kw_explicit:
-                projects = ('CMIP6',)
+    for nodrift, kwargs in itertools.product(nodrifts, dicts):
+        if kwargs is kw_dependencies:
+            projects = ()
+        elif kwargs is kw_explicit:
+            projects = ('CMIP6',)
+        else:
+            projects = ('CMIP6', 'CMIP5')
+        # kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])  # TODO: remove
+        # projects = projects and ('CMIP6',)  # TODO: remove
+        for project in projects:
+            experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
+            if kwargs is kw_constraints:
+                del experiments['abrupt-4xCO2']
+            if not climate:
+                experiments.clear()
+            if project == 'CMIP5':
+                folder = '~/scratch2/cmip-downloads'
             else:
-                projects = ('CMIP6', 'CMIP5')
-            for project in projects:
-                experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
-                if kwargs is kw_constraints:
-                    del experiments['abrupt-4xCO2']
-                if not climate:
-                    experiments.clear()
-                if project == 'CMIP5':
-                    folder = '~/scratch2/cmip-downloads'
-                else:
-                    folder = '~/scratch5/cmip-downloads'
-                for experiment, years in experiments.items():
-                    kw = {**kwargs, 'experiment': experiment}
-                    cmip_data.process_files(
-                        folder,
-                        output='~/scratch2/cmip-processed',  # climate in data
-                        search='~/scratch2/cmip-dependencies',
-                        method='gencon',
-                        years=years,
-                        climate=True,
-                        nodrift=nodrift,
-                        flagship_filter=True,
-                        project=project,
-                        overwrite=False,  # TODO: change back
-                        logging=True,
-                        dryrun=False,
-                        nowarn=False,
-                        **kw,
-                    )
-                experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
-                if kwargs is not kw_analysis and kwargs is not kw_circulation:
-                    experiments.clear()
-                if not series:
-                    experiments.clear()
-                for experiment, years in experiments.items():
-                    kw = {**kwargs, 'experiment': experiment}
-                    cmip_data.process_files(
-                        folder,
-                        output='~/scratch2/cmip-processed',  # time series in scratch
-                        search='~/scratch2/cmip-dependencies',
-                        constants='~/scratch2',
-                        method='gencon',
-                        years=years,
-                        climate=False,
-                        nodrift=nodrift,
-                        flagship_filter=True,
-                        project=project,
-                        overwrite=False,  # TODO: change back
-                        logging=True,  # ignored if dryrun true
-                        dryrun=False,
-                        nowarn=False,
-                        **kw,
-                    )
+                folder = '~/scratch5/cmip-downloads'
+            for experiment, years in experiments.items():
+                kw = {**kwargs, 'experiment': experiment}
+                cmip_data.process_files(
+                    folder,
+                    output='~/data/cmip-climate',  # TODO: change back
+                    # output='~/scratch2/cmip-processed',  # climate in data
+                    search='~/scratch2/cmip-dependencies',
+                    constants='~/scratch2/cmip-constants/',
+                    method='gencon',
+                    years=years,
+                    climate=True,
+                    nodrift=nodrift,
+                    flagship_filter=True,
+                    project=project,
+                    overwrite=False,  # WARNING: monitor
+                    logging=True,
+                    dryrun=False,
+                    nowarn=False,
+                    **kw,
+                )
+            experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
+            if kwargs is not kw_analysis and kwargs is not kw_circulation:
+                experiments.clear()
+            if not series:
+                experiments.clear()
+            for experiment, years in experiments.items():
+                kw = {**kwargs, 'experiment': experiment}
+                cmip_data.process_files(
+                    folder,
+                    # output='~/scratch2/cmip-series',  # time series in scratch
+                    output='~/scratch2/cmip-processed',
+                    search='~/scratch2/cmip-dependencies',
+                    constants='~/scratch2/cmip-constants/',
+                    method='gencon',
+                    years=years,
+                    climate=False,
+                    nodrift=nodrift,
+                    flagship_filter=True,
+                    project=project,
+                    overwrite=False,  # WARNING: monitor
+                    logging=True,  # ignored if dryrun true
+                    dryrun=False,
+                    nowarn=False,
+                    **kw,
+                )
 
 # Update the summary logs once finished
 # NOTE: Have 'intvadse' and 'intvaw' for IPSL-CM6A-LR, CNRM-CM6-1, CNRM-ESM2-1, and
@@ -382,12 +394,12 @@ if process:
 #   versions... but some data (e.g. ta, hus) is only available from year 0400.... could
 #   use it anyway, but notably surface pressure ps is only available from year 0300,
 #   so would be weird to pretend year 0400 is the branching time. Forget this model.
-# * The UKESM-1-1 model switches control and abrupt times -- control data starts at
+# * The UKESM1-1 model switches control and abrupt times -- control data starts at
 #   year 2743, abrupt data starts at year 1850 (both with time units "days since 1850"),
 #   and abrupt attributes state branch_time_in_child = branch_time_in_parent = 0 days,
 #   but control attributes state branch_time_in_child = 321480 (i.e. 893 360-day years
 #   --> 1850 + 893 = 2743)... so control dates jump relative to *spinup*. However other
-#   models Mark *does* use also have date differences (e.g. UKESM-1-0 abrupt data
+#   models Mark *does* use also have date differences (e.g. UKESM1-0 abrupt data
 #   starts at 1850 and control data starts at 1960) so not sure why they are excluded.
 # * Missing data (after adding rsut and rsdt MCM data with residual):
 #   Note that CCSM4 rldscs seems to be available but processing was yielding zero
@@ -416,11 +428,11 @@ if summarize:
             project=project,
             flagship_translate=True,
         )
-        cmip_data.summarize_ranges(
-            *folders_processed,
-            project=project,
-            flagship_translate=True,
-        )
+        # cmip_data.summarize_ranges(
+        #     *folders_processed,
+        #     project=project,
+        #     flagship_translate=True,
+        # )
 
 # Temporary calls
 # Place re-processing steps for individual files here

@@ -388,7 +388,7 @@ def filter_script(
     database = Database(source, facets_intersect, **constraints)
     database.summarize(message='Initial groups', printer=print)
     groups = tuple(database.values())  # the group dictionaries
-    keys = set(groups[0]).intersection(*map(set, groups))  # intersect dictionary keys
+    keys = set(groups[0]).intersection(*map(set, groups)) if groups else ()  # dict keys
     database.filter(keys, always_include=always_include, always_exclude=always_exclude)
     database.summarize(message='Intersect groups', printer=print)
 

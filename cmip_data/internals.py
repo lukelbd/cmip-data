@@ -105,7 +105,7 @@ ENSEMBLES_FLAGSHIP = {
 
 # ESGF facets obtained with get_facet_options() for SearchContext(project='CMIP5')
 # and SearchContext(project='CMIP6'). See: https://github.com/WCRP-CMIP/CMIP6_CVs
-# Includes mappings between shorthand 'aliases' (used with databases and other internal
+# NOTE: Includes mappings between 'aliases' (used with databases and other internal
 # utilities) and standard names (used when searching with pyesgf), between cmip5 and
 # cmip6 experiment names (so that the same string can be specified in function calls),
 # and between cmip5 model identifiers (may differ between dataset ids and file names).
@@ -170,17 +170,14 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 )
 
 # Model institutes
-# NOTE: This was copied from the INSTITUTES.txt file produced by manual_checks.py and
-# include the project so we can filter models to both unique institutes and projects.
-# Currently used in 'coupled' plotting functions (previously tried to just use names
-# but this was unreliable -- for example ACCESS/CSIRO are both from CSIRO in Australia,
-# MPI/ICON are both from MPI in Germany, and CESM/CCSM are both from NCAR in Colorado).
-# NOTE: Some institutes changed their ids between cmip5 and cmip6 due to syntax updates
-# (e.g. dash instead of space) or new collaborators (generally appended with dashes).
-# Fixed this so institues can be uniquely identified, and put original ids in comments.
-# NOTE: Here the preferred model variants from the same institution are arranged
-# last (see _parse_projects in templates.py). Roughly similar to original alphabetical
-# order; prefer more complex (ESMs over CMs), higher resolution, and later versions.
+# NOTE: This was copied from the INSTITUTES.txt file produced by manual_checks.py, used
+# for grouping models before 'coupled' project analysis. Previously used model names but
+# this was unreliable (e.g. ACCESS/CSIRO are CSIRO, MPI/ICON are MPI, and CESM/CCSM are
+# NCAR). Some institutes also changed ids between cmip5 and cmip6 (e.g. dash instead
+# of space or new collaborators appended with dashes) -- fixed this so institues can be
+# identified across projects (original ids are in comments below). Also note preferred
+# model variants from the same institute are arranged last (see _parse_projects in
+# templates.py). In general prefer ESMs, high resolution, and later versions.
 # NOTE: Include 2-character ISO 3166 country codes for quick reference.
 # See: https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
 # There are several Chinese models from academies, ministries, and universities.
@@ -261,8 +258,8 @@ MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model la
     ('CMIP5', 'GISS-E2-R'): 'NASA',  # 'NASA-GISS',
     ('CMIP5', 'GISS-E2-H'): 'NASA',  # 'NASA-GISS',  # more complex
     ('CMIP5', 'HadGEM2-ES'): 'MOHC',
-    ('CMIP5', 'IPSL-CM5A-LR'): 'IPSL',
     ('CMIP5', 'IPSL-CM5B-LR'): 'IPSL',
+    ('CMIP5', 'IPSL-CM5A-LR'): 'IPSL',
     ('CMIP5', 'IPSL-CM5A-MR'): 'IPSL',  # highest resolution
     ('CMIP5', 'MIROC5'): 'MIROC',
     ('CMIP5', 'MIROC-ESM'): 'MIROC',  # most complex
@@ -293,7 +290,9 @@ MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model la
     ('CMIP6', 'CNRM-CM6-1-HR'): 'CNRM-CERFACS',
     ('CMIP6', 'CNRM-ESM2-1'): 'CNRM-CERFACS',  # most complex
     ('CMIP6', 'CanESM5'): 'CCCma',
+    ('CMIP6', 'CanESM5-1'): 'CCCma',
     ('CMIP6', 'E3SM-1-0'): 'E3SM-Project',
+    ('CMIP6', 'E3SM-2-0'): 'E3SM-Project',
     ('CMIP6', 'EC-Earth3'): 'EC-Earth-Consortium',  # collaborative incl. many centers
     ('CMIP6', 'EC-Earth3-AerChem'): 'EC-Earth-Consortium',
     ('CMIP6', 'EC-Earth3-CC'): 'EC-Earth-Consortium',
@@ -892,7 +891,7 @@ class Database(object):
         for group, data in self.database.items():
             for key in tuple(data):
                 parts = dict(zip((*self.group, *self.key), (*group, *key)))
-                if keys and key not in keys and not any(
+                if keys is not None and key not in keys and not any(
                     all(parts[facet] in opts for facet, opts in constraints.items())
                     for constraints in always_include
                 ):

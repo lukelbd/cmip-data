@@ -33,12 +33,6 @@ if $gfdl; then
             curl -O "$url/$file"
           fi
         done
-        # for i in 0 1; do  # globbing approach
-        #   [[ $i -eq 0 ]] && glob='0-9' || glob='0-4'
-        #   pattern="${variable}_*_0${i}[${glob}]*"
-        #   echo "Getting pattern: $pattern"
-        #   lftp -d -c "open $url; mget $pattern"
-        # done
       done
     done
   done

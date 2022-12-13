@@ -96,18 +96,16 @@ def _get_file_pairs(data, *args, printer=None):
     ----------
     data : dict
         The database of file lists.
-    *experiments : str
-        The two control and response experiments.
-    *suffixes : str
-        The two experiment suffixes.
+    *args : str
+        The experiment and file suffixes.
     printer : callable, default: `print`
         The print function.
     """
     print = printer or builtins.print
     pairs = []
     if len(args) != 4:
-        raise Exception('Exactly four input arguments required.')
-    for experiment, suffix in zip(args[:2], args[2:]):
+        raise TypeError('Exactly four input arguments required.')
+    for experiment, suffix in zip(args[:-1:2], args[1:None:2]):
         paths = {
             var: [file for file in files if _item_dates(file) == suffix]
             for (exp, *_, var), files in data.items() if exp == experiment
@@ -130,6 +128,8 @@ def _get_file_pairs(data, *args, printer=None):
         variable: (pairs[0][variable], pairs[1][variable])
         for variable in sorted(pairs[0].keys() & pairs[1].keys())
     }
+    if not pairs:
+        raise RuntimeError(f'No pairs found for groups {tuple(data)}.')
     return pairs
 
 
@@ -253,6 +253,8 @@ def _anomalies_from_files(
     print('Calculating response minus control anomalies.')
     for variable, dependencies in VARIABLE_DEPENDENCIES.items():
         # Load datasets and prepare the variables
+        # NOTE: Critical to simply ignore 'start' and 'stop' for e.g. ratio
+        # feedbacks as here times were just used to directly pick climate files.
         # NOTE: The signs of the kernels are matched so that negative always means
         # tending to cool the atmosphere and positive means tending to warm the
         # atmosphere. We scale the positive-definite upwelling and dowwelling
@@ -284,9 +286,9 @@ def _anomalies_from_files(
         # instead of 'time'. Use .groupby('time.month').mean() to turn time indices
         # into month indices (works for both time series and pre-averaged data).
         with xr.set_options(keep_attrs=True):
-            if variable in ('tapi', 'pspi'):  # control data matched to response times
+            if variable in ('tapi', 'pspi'):  # control data itself
                 (control,), (response,) = controls, responses
-                control = control.groupby('time.month').mean()
+                control = control
                 response = None
             elif variable in ('ta4x', 'ps4x'):  # response data itself
                 (control,), (response,) = controls, responses
@@ -317,10 +319,10 @@ def _anomalies_from_files(
         # NOTE: Albedo is taken above from ratio of upwelling to downwelling all-sky
         # surface shortwave radiation. Feedback is simply (rsus - rsds) / (rsus / rsds)
         with xr.set_options(keep_attrs=True):
-            if response is None:
-                data = control
-            elif control is None:
+            if control is None:
                 data = response
+            elif response is None:
+                data = control.groupby('time.month').mean()  # match to response times
             else:
                 data = response.groupby('time.month') - control.groupby('time.month').mean()  # noqa: E501
         if variable == 'alb':  # enforce new name and new units
@@ -332,12 +334,9 @@ def _anomalies_from_files(
         else:  # enforce lower-case name for consistency
             parts = data.attrs['long_name'].split()
             long_name = ' '.join(s if s == 'TOA' else s.lower() for s in parts)
-        if variable in ('tapi', 'pspi'):  # NOTE: these have time coordinate 'month'
-            long_name = f'control {long_name}'
-            pass  # NOTE: keep standard name to use as tropopause
-        elif variable in ('ta4x', 'ps4x'):
-            long_name = f'response {long_name}'
-            data.attrs.pop('standard_name', None)
+        if variable in ('tapi', 'pspi', 'ta4x', 'ps4x'):
+            prefix = 'response' if '4x' in variable else 'control'
+            long_name = f'{prefix} {long_name}'  # NOTE: keep standard name for ptop
         else:
             long_name = f'{long_name} anomaly'
             data.attrs.pop('standard_name', None)
@@ -386,30 +385,34 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     kernels = kernels.assign_coords(plev=plev)  # critical (see above)
 
     # Get cell height measures and Clausius-Clapeyron adjustments
-    # NOTE: Initially used response time series for tropopause consistent with
-    # Zelinka stated methodology of 'time-varying tropopause' but got bizarre issue
-    # with Planck feedback biased positive for certain models (seemingly due to higher
-    # surface temperature associated with higher tropopause and more negative
-    # fluxes... so should be negative bias... but whatever). This also made little
-    # sense because it corrected for changing troposphere depth without correcting
-    # for reduced strength of kernels under increased depth. Now try with both control
-    # data and response data average (note that groupby operations may be no-ops if
-    # we are already working with control data matched to the response times).
+    # NOTE: Initially used response time series for tropopause consistent with Zelinka
+    # stated methodology of 'time-varying tropopause' but got bizarre issue with Planck
+    # feedback biased positive for certain models (seemingly due to higher surface
+    # temperature associated with higher tropopause and more negative fluxes... so
+    # should be negative bias... but whatever). This also made little sense because it
+    # corrected for changing troposphere depth without correcting for reduced strength
+    # of kernels under increased depth. Now try with control data average, and below
+    # code works with both averages and response time series (see top of file).
     # WARNING: Currently cell_height() in physics.py automatically adds surface bounds,
     # tropopause bounds, and cell heights as *coordinates* (for consistency with xarray
-    # objects). Promote to variable before working with other arrays to avoid conflicts.
-    # WARNING: For using assign_coords(cell_height=height) will cause 'month' to remain
-    # as a coordinate on the dataset, but will no longer appear as a coordinate on
-    # relevant data arrays' (tapi, pbot, ptop). Can only fix this by manually assigning
+    # objects). Must promote to variable before working with other arrays to avoid
+    # conflicts during reassignment.
+    # WARNING: Using assign_coords(cell_height=height) with height 'month' coordinate
+    # will cause 'month' to remain as a coordinate on the dataset, but not on other
+    # relevant data arrays (tapi, pbot, ptop). Can only fix this by manually assigning
     # the 'month' coord *within the same assign_coords call*. Version: xarray 0.21.1.
     print('Calculating vertical cell measures and Clausius-Clapeyron scaling.')
-    base = anoms['ta' if 'ta' in anoms else 'hus' if 'hus' in anoms else 'ts']
-    base = ureg.Pa * xr.zeros_like(base)
     anoms = anoms.climo.add_cell_measures(surface=True, tropopause=True)
     anoms = anoms.reset_coords(('plev_bot', 'plev_top'))  # critical (see above)
-    with xr.set_options(keep_attrs=True):
-        height = const.g * anoms.cell_height.climo.quantify()
-        height = height.climo.to_units('Pa') + base.groupby('time.month')
+    height = anoms.cell_height.climo.quantify()
+    scalar = ureg.Quantity(0, 'Pa')
+    array = anoms['ta' if 'ta' in anoms else 'hus' if 'hus' in anoms else 'ts']
+    array = ureg.Pa * xr.zeros_like(array)  # for matching time coordinates
+    base = array.groupby('time.month') if 'month' in height.dims else scalar
+    with xr.set_options(keep_attrs=True):  # WARNING: critical for 'base' to be second
+        height = (const.g * height).climo.to_units('Pa') + base
+    if 'plev' in array.dims:
+        array = array.isel(plev=0, drop=True)
     output = {}
     coords = {'month': anoms.month, 'cell_height': height.climo.dequantify()}
     anoms = anoms.assign_coords(coords)
@@ -418,14 +421,16 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     del height
     print(f'Cell height range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
     pbot = anoms.plev_bot.climo.quantify()
-    pbot = pbot.climo.to_units('Pa') + base.groupby('time.month')
+    base = array.groupby('time.month') if 'month' in pbot.dims else scalar
+    pbot = pbot.climo.to_units('Pa') + base  # possibly expand along response times
     pbot.attrs['long_name'] = 'surface pressure'
     output['pbot'] = pbot.climo.dequantify()
     min_, max_, mean = pbot.min().item(), pbot.max().item(), pbot.mean().item()
     del pbot
     print(f'Surface pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
     ptop = anoms.plev_top.climo.quantify().climo.to_units('Pa')
-    ptop = ptop.climo.to_units('Pa') + base.groupby('time.month')
+    base = array.groupby('time.month') if 'month' in ptop.dims else scalar
+    ptop = ptop.climo.to_units('Pa') + base  # possibly expand along response times
     ptop.attrs['long_name'] = 'tropopause pressure'
     output['ptop'] = ptop.climo.dequantify()
     min_, max_, mean = ptop.min().item(), ptop.max().item(), ptop.mean().item()
@@ -435,7 +440,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     ta = anoms.tapi.climo.dequantify()
     scale = _get_clausius_scaling(ta)  # _get_clausius_scaling(ta, pa)
     min_, max_, mean = scale.min().item(), scale.max().item(), scale.mean().item()
-    del ta, base  # del pa, ta, base
+    del ta, base, array  # del pa, ta, base
     print(f'Clausius-Clapeyron range: min {min_:.2f} max {max_:.2f} mean {mean:.2f}')
     output['ts'] = anoms.ts.climo.dequantify()
 
@@ -451,8 +456,9 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
         # Skip feedbacks without shortwave or longwave components.
         # NOTE: Cloud and residual feedbacks also require the full model radiative
         # flux to be estimated, so include those terms as dependencies.
-        rad = f'r{wavelength[0]}n{boundary[0].lower()}'
-        rads = (rad,)  # kernel fluxes
+        # NOTE: This function uses kernel names standardized by _standardize_kernels
+        # in kernels.py (cmip variable name, underscore, 4-character flux name).
+        rads = (rad,) = (f'r{wavelength[0]}n{boundary[0].lower()}',)
         variables = FEEDBACK_DEPENDENCIES[component][wavelength]  # empty for fluxes
         dependencies = list(variables)  # anomaly and kernel variables
         if component == '':
@@ -462,15 +468,11 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
         if component == '':
             dependencies.append(rad)
         elif component == 'cs':
-            dependencies.append(rad := f'{rad}cs')
+            dependencies.extend(rads := (rad := f'{rad}cs',))
         elif component == 'cl' or component == 'resid':
             dependencies.extend(rads := (rad, f'{rad}cs'))  # masking adjustments
         elif not dependencies:
             continue
-
-        # Warning messages for missing variables
-        # NOTE: This function uses kernel names standardized by _standardize_kernels
-        # in kernels.py (cmip variable name, underscore, 4-character flux name).
         names = list(f'{var}_{rad}' for var in variables for rad in rads)
         if message := ', '.join(repr(name) for name in dependencies if name not in anoms):  # noqa: E501
             print(
@@ -537,7 +539,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
                     mask = mask.climo.integral('plev')
                 data = data - mask.climo.to_units('W m^-2')  # apply adjustment
         else:
-            raise RuntimeError
+            raise RuntimeError(f'Invalid flux component {component!r}.')
         del anom, mask, kernel
         gc.collect()
 
@@ -550,6 +552,8 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
         data.name = name
         data.attrs['long_name'] = f'net {boundary} {wavelength} {descrip}'
         data = data.climo.to_units('W m^-2')
+        if 'plev' in data.coords:  # scalar NaN value
+            data = data.drop_vars('plev')
         if component in ('pl', 'lr', 'hus', 'alb', 'cl'):
             running = data + running
         output[data.name] = data = data.climo.dequantify()
@@ -568,6 +572,8 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     ):
         # Determine fluxes that should be summed to provide net balance. For
         # some feedbacks this is just longwave or just shortwave.
+        # NOTE: Warning prevents e.g. only shortwave or longwave water vapor
+        # feedback or cloud feedback from being counted as the 'net' feedback.
         if component == '':
             print(f'Calculating shortwave plus longwave {boundary} fluxes.')
         long = f'rln{boundary[0].lower()}'
@@ -580,10 +586,6 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
             names = (f'{component}_{long}',)
         else:
             names = (f'{component}_{long}', f'{component}_{short}')
-
-        # Warning message for missing components
-        # NOTE: This prevents e.g. only shortwave or longwave water vapor feedback
-        # or cloud feedback from being counted as the 'net' feedback.
         if message := ', '.join(name for name in names if name not in output):
             print(
                 f'Warning: Net radiative flux {component=} is missing longwave or '
@@ -791,38 +793,39 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
     output.attrs['title'] = (
         f'{statistic}-derived forcing-feedback decompositions'
     )
+    for key in ('pbot', 'ptop'):
+        if key not in fluxes:
+            continue
+        data = fluxes[key]
+        if 'time' in data.dims:  # i.e. seasonal averages as function of year
+            data = data.mean(dim='time', keep_attrs=True)
+        output[key] = data.climo.dequantify()
 
-    # Add remaining dependencies and return
+    # Add final pattern effect term
     # NOTE: Region coordinate is necessary for pattern effect so it can be shown
     # for different feedback versions. Non-globe values get auto-filled with nan.
     print('Calculating pattern effect term.')
     if pattern:
-        point, globe = denoms.sel(region='point'), denoms.sel(region='globe')
+        point = denoms.sel(region='point')
+        globe = denoms.sel(region='globe')
         if forcing is not None:
             data = point / globe  # simply the ratio of differences
         elif 'time' in point.sizes:
             pm, gm = point.mean('time', skipna=False), globe.mean('time', skipna=False)
             data = ((globe - gm) * (point - pm)).sum('time') / ((globe - gm) ** 2).sum('time')  # noqa: E501
+        else:
+            raise ValueError('Time coordinte required for slope-style pattern effect.')
         data = data.climo.dequantify()
         data.attrs['units'] = 'K / K'
-        data.attrs['long_name'] = 'surface temperature pattern effect'
-        output['ts_pattern'] = data.assign_coords(region='globe').expand_dims('region')
-    print('Calculating average pressure bounds.')
-    for key in ('pbot', 'ptop'):
-        if key not in fluxes:
-            continue
-        data = fluxes[key]
-        if 'time' in data.sizes:  # average time across time periods
-            data = data.mean(dim='time', keep_attrs=True)
-        data = data.climo.dequantify()
-        output[key] = data
+        data.attrs['long_name'] = 'relative surface warming'
+        output['tpat'] = data.assign_coords(region='globe').expand_dims('region')
     return output
 
 
 def get_feedbacks(
     feedbacks='~/data',
     fluxes='~/data',
-    kernels='~/data',
+    kernels='~/data/cmip-kernels',
     select=None,
     response=None,
     source=None,
@@ -846,17 +849,17 @@ def get_feedbacks(
     Parameters
     ----------
     feedbacks : path-like, optional
-        The feedback directory (subfolder ``{project}-{experiment}-feedbacks`` is used).
+        The feedback directory. Subfolder ``{project}-{experiment}-feedbacks`` is used.
     fluxes : path-like, optional
-        The flux directory (subfolder ``{project}-{experiment}-feedbacks`` is used).
+        The flux directory. Subfolder ``{project}-{experiment}-fluxes`` is used.
     kernels : path-like, optional
-        The kernel data directory (no subfolder is used by default).
+        The kernel data directory. Default folder is ``~/cmip-kernels``.
     select : 2-tuple of int, optional
         The start and stop years. Used in the output file name. If relevant the anomaly
         data is filtered to these years using ``.isel(slice(12 * start, 12 * stop))``.
     response : 2-tuple of int, optional
-        The full start and stop years for the source data. Used to help load from
-        flux files containing a superset of data required for feedback estimates.
+        The full response start and stop years. Used to load flux data containing a
+        superset of `select` times and to load forcing data for ratio-style feedbacks.
     source : str, default: 'eraint'
         The source for the kernel data (e.g. ``'eraint'``). This searches for files
         in the `kernels` directory formatted as ``kernels_{source}.nc``.
@@ -940,6 +943,7 @@ def get_feedbacks(
         (fluxes, 'fluxes', select),
         (fluxes, 'fluxes', response),
         (feedbacks, 'feedbacks', select),
+        (feedbacks, 'feedbacks', response),
     )
     for folder, prefix, times in tuples:
         file = _item_join(
@@ -965,7 +969,7 @@ def get_feedbacks(
     # NOTE: Even for kernel-derived flux responses, rapid adjustments and associated
     # pattern effects may make the effective radiative forcing estimate non-zero (see
     # Andrews et al.) so we always save the regression intercept data.
-    *fluxes, feedbacks = outputs
+    *fluxes, feedbacks, forcing = outputs
     fluxes_exist = tuple(flux.is_file() and flux.stat().st_size > 0 for flux in fluxes)
     feedbacks_exist = feedbacks.is_file() and feedbacks.stat().st_size > 0
     overwrite = overwrite or feedbacks_exist and not any(fluxes_exist)
@@ -1009,7 +1013,7 @@ def get_feedbacks(
         output = feedbacks  # use the name 'feedbacks' for dataset
         print(f'Output feedback file: {output.name}')
         if ratio:
-            forcing = output.parent / output.name.replace('ratio', 'slope')
+            forcing = forcing.parent / forcing.name.replace('ratio', 'slope')
             print(f'Loading forcing data from file: {forcing.name}')
             forcing = load_file(forcing, project=project, validate=False)
         else:
@@ -1080,17 +1084,18 @@ def process_feedbacks(
     statistic = 'ratio' if ratio else 'slope'
     experiment = experiment or 'abrupt4xCO2'
     source = source or 'eraint'
+    nodrift = 'nodrift' if nodrift else ''
+    suffix = nodrift and '-' + nodrift
     control = control or (0, 150)
     if ratio:  # ratio-type
         response = response or (120, 150)
-        response, select, string = response, response, 'climate'
+        control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
+        response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
     else:  # NOTE: get anomaly data from time series file matching control years
         response = response or (0, 150)
-        response, select, string = control, response, 'series'
-    nodrift = 'nodrift' if nodrift else ''
-    suffix = nodrift and '-' + nodrift
-    control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
-    response_suffix = f'{response[0]:04d}-{response[1]:04d}-{string}{suffix}'
+        control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
+        response_suffix = f'{control[0]:04d}-{control[1]:04d}-series{suffix}'
+    response, select = control, response
     suffixes = (*(format(int(t), '04d') for t in select), source, statistic, nodrift)
     if logging:
         print = Logger('feedbacks', *suffixes, project=project, experiment=experiment, table='Amon')  # noqa: E501
@@ -1136,8 +1141,8 @@ def process_feedbacks(
         files = _get_file_pairs(
             data,
             control_experiment,
-            response_experiment,
             control_suffix,
+            response_experiment,
             response_suffix,
             printer=print,
         )

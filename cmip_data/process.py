@@ -17,8 +17,8 @@ Process groups of files downloaded from the ESGF.
 # cmip5-picontrol-amon/cl_Amon_FGOALS-g2_piControl_r1i1p1_020101-021012.nc
 # cmip6-picontrol-amon/cl_Amon_FGOALS-g3_piControl_r1i1p1f1_gn_020001-020912.nc
 # NOTE: Some models have zaxistype 'generic' and longname 'hybrid height coordinates'
-# and require 'pfull' for vertical interpolation. These consist of ACCESS, KACE, UKESM,
-# and HadGEM. Since CMIP5 only provides 'pfull' for control experiments we use these
+# and require 'pfull' for vertical interpolation. These consist of ACCESS, HadGEM, KACE,
+# and UKESM. Since CMIP5 only provides 'pfull' for control experiments we use these
 # even for forced experiments. Also HadGEM only provides 'pfull' for control-1950 and
 # UKESM only provides 'pfull' for AERmon instead of Amon so we manually obtained wget
 # scripts using the online interface (see also the filter command). Relevant files:
@@ -26,7 +26,6 @@ Process groups of files downloaded from the ESGF.
 # cmip5-picontrol-amon/cl_Amon_ACCESS1-3_piControl_r1i1p1_025001-027412.nc
 # cmip6-picontrol-amon/cl_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_095001-096912.nc
 # cmip6-picontrol-amon/cl_Amon_ACCESS-ESM1-5_piControl_r1i1p1f1_gn_010101-012012.nc
-# cmip6-picontrol-amon/cl_Amon_E3SM-1-0_piControl_r1i1p1f1_gr_000101-002512.nc
 # cmip5-picontrol-amon/cl_Amon_HadGEM2-ES_piControl_r1i1p1_185912-188411.nc
 # cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-MM_piControl_r1i1p1f1_gn_185001-185912.nc
 # cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-LL_piControl_r1i1p1f1_gn_185001-189912.nc
@@ -271,7 +270,7 @@ def _output_path(path=None, *parts):
 def process_files(
     *paths,
     output='~/data',
-    constants='~/data',
+    constants='~/data/cmip-constants',
     facets=None,
     vertical=True,
     horizontal=True,
@@ -291,7 +290,7 @@ def process_files(
     output : path-like, optional
         The output directory. Subfolder ``{project}-{experiment}-{table}`` is used.
     constants : path-like, optional
-        The constants directory. Subfolder ``cmip-constants`` is used.
+        The constants directory. Default folder is ``~/cmip-constants``.
     facets : str, optional
         The facets for grouping into output folders.
     dependencies : bool, optional
@@ -612,7 +611,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 nco.ncatted(input=str(path), output=str(path), options=atted)
                 nco.ncks(input=str(path), output=str(path), options=['-x', '-v', 'ptop'])  # noqa: E501
 
-        # Handle FGOALS models with incorrect coordinate encoding
+        # Handle CMIP5 FGOALS models with incorrect coordinate encoding
         # NOTE: These show 'a' normalized by 'p0' in formula terms but the
         # values are obviously absolute pressure. So manually normalize.
         # NOTE: If reading into cdo using e.g. 'seltimestep' it will automatically
@@ -635,7 +634,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             if not dryrun:
                 nco.ncap2(input=str(path), output=str(path), options=['-s', math])
 
-        # Handle FGOALS models with messed up hybrid coordinates.
+        # Handle CMIP6 FGOALS models with messed up hybrid coordinates.
         # NOTE: These models have a/b coordinate bounds of e.g. 1e+23, 1.6, etc. that
         # don't correspond to centers so we totally disregard them with a half-way
         # ncap2 estimate (with adjustments to satisfy boundary conditions).

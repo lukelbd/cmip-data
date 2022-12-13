@@ -2,6 +2,8 @@
 """
 File for downloading and merging relevant data.
 """
+import itertools
+
 import cmip_data
 
 # Toggle various activities
@@ -20,27 +22,25 @@ feedbacks = True
 if climate:
     nodrifts = (False,)
     # nodrifts = (False, True)
-    for nodrift in nodrifts:
-        experiments = (
-            'piControl',
-            'abrupt4xCO2',
-        )
-        for experiment in experiments:
-            projects = ('CMIP6', 'CMIP5')
-            # projects = ('CMIP5',)
-            for project in projects:
-                cmip_data.process_climate(
-                    '~/scratch2/cmip-processed',  # source climate location
-                    climate='~/data/cmip-climate',  # output feedback location
-                    source='eraint',
-                    project=project,
-                    experiment=experiment,
-                    flagship_filter=True,
-                    overwrite=False,
-                    logging=True,  # ignored if dryrun true
-                    dryrun=False,
-                    nowarn=False,
-                )
+    experiments = ('piControl', 'abrupt4xCO2')
+    for nodrift, experiment in itertools.product(nodrifts, experiments):
+        projects = ('CMIP6', 'CMIP5')
+        # projects = ('CMIP5',)
+        for project in projects:
+            cmip_data.process_climate(
+                # '~/scratch2/cmip-processed',  # TODO: move climate here
+                '~/data/cmip-climate',  # source climate location
+                climate='~/data/cmip-climate',  # output feedback location
+                source='eraint',
+                project=project,
+                experiment=experiment,
+                flagship_filter=True,
+                overwrite=False,
+                logging=True,  # ignored if dryrun true
+                dryrun=False,
+                nowarn=False,
+                # model=['CanESM5-1', 'E3SM-2-0'],
+            )
 
 # Calculate the control, response, and anomaly feedbacks (note control anomaly
 # feedbacks are impossible because cannot select a period to use for anomalies).
@@ -51,35 +51,35 @@ if climate:
 if feedbacks:
     nodrifts = (False,)
     # nodrifts = (False, True)
-    for nodrift in nodrifts:
-        tuples = (
-            ('piControl', False, (0, 150)),  # regression of series
-            ('abrupt4xCO2', False, (0, 150)),  # regression of series
-            ('abrupt4xCO2', True, (120, 150)),  # ratio of anomalies
-            ('abrupt4xCO2', False, (0, 20)),  # regression of series
-            ('abrupt4xCO2', False, (20, 150)),  # regression of series
-            ('abrupt4xCO2', False, (0, 50)),  # regression of series
-        )
-        for experiment, ratio, response in tuples:
-            projects = ('CMIP6', 'CMIP5')
-            # projects = ('CMIP5',)
-            for project in projects:
-                cmip_data.process_feedbacks(
-                    '~/data/cmip-climate',  # TODO: outdated -- move to scratch
-                    '~/scratch2/cmip-processed',  # source climate location
-                    '~/scratch2/cmip-processed',  # source series location
-                    fluxes='~/scratch2/cmip-fluxes',  # intermediate flux location
-                    kernels='~/data/cmip-kernels',  # dependency kernels location
-                    feedbacks='~/data/cmip-feedbacks',  # output feedback location
-                    source='eraint',
-                    ratio=ratio,
-                    response=response,
-                    project=project,
-                    experiment=experiment,
-                    flagship_filter=True,
-                    nodrift=nodrift,
-                    overwrite=False,
-                    logging=True,  # ignored if dryrun true
-                    dryrun=False,
-                    nowarn=False,
-                )
+    options = (
+        ('piControl', False, (0, 150)),  # regression of series
+        ('abrupt4xCO2', False, (0, 150)),  # regression of series
+        ('abrupt4xCO2', True, (120, 150)),  # ratio of anomalies
+        ('abrupt4xCO2', False, (0, 20)),  # regression of series
+        ('abrupt4xCO2', False, (20, 150)),  # regression of series
+        ('abrupt4xCO2', False, (0, 50)),  # regression of series
+    )
+    for nodrift, (experiment, ratio, response) in itertools.product(nodrifts, options):
+        projects = ('CMIP6', 'CMIP5')
+        # projects = ('CMIP5',)
+        for project in projects:
+            cmip_data.process_feedbacks(
+                '~/data/cmip-climate',  # source climate location
+                # '~/scratch2/cmip-processed',  # TODO: move climate here
+                '~/scratch2/cmip-processed',  # source series location
+                fluxes='~/scratch2/cmip-fluxes',  # intermediate flux location
+                kernels='~/data/cmip-kernels',  # dependency kernels location
+                feedbacks='~/data/cmip-feedbacks',  # output feedback location
+                source='eraint',
+                ratio=ratio,
+                response=response,
+                project=project,
+                experiment=experiment,
+                flagship_filter=True,
+                nodrift=nodrift,
+                overwrite=False,
+                logging=True,  # ignored if dryrun true
+                dryrun=False,
+                nowarn=False,
+                # model=['CanESM5-1', 'E3SM-2-0'],
+            )
