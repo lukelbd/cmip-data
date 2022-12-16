@@ -34,10 +34,9 @@ import cmip_data
 # CMCC-CM2-HR4, CanESM5-CanOE, E3SM-1-1, E3SM-1-1-ECA, EC-Earth3-LR, and NorESM1-F,
 # but all are missing abrupt simulations). In sum we added 7 models but missed 9 models
 # for a total of 2 models fewer (51 instead of 53). We can rectify everything but the
-# IPSL model, plus add the extra MIROC and UKESM models, but *omit* the FIO-ESM2 model
-# because it is missing too much data from branch time 300 (see bottom), providing a
-# total of 7 models more than Mark (60 instead of 53). Note that for MCM-UA-1-0, we
-# download 'rtmt' and compute 'rsut - rsdt' from the difference (see 'manual_data.sh').
+# IPSL model, plus add the extra MIROC and UKESM models, providing a total of 8 models
+# more than Mark (61 instead of 53). Note that for MCM-UA-1-0, we download 'rtmt' and
+# compute 'rsut - rsdt' from the difference (see 'manual_files.sh' for details).
 analysis = True  # control and response data for feedback analysis?
 circulation = True  # control and response data for implicit circulation stuff?
 constraints = True  # control data for emergent constraints?
@@ -45,11 +44,22 @@ dependencies = True  # dependency data for emergent constraintss?
 explicit = True  # control and response data for explicit circulation stuff?
 download = False
 filter = False
-process = True
-summarize = False
+process = False
+summarize = True
 climate = True
 series = True
-
+# analysis = False  # control and response data for feedback analysis?
+# circulation = False  # control and response data for implicit circulation stuff?
+# constraints = True  # control data for emergent constraints?
+# dependencies = True  # dependency data for emergent constraintss?
+# explicit = True  # control and response data for explicit circulation stuff?
+# download = True
+# filter = True
+# process = False
+# summarize = False
+# climate = True
+# series = True
+#
 # Pre-industrial control and response data for constraints, transport, and feedbacks
 # NOTE: The abrupt and control radiation data is needed for 'local feedback parameter'
 # esimates, and control radiation data is needed for 'relaxation feedback parameter'
@@ -206,12 +216,13 @@ if download:
             projects = ('CMIP6',)
         else:
             projects = ('CMIP6', 'CMIP5')
-        # kwargs.setdefault('model', 'CanESM5-1')  # TODO: remove
-        # projects = ('CMIP6',)  # TODO: remove
+        projects = () if kwargs is kw_dependencies else ('CMIP6',)  # TODO: remove
+        kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])
+        # kwargs.setdefault('model', ['FIO-ESM-2-0', 'NESM3'])
         for project in projects:
             if kwargs is kw_dependencies:
                 folder = '~/scratch2/cmip-dependencies'
-            elif project == 'CMIP5':
+            elif project == 'CMIP5' or 'model' in kwargs:
                 folder = '~/scratch2/cmip-downloads'
             else:
                 folder = '~/scratch5/cmip-downloads'
@@ -249,23 +260,24 @@ if filter:
             projects = ('CMIP6',)
         else:
             projects = ('CMIP6', 'CMIP5')
-        # kwargs.setdefault('model', 'CanESM5-1')  # TODO: remove
-        # projects = ('CMIP6',)  # TODO: remove
+        projects = () if kwargs is kw_dependencies else ('CMIP6',)  # TODO: remove
+        kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])
+        # kwargs.setdefault('model', ['FIO-ESM-2-0', 'NESM3'])
         for project in projects:
             exclude = []
             if kwargs is kw_constraints:
                 exclude.append({'experiment': 'abrupt4xCO2'})
-            if project == 'CMIP5':
-                exclude.append({'model': 'EC-EARTH'})  # incomplete availability
-            else:
-                exclude.append({'model': 'FIO-ESM-2-0'})  # incomplete availability
+            if project == 'CMIP5':  # incomplete availability
+                exclude.append({'model': 'EC-EARTH'})
             if kwargs is kw_dependencies:
                 exclude.append({'table': 'AERmon', 'model': ['HadGEM3-GC31-LL', 'HadGEM3-GC31-MM']})  # noqa: E501
             elif kwargs is kw_constraints:
                 exclude.append({'model': 'CNRM-CM6-1-HR', 'variable': ['cl', 'clw', 'cli']})  # noqa: E501
+            if 'model' not in kwargs:  # these are downloaded explicitly and separately
+                exclude.append({'model': ['CanESM5-1', 'E3SM-2-0', 'FIO-ESM-2-0', 'NESM3']})  # noqa: E501
             if kwargs is kw_dependencies:
                 folder = '~/scratch2/cmip-dependencies'
-            elif project == 'CMIP5':
+            elif project == 'CMIP5' or 'model' in kwargs:
                 folder = '~/scratch2/cmip-downloads'
             else:
                 folder = '~/scratch5/cmip-downloads'
@@ -301,15 +313,16 @@ if process:
             projects = ('CMIP6',)
         else:
             projects = ('CMIP6', 'CMIP5')
+        projects = projects and ('CMIP6',)  # TODO: remove
         # kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])  # TODO: remove
-        # projects = projects and ('CMIP6',)  # TODO: remove
+        kwargs.setdefault('model', ['FIO-ESM-2-0', 'NESM3'])
         for project in projects:
             experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
             if kwargs is kw_constraints:
                 del experiments['abrupt-4xCO2']
             if not climate:
                 experiments.clear()
-            if project == 'CMIP5':
+            if project == 'CMIP5' or 'model' in kwargs:
                 folder = '~/scratch2/cmip-downloads'
             else:
                 folder = '~/scratch5/cmip-downloads'
@@ -390,10 +403,9 @@ if process:
 #   data at year 0001 (both with time units "days since 0001"), and abrupt attributes
 #   state that branch_time_in_child = 0 days, branch_time_in_parent = 109500 days
 #   (i.e. 300 365-day calendar years --> 0001 + 0300 = the start year 0300). This
-#   center published *post-branching-time only* control data from year 0400 in later
-#   versions... but some data (e.g. ta, hus) is only available from year 0400.... could
-#   use it anyway, but notably surface pressure ps is only available from year 0300,
-#   so would be weird to pretend year 0400 is the branching time. Forget this model.
+#   center published *post-branching-time only* control data from year 0400 for some
+#   variables (e.g. ta, hus). Similar to NESM3 data only after year 700. Since Mark
+#   seems to have already used post-branching time NESM3 data, we permit this error.
 # * The UKESM1-1 model switches control and abrupt times -- control data starts at
 #   year 2743, abrupt data starts at year 1850 (both with time units "days since 1850"),
 #   and abrupt attributes state branch_time_in_child = branch_time_in_parent = 0 days,
@@ -405,14 +417,14 @@ if process:
 #   Note that CCSM4 rldscs seems to be available but processing was yielding zero
 #   timesteps and its initial time is 50 years after literally every other variable.
 #   rlds: MCM-UA-1-0
-#   rldscs: CCSM4, CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0, NorESM2-LM, NorESM2-MM, TaiESM1
+#   rldscs: CCSM4, CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0, NorESM2-LM, NorESM2-MM, TaiESM1, UKESM-1-1-LL  # noqa: E501
 #   rlus: MCM-UA-1-0
 #   rlutcs: MCM-UA-1-0
 #   rsds: MCM-UA-1-0
 #   rsdscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
 #   rsus: MCM-UA-1-0
 #   rsuscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
-#   rsutcs: MCM-UA-1-0
+#   rsutcs: MCM-UA-1-0, FIO-ESM-2-0
 if summarize:
     for project in ('cmip6', 'cmip5'):
         folders_downloads = ('~/scratch2/cmip-downloads', '~/scratch5/cmip-downloads')

@@ -325,7 +325,6 @@ def process_files(
     facets = facets or FACETS_STORAGE
     database = Database(files, facets, **constraints)
     constants = Path(constants).expanduser()
-    constants = constants / 'cmip-constants'
     output = Path(output).expanduser()
 
     # Initialize cdo and process files.
@@ -663,8 +662,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         # and would eventualy fail due to some memory allocation error. For
         # some reason ncap2 permute (while slow) does not implode this way.
         if all(
-            s in attrs and s not in lev_bnds_formula
-            for s in ('ap_bnds', 'b_bnds')
+            s in attrs and s not in lev_bnds_formula for s in ('ap_bnds', 'b_bnds')
         ):
             math = repr(
                 'b_bnds = b_bnds.permute($lev, $bnds); '
@@ -771,36 +769,35 @@ def repair_files(*paths, dryrun=False, printer=None):
                 nco.ncatted(input=str(path), output=str(path), options=atted)
                 nco.ncks(input=str(path), output=str(path), options=remove)
 
-        # Handle MCM-UA-1-0 models with messed up longitude/latitude bounds that have
-        # non-global coverage and cause error when generating weights with 'cdo gencon'.
+        # Handle MCM-UA-1-0 and FIO-ESM-2-0 models with messed up longitude/latitude
+        # bounds that have non-global coverage and cause error when calling 'cdo gencon'
         # Also remove unneeded 'areacella' that most likely contains incorrect weights
         # (seems all other files reference this in cell_measures but exclude variable).
         # This is the only horizontal interpolation-related correction required.
-        # NOTE: Verified only this model uses 'longitude' and 'latitude' (although can
+        # NOTE: Verified only MCM-UA uses 'longitude' and 'latitude' (although can
         # use either full name or abbreviated for matching bounds). Try the following:
         # for f in cmip[56]-picontrol-amon/cl_Amon*; do m=$(echo $f | cut -d_ -f3);
         # [[ " ${models[*]} " =~ " $m "  ]] && continue || models+=("$m");
         # echo "$m: "$(ncdimlist "$f" | tail -n +2 | xargs); done; unset models
+        lon = 'longitude' if 'longitude' in attrs else 'lon'
+        lat = 'latitude' if 'latitude' in attrs else 'lat'
+        models = ['_MCM-UA-1-0', '_FIO-ESM-2-0']
+        bounds = [attrs.get(key, {}).get('bounds', None) for key in (lon, lat)]
         if (
-            '_MCM-UA-1-0' in path.stem and 'longitude' in attrs and 'latitude' in attrs
-            and not any('bounds_status' in attrs[s] for s in ('longitude', 'latitude'))
+            any(bound is not None for bound in bounds)
+            and any(model in path.stem for model in models)
         ):
-            lonb = attrs['longitude'].get('bounds', 'lon_bnds')
-            latb = attrs['latitude'].get('bounds', 'lat_bnds')
-            math = repr(
-                f'{lonb}(-1, 1) = {lonb}(0, 0) + 360.0; '
-                f'{latb}(0, 0) = -90.0; '
-                f'{latb}(-1, 1) = 90.0; '
-                f'longitude@bounds_status = "repaired"; '
-                f'latitude@bounds_status = "repaired"; '
-            )
+            atted = [
+                Atted('delete', 'bounds', key).prn_option()
+                for key in (lon, lat)
+            ]
             print(
                 'Warning: Converting MCM-UA-like issue with non-global longitude and '
-                f'latitude bounds for {path.name!r}:', math
+                f'latitude bounds for {path.name!r}:', ' '.join(atted)
             )
             if not dryrun:  # first flag required because is member of cell_measures
-                remove = ['-C', '-x', '-v', 'areacella']
-                nco.ncap2(input=str(path), output=str(path), options=['-s', math])
+                remove = ['-x', '-v', ','.join((*bounds, 'areacella'))]
+                nco.ncatted(input=str(path), output=str(path), options=atted)
                 nco.ncks(input=str(path), output=str(path), options=remove)
 
         # Handle ACCESS1-0 and ACCESS1-3 pfull files that all have 12 timesteps
@@ -1019,7 +1016,7 @@ def standardize_time(
         offset = _output_path(offset or paths[0].parent, variable, model, 'offset')
         slope = _output_path(slope or paths[0].parent, variable, model, 'slope')
         if 'NESM3' in paths[0].name and 'abrupt-4xCO2' in paths[0].name:
-            sel = '-sellevidx,1/17 '  # abrupt-4xCO2 has fewer levels
+            sel = '-sellevidx,1/17 '  # abrupt-4xCO2 has fewer levels than piControl
         prefix = f'-add -add {sel}{offset} -mulc,{rmin} {sel}{slope} -mergetime '
         suffix = f' {sel}{offset} -divc,12 {sel}{slope}'
         if kwtime.pop('climate'):

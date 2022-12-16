@@ -25,6 +25,7 @@ if climate:
     experiments = ('piControl', 'abrupt4xCO2')
     for nodrift, experiment in itertools.product(nodrifts, experiments):
         projects = ('CMIP6', 'CMIP5')
+        projects = ('CMIP6',)  # TODO: remove
         # projects = ('CMIP5',)
         for project in projects:
             cmip_data.process_climate(
@@ -39,6 +40,7 @@ if climate:
                 logging=True,  # ignored if dryrun true
                 dryrun=False,
                 nowarn=False,
+                # model=['FIO-ESM-2-0', 'NESM3'],
                 # model=['CanESM5-1', 'E3SM-2-0'],
             )
 
@@ -52,15 +54,17 @@ if feedbacks:
     nodrifts = (False,)
     # nodrifts = (False, True)
     options = (
-        ('piControl', False, (0, 150)),  # regression of series
-        ('abrupt4xCO2', False, (0, 150)),  # regression of series
-        ('abrupt4xCO2', True, (120, 150)),  # ratio of anomalies
-        ('abrupt4xCO2', False, (0, 20)),  # regression of series
-        ('abrupt4xCO2', False, (20, 150)),  # regression of series
-        ('abrupt4xCO2', False, (0, 50)),  # regression of series
+        # ('piControl', False, (0, 150)),  # regression of series
+        # ('abrupt4xCO2', False, (0, 150)),  # regression of series
+        # ('abrupt4xCO2', True, (120, 150)),  # ratio of anomalies
+        # ('abrupt4xCO2', False, (0, 20)),  # regression of series
+        # ('abrupt4xCO2', False, (20, 150)),  # regression of series
+        # ('abrupt4xCO2', False, (0, 50)),  # regression of series
+        ('abrupt4xCO2', False, (100, 150)),  # regression of series
     )
     for nodrift, (experiment, ratio, response) in itertools.product(nodrifts, options):
         projects = ('CMIP6', 'CMIP5')
+        # projects = ('CMIP6',)  # TODO: remove
         # projects = ('CMIP5',)
         for project in projects:
             cmip_data.process_feedbacks(
@@ -76,10 +80,10 @@ if feedbacks:
                 project=project,
                 experiment=experiment,
                 flagship_filter=True,
-                nodrift=nodrift,
                 overwrite=False,
                 logging=True,  # ignored if dryrun true
                 dryrun=False,
                 nowarn=False,
+                # model=['FIO-ESM-2-0', 'NESM3'],
                 # model=['CanESM5-1', 'E3SM-2-0'],
             )

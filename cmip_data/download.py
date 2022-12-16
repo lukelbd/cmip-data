@@ -413,8 +413,15 @@ def filter_script(
         print(', '.join(f'{key}: {value}' for key, value in group.items()))
         for key, lines in data.items():
             print('  ' + ', '.join(key) + ':', end=' ')
+            items = (*key, *group.values())  # special cases
             year1 = min((y for y, _ in map(_item_years, lines)), default=+10000)
             year2 = max((y for _, y in map(_item_years, lines)), default=-10000)
+            if all(item in items for item in ('FIO-ESM-2-0', 'piControl')):
+                year1 = 401 if year1 in (301, 401) else 400  # not year 300 entries
+            if all(item in items for item in ('NESM3', 'piControl')):
+                year1 = 700  # not single-level year 500 entries
+            if all(item in items for item in ('KIOST-ESM', 'piControl')):
+                year1 = 3189  # not outdated year 2689 entries
             print(f'initial {year1}-{year2}', end=' ')
             if endyears:
                 year1 = int(max(year1, year2 - maxyears + 1))
@@ -494,22 +501,7 @@ def summarize_downloads(
     # use wget scripts to automatically update.
     print('Finished downloads.')
     database_downloads.summarize(missing=True, rawdata=False, printer=print)
-    print('Missing from wget scripts.')
-    missing_scripts = copy.deepcopy(database_downloads)
-    for group, data in missing_scripts.items():
-        for key, files in data.items():
-            names = database_scripts.get(group, {}).get(key, ())
-            files[:] = [file for file in files if file.name not in names]
-    missing_scripts.summarize(missing=False, rawdata=True, printer=print)
-    print('Missing from status logs.')
-    missing_status = copy.deepcopy(database_downloads)
-    for group, data in missing_status.items():
-        for key, files in data.items():
-            names = database_status.get(group, {}).get(key, ())
-            known = database_scripts.get(group, {}).get(key, ())
-            files[:] = [file for file in files if file.name not in names and file.name in known]  # noqa: E501
-    missing_status.summarize(missing=False, rawdata=True, printer=print)
-    print('Missing from netcdf files.')
+    print('Unfinished downloads.')
     missing_netcdfs = copy.deepcopy(database_scripts)
     for group, data in missing_netcdfs.items():
         for key, names in data.items():
@@ -517,6 +509,21 @@ def summarize_downloads(
             files = [file.name for file in files]
             names[:] = [name for name in names if name not in files]
     missing_netcdfs.summarize(missing=False, rawdata=True, printer=print)
+    print('Downloaded but missing from wget scripts.')
+    missing_scripts = copy.deepcopy(database_downloads)
+    for group, data in missing_scripts.items():
+        for key, files in data.items():
+            names = database_scripts.get(group, {}).get(key, ())
+            files[:] = [file for file in files if file.name not in names]
+    missing_scripts.summarize(missing=False, rawdata=True, printer=print)
+    print('Downloaded but missing from status logs.')
+    missing_status = copy.deepcopy(database_downloads)
+    for group, data in missing_status.items():
+        for key, files in data.items():
+            names = database_status.get(group, {}).get(key, ())
+            scripts = database_scripts.get(group, {}).get(key, ())
+            files[:] = [file for file in files if file.name not in names and file.name in scripts]  # noqa: E501
+    missing_status.summarize(missing=False, rawdata=True, printer=print)
 
     # Remove unknown files and return file lists
     for remove, files in (

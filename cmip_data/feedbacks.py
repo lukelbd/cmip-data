@@ -219,7 +219,7 @@ def _get_clausius_scaling(ta, pa=None, liquid=True):
 
 
 def _anomalies_from_files(
-    project=None, select=None, dryrun=False, printer=None, **inputs,
+    project=None, select=None, model=None, dryrun=False, printer=None, **inputs,
 ):
     """
     Return dataset containing response minus control anomalies for the variables given
@@ -233,6 +233,8 @@ def _anomalies_from_files(
         The project. Used in level checking.
     select : int, optional
         The start and stop years for pattern effects.
+    model : str, optional
+        The input model. Used for NESM3 upper level issues.
     dryrun : bool, optional
         Whether to run with only three years of data.
     printer : callable, default: `print`
@@ -277,6 +279,8 @@ def _anomalies_from_files(
                     data = data.isel(time=slice(None, 36))
                 elif start is not None or stop is not None:
                     data = data.isel(time=slice(start, stop))
+                if model == 'NESM3' and 'plev' in data.sizes:  # picontrol feedbacks bug
+                    data = data.isel(plev=slice(None, 17))
                 data.name = variable
                 datas.append(data)
 
@@ -318,6 +322,11 @@ def _anomalies_from_files(
         # Add attributes and update dataset
         # NOTE: Albedo is taken above from ratio of upwelling to downwelling all-sky
         # surface shortwave radiation. Feedback is simply (rsus - rsds) / (rsus / rsds)
+        # WARNING: Weird error can happen where NESM3 time coords disagree between
+        # variables (single-level data starts at year 500, press-level data starts at
+        # year 700) so that assigning to existing dataset just sets all values to
+        # nan. Tested output and 1000hPa temperature seems to correspond to surface
+        # temperature over oceans, i.e. times are actually correct, so just overwrite.
         with xr.set_options(keep_attrs=True):
             if control is None:
                 data = response
@@ -340,11 +349,25 @@ def _anomalies_from_files(
         else:
             long_name = f'{long_name} anomaly'
             data.attrs.pop('standard_name', None)
-        size = data.sizes['time' if 'time' in data.sizes else 'month']
+        if (  # primarily for FIO-ESM-2-0 data
+            all('time' in source.sizes for source in (output, data))
+            and data.sizes['time'] == output.sizes['time']  # i.e. intersect not done
+            and np.any(data.time.values != output.time.values)
+        ):
+            print(
+                f'Warning: Data times {data.time.values[0]} to {data.time.values[-1]} '
+                f'do not match existing times {output.time.values[0]} to {output.time.values[-1]}.'  # noqa: E501
+            )
         data.attrs['long_name'] = long_name
+        output, data = xr.align(output, data, join='inner')  # avoid nan time slices
         output[variable] = data
-        print(f'  {variable} ({long_name}): {size}')
+        print(f'  {variable} ({long_name}):', data.sizes.get('time', 12))
 
+    if 'time' in output.sizes and output.sizes['time'] == 0:
+        raise RuntimeError(
+            'Output anomaly data has length-zero time dimension. Probably '
+            'result of intersection of time series from different dates.'
+        )
     return output
 
 
@@ -995,7 +1018,7 @@ def get_feedbacks(
         kernels = Path(kernels).expanduser() / f'kernels_{source}.nc'
         print(f'Loading kernel data from file: {kernels.name}')
         kernels = load_file(kernels, project=project, validate=False)
-        kwargs = dict(select=select, project=project, dryrun=dryrun)
+        kwargs = dict(select=select, project=project, model=model, dryrun=dryrun)
         anoms = _anomalies_from_files(printer=print, **kwargs, **inputs)
         fluxes = _fluxes_from_anomalies(anoms, kernels=kernels, printer=print)
         for dataset in (anoms, kernels):
@@ -1097,11 +1120,6 @@ def process_feedbacks(
         response_suffix = f'{control[0]:04d}-{control[1]:04d}-series{suffix}'
     response, select = control, response
     suffixes = (*(format(int(t), '04d') for t in select), source, statistic, nodrift)
-    if logging:
-        print = Logger('feedbacks', *suffixes, project=project, experiment=experiment, table='Amon')  # noqa: E501
-    else:
-        print = builtins.print
-    print('Generating database.')
     constraints = {
         'variable': sorted(set(k for d in VARIABLE_DEPENDENCIES.values() for k in d)),
         'experiment': ['piControl', experiment],
@@ -1111,6 +1129,11 @@ def process_feedbacks(
         key: kwargs.pop(key) for key in tuple(kwargs)
         if any(s in key for s in ('model', 'flagship', 'ensemble'))
     })
+    if logging:
+        print = Logger('feedbacks', *suffixes, project=project, **constraints)
+    else:
+        print = builtins.print
+    print('Generating database.')
     files, *_ = glob_files(*paths, project=project)
     facets = ('project', 'model', 'ensemble', 'grid')
     database = Database(files, facets, project=project, **constraints)

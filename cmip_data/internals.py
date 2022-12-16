@@ -210,36 +210,37 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 # See: https://noresm-docs.readthedocs.io/en/latest/start.html
 # Prefer UKESM to HadGEM because former is full earth system model
 # See: https://www.metoffice.gov.uk/research/approach/modelling-systems/new-flagship-climate-models  # noqa: E501
-INSTITUTES_LABELS = {  # map institute ids to more familiar model abbreviations
-    'CSIRO': 'CSIRO (AU)',  # 'ACCESS',  # Commonwealth Sci. + Ind. Research Org.
+INSTITUTES_LABELS = {  # map ids to (and alphabetize by) more familiar abbreviations
+    'AS-RCEC': 'AS (TW)',  # 'AS',  # Taipei Academia Sinica, Taiwan
+    'AWI': 'AWI (DE)',  # Alfred Wegener Institute, Germany
+    'BCC': 'BCC (CN)',  # Beijing Climate Center, China
     'BNU': 'BNU (CN)',  # Beijing N. University, China
-    'NCAR': 'NCAR (US)',  # 'CESM',  # National Center for Atmospheric Research, USA
-    'THU': 'THU (CN)',  # 'CIESM',  # Beijing Tsinghua University, China
     'CAMS': 'CAMS (CN)',  # Chinese Academy of Meteorological Sciences, China
     'CAS': 'CAS (CN)',  # 'FGOALS',  # Chinese Academy of Sciences, China
+    'CCCma': 'CCCma (CA)',  # 'CanESM',  # Can. Cen. Clim. Modelling + Analaysis, Canada
     'CMCC': 'CMCC (IT)',  # 'CMCC-Esm',  # Cen. Euro-Med. Cambiamenti Climatici, Italy
     'CNRM-CERFACS': 'CNRM (FR)',  # Cen. National de Recherches Meteorologiques, France
-    'CCCma': 'CCCma (CA)',  # 'CanESM',  # Can. Cen. Clim. Modelling + Analaysis, Canada
+    'CSIRO': 'CSIRO (AU)',  # 'ACCESS',  # Commonwealth Sci. + Ind. Research Org.
     'E3SM-Project': 'E3SM (US)',  # various USA institutes
     'EC-Earth-Consortium': 'EC-Earth (EU)',  # various European institutes
+    'FIO': 'FIO (CN)',  # First Institute for Oceanography, China
     'NOAA': 'GFDL (US)',  # 'NOAA',  # Geophysical Fluid Dynamics Laboratory, USA
     'NASA': 'GISS (US)',  # 'NASA',  # Goddard Institute for Space Studies, USA
-    'MOHC': 'MOHC (UK)',  # 'HadGEM',  # Met Office Hadley Centre, UK
     'CCCR-IITM': 'IITM (IN)',  # Indian Institute of Tropical Meteorology, India
     'INM': 'INM (RU)',  # Institute for Numerical Mathematics, Moscow
     'IPSL': 'IPSL (FR)',  # Institut Pierre Simon Laplace, France
     'KIOST': 'KIOST (KR)',  # Korea Institute of Ocean Science & Technology, Korea
     'NIMS-KMA': 'KMA (KR)',  # 'KACE',  # Korea Meteorological Administration, Korea
-    'UA': 'UA (US)',  # 'MCM-UA',  # University of Arizonta, USA
     'MIROC': 'MIROC (JP)',  # jaMstec/nIes/R-ccs/aOri Consortium, Japan
+    'MOHC': 'MOHC (UK)',  # 'HadGEM',  # Met Office Hadley Centre, UK
     'MPI-M': 'MPI (DE)',  # 'MPI-ESM',  # Max Planck Institut, Germany
     'MRI': 'MRI (JP)',  # Meteorological Research Institute, Japan
-    'NUIST': 'NUIST (CN)',  # 'NESM',  # Nanjing U. of Information Sci. and Tech., China
+    'NCAR': 'NCAR (US)',  # 'CESM',  # National Center for Atmospheric Research, USA
     'NCC': 'NCC (NO)',  # 'NorESM',  # NorESM Climate modeling Consortium, Norway
-    'BCC': 'BCC (CN)',  # Beijing Climate Center, China
-    'AWI': 'AWI (DE)',  # Alfred Wegener Institute, Germany
+    'NUIST': 'NUIST (CN)',  # 'NESM',  # Nanjing U. of Information Sci. and Tech., China
     'SNU': 'SNU (KR)',  # 'SAM',  # Seoul National University, Korea
-    'AS-RCEC': 'AS (TW)',  # 'AS',  # Taipei Academia Sinica, Taiwan
+    'THU': 'THU (CN)',  # 'CIESM',  # Beijing Tsinghua University, China
+    'UA': 'UA (US)',  # 'MCM-UA',  # University of Arizonta, USA
 }
 MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model last
     ('CMIP5', 'BNU-ESM'): 'BNU',
@@ -300,6 +301,7 @@ MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model la
     ('CMIP6', 'EC-Earth3-Veg'): 'EC-Earth-Consortium',  # most relevant
     ('CMIP6', 'FGOALS-f3-L'): 'CAS',
     ('CMIP6', 'FGOALS-g3'): 'CAS',  # highest resolution
+    ('CMIP6', 'FIO-ESM-2-0'): 'FIO',
     ('CMIP6', 'GFDL-CM4'): 'NOAA',  # 'NOAA-GFDL',
     ('CMIP6', 'GFDL-ESM4'): 'NOAA',  # 'NOAA-GFDL',  # most complex
     ('CMIP6', 'GISS-E2-1-G'): 'NASA',  # 'NASA-GISS',

@@ -18,6 +18,11 @@ from icecream import ic  # noqa: F401
 from .utils import average_periods, load_file
 from .internals import Database, Logger, glob_files, _item_dates, _item_parts
 
+__all__ = [
+    'get_climate',
+    'process_climate',
+]
+
 # Climate constants
 # NOTE: For now use the standard 1e3 kg/m3 water density (i.e. snow and ice terms
 # represent melted equivalent depth) but could also use 1e2 kg/m3 snow density where
@@ -588,7 +593,7 @@ def _update_climate_transport(
 
 def get_climate(output=None, project=None, **inputs):
     """
-    Compute climate variables for a given model time series and climate data.
+    Calculate climate variables for a given model time series and climate data.
 
     Parameters
     ----------
