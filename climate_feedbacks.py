@@ -60,7 +60,7 @@ if feedbacks:
         # ('abrupt4xCO2', False, (0, 20)),  # regression of series
         # ('abrupt4xCO2', False, (20, 150)),  # regression of series
         # ('abrupt4xCO2', False, (0, 50)),  # regression of series
-        ('abrupt4xCO2', False, (100, 150)),  # regression of series
+        # ('abrupt4xCO2', False, (100, 150)),  # regression of series
     )
     for nodrift, (experiment, ratio, response) in itertools.product(nodrifts, options):
         projects = ('CMIP6', 'CMIP5')

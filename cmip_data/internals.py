@@ -294,11 +294,11 @@ MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model la
     ('CMIP6', 'CanESM5-1'): 'CCCma',
     ('CMIP6', 'E3SM-1-0'): 'E3SM-Project',
     ('CMIP6', 'E3SM-2-0'): 'E3SM-Project',
-    ('CMIP6', 'EC-Earth3'): 'EC-Earth-Consortium',  # collaborative incl. many centers
     ('CMIP6', 'EC-Earth3-AerChem'): 'EC-Earth-Consortium',
     ('CMIP6', 'EC-Earth3-CC'): 'EC-Earth-Consortium',
     ('CMIP6', 'EC-Earth3-Veg-LR'): 'EC-Earth-Consortium',
     ('CMIP6', 'EC-Earth3-Veg'): 'EC-Earth-Consortium',  # most relevant
+    ('CMIP6', 'EC-Earth3'): 'EC-Earth-Consortium',  # collaborative incl. many centers
     ('CMIP6', 'FGOALS-f3-L'): 'CAS',
     ('CMIP6', 'FGOALS-g3'): 'CAS',  # highest resolution
     ('CMIP6', 'FIO-ESM-2-0'): 'FIO',
