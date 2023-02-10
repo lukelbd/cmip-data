@@ -308,8 +308,8 @@ def _anomalies_from_files(
                 response = np.log(response)
             elif variable == 'alb':  # ratio of outward and inward flux
                 (control_out, control_in), (response_out, response_in) = controls, responses  # noqa: E501
-                control = 100 * (control_out / control_in)
-                response = 100 * (response_out / response_in)
+                control = 100 * (control_out / control_in).clip(0, 1)
+                response = 100 * (response_out / response_in).clip(0, 1)
             elif len(controls) == 1:  # outward flux to inward flux
                 (control_out,), (response_out,) = controls, responses
                 control = -1 * control_out
@@ -642,10 +642,9 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
 
 def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **kwargs):
     """
-    Return a dataset containing feedbacks calculated along all `average_periods` periods
-    (annual averages, seasonal averages, and month averages) and along all combinations
-    of `average_regions` (points, latitudes, hemispheres, and global, with different
-    averaging conventions used in the denominator indicated by the ``region`` coord).
+    Return a dataset containing feedbacks calculated along all combinations of
+    `average_regions` (points, latitudes, hemispheres, and global, with ``region``
+    coordinate indicating the averaging convention used in the denominator).
 
     Parameters
     ----------
@@ -660,7 +659,7 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
     printer : callable, default: `print`
         The print function.
     **kwargs
-        Passed to `average_periods` and `average_regions`.
+        Passed to `average_regions`.
     """
     # Load data and perform averages
     # NOTE: Need to extract 'plev' top and bottom because for some reason they get
@@ -668,18 +667,16 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
     print = printer or builtins.print
     statistic = 'slope' if forcing is None else 'ratio'
     print(f'Calculating radiative feedbacks using {statistic}s.')
-    fluxes = fluxes.climo.add_cell_measures()
-    fluxes = fluxes.climo.quantify()
-    print('Getting average time periods.')
-    keys_periods = ('annual', 'seasonal', 'monthly')
-    kw_periods = {key: kwargs.pop(key) for key in keys_periods if key in kwargs}
-    fluxes = average_periods(fluxes, **kw_periods)
     print('Getting average spatial regions.')
-    keys_regions = ('point', 'latitude', 'hemisphere', 'globe')
-    kw_regions = {key: kwargs.pop(key) for key in keys_regions if key in kwargs}
-    denoms = average_regions(fluxes['ts'], **kw_regions)
-    if kwargs:
-        raise ValueError(f'Got unexpected keyword argument(s): {kwargs}')
+    fluxes = fluxes.climo.add_cell_measures()
+    zeros = xr.zeros_like(fluxes.ts)
+    denoms = average_periods(fluxes.ts, seasonal=False, monthly=False)
+    denoms = denoms.sel(period='ann', drop=True)
+    with xr.set_options(keep_attrs=True):  # place annual average on each month
+        denoms = zeros.groupby('time.year') + denoms
+    denoms = average_regions(denoms, **kwargs)  # add region coordinate
+    fluxes = fluxes.climo.quantify()
+    denoms = denoms.climo.quantify()
 
     # Iterate over fluxes
     # NOTE: Since forcing is constant, the cloud masking adjustment has no effect on
@@ -829,8 +826,9 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
     # for different feedback versions. Non-globe values get auto-filled with nan.
     print('Calculating pattern effect term.')
     if pattern:
-        point = denoms.sel(region='point')
-        globe = denoms.sel(region='globe')
+        # point = denoms.sel(region='point')
+        point = fluxes.ts  # original monthly data
+        globe = denoms.sel(region='globe')  # annual-averaged data
         if forcing is not None:
             data = point / globe  # simply the ratio of differences
         elif 'time' in point.sizes:
@@ -840,8 +838,10 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
             raise ValueError('Time coordinte required for slope-style pattern effect.')
         data = data.climo.dequantify()
         data.attrs['units'] = 'K / K'
-        data.attrs['long_name'] = 'relative surface warming'
-        output['tpat'] = data.assign_coords(region='globe').expand_dims('region')
+        data.attrs['long_name'] = 'relative warming'
+        data = data.assign_coords(region='globe')
+        data = data.expand_dims('region')
+        output['tpat'] = data
     return output
 
 

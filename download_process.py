@@ -149,7 +149,7 @@ kw_constraints = {
     'table': 'Amon',
     'experiment': ['piControl', 'abrupt-4xCO2'],
     'variable': [
-        'cl',  # percent cloud cover
+        'cl',  # percent lcoud cover
         'clt',  # total percent cloud cover
         'cct',  # convective cloud top pressure
         'clw',  # mass fraction cloud water/snow/ice
@@ -383,11 +383,11 @@ if process:
 # rlut data to get 'rsut - rsdt' as a residual. See manual_files.sh for details.
 # NOTE: Still need to download missing FGOALS-g2, CAMS-CSM1-0, GFDL-ESM4, NorESM2-LM,
 # NorESM2-MM, and TaiESM1 flux for surface and atmosphere feedbacks, plus FIO-ESM-2-0
-# for missing top-of-atmosphere cloud feedbacks. Notably, among the models Mark
-# excluded (CAS-ESM2-0, FIO-ESM-2-0, ICON-ESM-LR, KIOST-ESM, and MCM-UA-1-0), there
-# is either missing data required for TOA cloud feedbacks (in the case of FIO and MCM),
-# control data years out-of-sync with abrupt years (in the case of FIO, ICON, KIOST),
-# or... not sure what else (possibly quality control/acquisition issues for CAS-ESM2).
+# for missing top-of-atmosphere cloud feedbacks. Note the models Mark excluded are
+# either very new (CanESM5-1, E3SM-2-0), have missing data required for TOA cloud
+# feedbacks (FIO-ESM-2-0 and MCM-UA-1-0), have control data years out-of-sync with
+# abrupt years (FIO-ESM-2-0, ICON-ESM-LR, KIOST-ESM), or... not sure what else
+# (there could be quality control/acquisition issues for CAS-ESM2).
 # * The ICON model switches time units -- control data starts at year 4000, abrupt
 #   data at year 1850, and abrupt attributes state that branch_time_in_parent = 0 and
 #   branch_time_in_parent = 0 -- but abrupt attributes also state parent_time_units =

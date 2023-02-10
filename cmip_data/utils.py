@@ -12,10 +12,38 @@ from icecream import ic  # noqa: F401
 from .internals import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
 
 __all__ = [
+    'assign_dates',
     'average_periods',
     'average_regions',
     'load_file',
 ]
+
+
+def assign_dates(data):
+    """
+    Assign a standard year for months in the file.
+
+    Parameters
+    ----------
+    data : xarray.Dataset or xarray.DataArray
+        The input data.
+
+    Returns
+    -------
+    output : xarray.Dataset or xarray.DataArray
+        The standardized data.
+    """
+    # NOTE: This is used when *loading* datasets and combining along models. Should
+    # not put this into per-model climate and feedback processing code.
+    months = data.time.dt.strftime('%m')
+    if len(months) != 12:
+        raise ValueError(f'Cannot standardize time. Expected 12 got {data.time.size}.')
+    attrs = {'axis': 'T', 'standard_name': 'time'}
+    time = [f'2000-{month.item()}-01' for month in months.values]
+    time = np.array(time).astype('datetime64')
+    time = xr.DataArray(time, attrs=attrs)
+    data = data.assign_coords(time=time)
+    return data
 
 
 def average_periods(input, annual=True, seasonal=True, monthly=True):
@@ -30,7 +58,13 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
         The input dataset.
     annual, seasonal, monthly : bool, optional
         Whether to take various decompositions. Default is annual and seasonal.
+
+    Returns
+    -------
+    output : xarray.Dataset
+        The standardized data.
     """
+    # TODO: Remove this since outdated
     # NOTE: The new climopy cell duration calculation will auto-detect monthly and
     # yearly data, but not yet done, so use explicit days-per-month weights for now.
     # NOTE: Here resample(time='AS') and groupby('time.year') yield identical results,
@@ -80,14 +114,13 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
         compat='equals',
         combine_attrs='drop_conflicts',
     )
-    attrs = {'long_name': 'time', 'standard_name': 'time', 'units': 'yr', 'axis': 'T'}
-    output = output.rename(year='time')
+    attrs = {'long_name': 'year', 'standard_name': 'time', 'units': 'yr', 'axis': 'T'}
     if isinstance(input, xr.DataArray):
         output.name = input.name
-    if output.time.size == 1:  # avoid conflicts during merge
-        output = output.isel(time=0, drop=True)
+    if output.year.size == 1:  # avoid conflicts during merge
+        output = output.isel(year=0, drop=True)
     else:
-        output.time.attrs.update(attrs)
+        output.year.attrs.update(attrs)
     return output
 
 
@@ -103,6 +136,11 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
         The input dataset.
     point, latitude, hemisphere, globe : optional
         Whether to add each type of average.
+
+    Returns
+    -------
+    output : xarray.Dataset
+        The standardized data.
     """
     # NOTE: Alternative approach to feedbacks 'numerator' and 'denominator' is to
     # get pointwise fluxes relative to different averages, then when we want non-local
@@ -184,6 +222,11 @@ def load_file(
         The printer.
     demote : bool, optional
         Whether to demote the precision to float32.
+
+    Returns
+    -------
+    output : xarray.Dataset or xarray.DataArray
+        The resulting data.
     """
     # Validate pressure coordinates
     # NOTE: Since CMIP6 includes 2 extra levels have to drop them to get it to work
