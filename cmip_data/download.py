@@ -427,7 +427,7 @@ def filter_script(
                 year1 = int(max(year1, year2 - maxyears + 1))
             else:
                 year2 = int(min(year2, year1 + maxyears - 1))
-            print(f'initial {year1}-{year2}', end=' ')
+            print(f'final {year1}-{year2}', end=' ')
             for line in lines:
                 y1, y2 = _item_years(line)
                 if y2 < year1 or y1 > year2:

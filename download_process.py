@@ -33,10 +33,10 @@ import cmip_data
 # there are no other missing control-abrupt pairs (candidates are AWI-ESM-1-1-LR,
 # CMCC-CM2-HR4, CanESM5-CanOE, E3SM-1-1, E3SM-1-1-ECA, EC-Earth3-LR, and NorESM1-F,
 # but all are missing abrupt simulations). In sum we added 7 models but missed 9 models
-# for a total of 2 models fewer (51 instead of 53). We can rectify everything but the
-# IPSL model, plus add the extra MIROC and UKESM models, providing a total of 8 models
-# more than Mark (61 instead of 53). Note that for MCM-UA-1-0, we download 'rtmt' and
-# compute 'rsut - rsdt' from the difference (see 'manual_files.sh' for details).
+# for a total of 2 models fewer (51 instead of 53). We can rectify everything but
+# IPSL-CM6A-LR-INCA, plus add the extra MIROC and UKESM models, providing a total of 8
+# models more than Mark (61 instead of 53). Note that for MCM-UA-1-0, we download 'rtmt'
+# and compute 'rsut - rsdt' from the difference (see 'manual_files.sh' for details).
 analysis = True  # control and response data for feedback analysis?
 circulation = True  # control and response data for implicit circulation stuff?
 constraints = True  # control data for emergent constraints?
@@ -314,8 +314,8 @@ if process:
         else:
             projects = ('CMIP6', 'CMIP5')
         projects = projects and ('CMIP6',)  # TODO: remove
-        # kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])  # TODO: remove
-        kwargs.setdefault('model', ['FIO-ESM-2-0', 'NESM3'])
+        kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])  # TODO: remove
+        # kwargs.setdefault('model', ['FIO-ESM-2-0', 'NESM3'])
         for project in projects:
             experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
             if kwargs is kw_constraints:
@@ -383,7 +383,8 @@ if process:
 # rlut data to get 'rsut - rsdt' as a residual. See manual_files.sh for details.
 # NOTE: Still need to download missing FGOALS-g2, CAMS-CSM1-0, GFDL-ESM4, NorESM2-LM,
 # NorESM2-MM, and TaiESM1 flux for surface and atmosphere feedbacks, plus FIO-ESM-2-0
-# for missing top-of-atmosphere cloud feedbacks. Note the models Mark excluded are
+# for missing top-of-atmosphere cloud feedbacks, and MCM-UA-1-0 missing everything
+# but net top-of-atmosphere shortwave and longwave. Note the models Mark excluded are
 # either very new (CanESM5-1, E3SM-2-0), have missing data required for TOA cloud
 # feedbacks (FIO-ESM-2-0 and MCM-UA-1-0), have control data years out-of-sync with
 # abrupt years (FIO-ESM-2-0, ICON-ESM-LR, KIOST-ESM), or... not sure what else

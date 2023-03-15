@@ -588,6 +588,12 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
     # enforced that control runs come before abrupt runs for consistency with database.
     for key in ('flagship_filter', 'flagship_translate'):
         constraints.pop(key, None)
+    invalid = {
+        facet: opts for facet, opts in constraints.items()
+        if not np.iterable(opts)
+    }
+    if invalid := ', '.join(f'{key}={value}' for key, value in invalid.items()):
+        raise ValueError(f'Invalid facet constraints: {invalid}.')
     constraints = {
         facet: list(set(opts.split(',') if isinstance(opts, str) else opts))
         for facet, opts in constraints.items()

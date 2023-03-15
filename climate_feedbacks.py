@@ -54,9 +54,9 @@ if feedbacks:
     nodrifts = (False,)
     # nodrifts = (False, True)
     options = (
-        # ('piControl', False, (0, 150)),  # regression of series
-        # ('abrupt4xCO2', False, (0, 150)),  # regression of series
-        # ('abrupt4xCO2', True, (120, 150)),  # ratio of anomalies
+        ('piControl', False, (0, 150)),  # regression of series
+        ('abrupt4xCO2', False, (0, 150)),  # regression of series
+        ('abrupt4xCO2', True, (120, 150)),  # ratio of anomalies
         # ('abrupt4xCO2', False, (0, 20)),  # regression of series
         # ('abrupt4xCO2', False, (20, 150)),  # regression of series
         # ('abrupt4xCO2', False, (0, 50)),  # regression of series

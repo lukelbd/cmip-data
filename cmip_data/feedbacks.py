@@ -824,24 +824,28 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
     # Add final pattern effect term
     # NOTE: Region coordinate is necessary for pattern effect so it can be shown
     # for different feedback versions. Non-globe values get auto-filled with nan.
-    print('Calculating pattern effect term.')
+    print('Calculating pattern effect terms.')
     if pattern:
-        # point = denoms.sel(region='point')
-        point = fluxes.ts  # original monthly data
-        globe = denoms.sel(region='globe')  # annual-averaged data
+        # point = denoms.sel(region='point')  # outdated denominator
+        numer = fluxes.ts  # original monthly data
+        denom = denoms.sel(region='globe')  # annual-averaged data
         if forcing is not None:
-            data = point / globe  # simply the ratio of differences
-        elif 'time' in point.sizes:
-            pm, gm = point.mean('time', skipna=False), globe.mean('time', skipna=False)
-            data = ((globe - gm) * (point - pm)).sum('time') / ((globe - gm) ** 2).sum('time')  # noqa: E501
+            proj = numer  # simply the actual warming
+            slope = numer / denom  # simply the ratio of differences
+        elif 'time' in numer.sizes:
+            nm, dm = numer.mean('time', skipna=False), denom.mean('time', skipna=False)
+            proj = ((denom - dm) * (numer - nm)).sum('time') / np.sqrt(((denom - dm) ** 2).sum('time'))  # noqa:E501
+            slope = ((denom - dm) * (numer - nm)).sum('time') / ((denom - dm) ** 2).sum('time')  # noqa: E501
         else:
             raise ValueError('Time coordinte required for slope-style pattern effect.')
-        data = data.climo.dequantify()
-        data.attrs['units'] = 'K / K'
-        data.attrs['long_name'] = 'relative warming'
-        data = data.assign_coords(region='globe')
-        data = data.expand_dims('region')
-        output['tpat'] = data
+        proj = proj.climo.dequantify()
+        proj = proj.assign_coords(region='globe').expand_dims('region')
+        proj.attrs.update(units='K', long_name='regional warming')
+        output['tstd'] = proj
+        slope = slope.climo.dequantify()
+        slope = slope.assign_coords(region='globe').expand_dims('region')
+        slope.attrs.update(units='K / K', long_name='relative warming')
+        output['tpat'] = slope
     return output
 
 
