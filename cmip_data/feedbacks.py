@@ -8,7 +8,6 @@ import itertools
 import traceback
 from pathlib import Path
 
-import cftime
 import numpy as np  # noqa: F401
 import xarray as xr
 from climopy import const, ureg
@@ -129,11 +128,13 @@ def _regress_monthly(numer, denom, proj=False):
     wgts = wgts / wgts.sum('time')
     navg = (wgts * numer).sum('time', skipna=False)
     davg = (wgts * denom).sum('time', skipna=False)
-    covar = (wgts * (denom - davg) * (numer - navg)).sum('time', skipna=False)
-    var = (wgts * (denom - davg) ** 2).sum('time', skipna=False)
-    slope = covar / var
+    covar = wgts * (denom - davg) * (numer - navg)
+    covar = covar.sum('time', skipna=False)
+    dvar = wgts * (denom - davg) ** 2
+    dvar = dvar.sum('time', skipna=False)
+    slope = covar / dvar
     if proj:  # scaled pattern
-        extra = covar / np.sqrt(var)
+        extra = covar / np.sqrt(dvar)
     else:  # regression intercept
         extra = navg - slope * davg  # still linear since 'davg' is annual averages
     return slope, extra
@@ -159,16 +160,16 @@ def _regress_annual(numer, denom, proj=False, skipna=False):
     navg = numer.groupby('time.month').mean('time', skipna=False)
     davg = denom.groupby('time.month').mean('time', skipna=False)
     covar = (denom.groupby('time.month') - davg) * (numer.groupby('time.month') - navg)
-    var = (denom.groupby('time.month') - davg) ** 2
     covar = covar.groupby('time.month').mean('time', skipna=False)
-    var = var.groupby('time.month').mean('time', skipna=False)
-    slope = covar / var
+    dvar = (denom.groupby('time.month') - davg) ** 2
+    dvar = dvar.groupby('time.month').mean('time', skipna=False)
+    slope = covar / dvar
     if proj:  # scaled pattern
-        extra = covar / np.sqrt(var)
+        extra = covar / np.sqrt(dvar)
     else:  # regression intercept
         extra = navg - slope * davg  # still linear since 'davg' is annual averages
-    slope = assign_dates(slope)
-    extra = assign_dates(extra)
+    slope = assign_dates(slope, year=1800)
+    extra = assign_dates(extra, year=1800)
     return slope, extra
 
 

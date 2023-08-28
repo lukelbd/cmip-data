@@ -58,12 +58,12 @@ if feedbacks:
     # nodrifts = (False, True)
     options = (
         # ('historical', 'monthly', (2000, 2023)),  # observed data
-        ('piControl', 'monthly', (0, 150)),  # monthly mean regression
-        ('abrupt4xCO2', 'monthly', (0, 150)),  # monthly mean regression
-        ('abrupt4xCO2', 'monthly', (0, 20)),  # monthly mean regression
-        ('abrupt4xCO2', 'monthly', (20, 150)),  # monthly mean regression
-        ('abrupt4xCO2', 'monthly', (0, 50)),  # monthly mean regression
-        ('abrupt4xCO2', 'monthly', (100, 150)),  # monthly mean regression
+        # ('piControl', 'monthly', (0, 150)),  # monthly mean regression
+        # ('abrupt4xCO2', 'monthly', (0, 150)),  # monthly mean regression
+        # ('abrupt4xCO2', 'monthly', (0, 20)),  # monthly mean regression
+        # ('abrupt4xCO2', 'monthly', (20, 150)),  # monthly mean regression
+        # ('abrupt4xCO2', 'monthly', (0, 50)),  # monthly mean regression
+        # ('abrupt4xCO2', 'monthly', (100, 150)),  # monthly mean regression
         ('piControl', 'annual', (0, 150)),  # annual mean regression
         ('abrupt4xCO2', 'annual', (0, 150)),  # annual mean regression
         ('abrupt4xCO2', 'annual', (0, 20)),  # annual mean regression

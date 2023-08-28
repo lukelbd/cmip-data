@@ -20,14 +20,16 @@ __all__ = [
 ]
 
 
-def assign_dates(data):
+def assign_dates(data, year=None):
     """
     Assign a standard year and day for time coordinates in the file.
 
     Parameters
     ----------
     data : xarray.Dataset or xarray.DataArray
-        The input data.
+        The input data. Requires either time or month coordinate.
+    year : int, optional
+        The output year. Requires data with 12 time or month coordinates.
 
     Returns
     -------
@@ -36,22 +38,24 @@ def assign_dates(data):
     """
     # NOTE: This is used when *loading* datasets and combining along models. Should
     # not put this into per-model climate and feedback processing code.
-    if not ('month' in data.sizes) ^ ('time' in data.sizes):
-        raise ValueError('Unexpected input array. Expected months or times.')
-    if 'time' in data.sizes:
-        year = data.time.dt.year
-        month = data.time.dt.month
+    if 'time' in data.sizes and 'month' not in data.sizes:
         ntime = len(data.time)
-    else:
+        years = data.time.dt.year
+        months = data.time.dt.month
+    elif 'month' in data.sizes and 'time' not in data.sizes:
+        ntime = len(data.month)
+        months = data.month
         data = data.rename(month='time')
-        month = data.month
-        ntime = len(month)
-    if ntime == 12:
-        time = [cftime.datetime(1800, m, 15) for m in month]
-    elif ntime % 12 == 0:
-        time = [cftime.datetime(y, m, 15) for y, m in zip(year, month)]
     else:
-        raise ValueError('Unexpected time coordinates. Should be multiple of 12.')
+        raise ValueError('Unexpected input array. Expected months or times.')
+    if ntime == 12 and year is None:
+        raise ValueError('Monthly averages require an explicit input year.')
+    if ntime != 12 and year is not None:
+        raise ValueError('Cannot assign input year to data with more than 12 months.')
+    if year is not None:
+        time = [cftime.datetime(year, m, 15) for m in months]
+    else:
+        time = [cftime.datetime(y, m, 15) for y, m in zip(years, months)]
     time = xr.CFTimeIndex(time)  # prefer cftime
     time = xr.DataArray(time, dims='time', attrs=data.time.attrs)
     data = data.assign_coords(time=time)
@@ -107,13 +111,10 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
         data = input if key is None else input.sel(time=(input.coords[key] == value))
         days = data.time.dt.days_in_month
         wgts = days.groupby('time.year') / days.groupby('time.year').sum()
-        wgts = wgts.astype(np.float32)  # preserve float32 variables
-        ones = xr.where(data.isnull(), 0, 1)
-        ones = ones.astype(np.float32)  # preserve float32 variables
+        wgts = wgts.astype(data.dtype)  # preserve float32 variables
         with xr.set_options(keep_attrs=True):
-            numerator = (data * wgts).groupby('time.year').sum(dim='time')
-            denominator = (ones * wgts).groupby('time.year').sum(dim='time')
-            output[name] = numerator / denominator
+            data = (data * wgts).groupby('time.year').sum(dim='time', skipna=False)
+        output[name] = data
     period = xr.DataArray(
         list(output),
         dims='period',
