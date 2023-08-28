@@ -738,9 +738,11 @@ class Logger(object):
         path.parent.mkdir(exist_ok=True)
         if path.is_file():
             if backup:
+                print()
                 print(f'Moving previous log to backup: {path}')
                 path.rename(str(path) + '.bak')
             else:
+                print()
                 print(f'Removing previous log: {path}')
                 path.unlink(missing_ok=True)
         self.path = path

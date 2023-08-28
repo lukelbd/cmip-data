@@ -26,7 +26,7 @@ from .internals import (
     _item_join,
     _item_parts,
 )
-from .utils import average_periods, average_regions, load_file
+from .utils import assign_dates, average_regions, load_file
 
 __all__ = [
     'get_feedbacks',
@@ -88,36 +88,30 @@ VARIABLE_DEPENDENCIES = {
 }
 
 
-def _calc_annual_feedback(numer, denom, proj=False):
+def _fill_annual(data):
     """
-    Return an annual average-style feedback regression.
+    Return an array with each time slots filled by its annual average.
 
     Parameters
     ----------
-    numer, denom : xarray.DataArray
-        The numerator and denominator.
-    proj : bool, optional
-        Whether to retun an extra projection version or a forcing estimate.
+    data : xarray.DataArray
+        The input array.
     """
-    # NOTE: Assign a standardized time array so that subsequently loading into
-    # ensembles with results.py can concatenate more easily. Pick 1800 because it
-    # has 28 days on February (for weighted average) and is sort of pre-industrial.
-    nm = numer.groupby('time.month').mean('time', skipna=0)
-    dm = denom.groupby('time.month').mean('time', skipna=0)
-    var = ((denom - dm) ** 2).groupby('time.month').mean('time', skipna=0)
-    covar = ((denom - dm) * (numer - nm)).groupby('time.month').mean('time', skipna=0)
-    slope = covar / var
-    if proj:  # scaled pattern
-        extra = covar / np.sqrt(var)
-    else:  # regression intercept
-        extra = 0.5 * (nm - slope * dm)
-    time = xr.CFTimeIndex([cftime.datetime(1800, m, 15) for m in range(1, 13)])
-    slope = slope.climo.replace_coords(time=time)  # keep attrs
-    extra = extra.climo.replace_coords(time=time)
-    return slope, extra
+    # NOTE: This replaces utils.py average_periods() now that we no longer explicitly
+    # save season or annual averages.
+    days = data.time.dt.days_in_month
+    wgts = days.groupby('time.year') / days.groupby('time.year').sum()
+    wgts = wgts.astype(data.dtype)  # preserve float32 variables
+    zero = xr.zeros_like(data, data.dtype)  # preserve float32 variables
+    with xr.set_options(keep_attrs=True):
+        numer = (data * wgts).groupby('time.year').sum(dim='time', skipna=False)
+        denom = wgts.groupby('time.year').sum(dim='time', skipna=False)
+        avgs = numer / denom
+        avgs = zero.groupby('time.year') + avgs  # tile 'year' onto 'time'
+    return avgs
 
 
-def _calc_monthly_feedback(numer, denom, proj=False):
+def _regress_monthly(numer, denom, proj=False):
     """
     Return a monthly-style weighted feedback regression.
 
@@ -126,19 +120,55 @@ def _calc_monthly_feedback(numer, denom, proj=False):
     numer, denom : xarray.DataArray
         The numerator and denominator.
     proj : bool, optional
-        Whether to retun an extra projection version or a forcing estimate.
+        Whether to return the slope scaled by standard deviation or the y-intercept.
     """
-    days = denom.time.dt.days_in_month
-    nday = days.sum('time')  # denominator
-    nm = (days * numer).sum('time', skipna=0) / nday
-    dm = (days * denom).sum('time', skipna=0) / nday
-    var = (days * (denom - dm) ** 2).sum('time', skipna=0) / nday
-    covar = (days * (denom - dm) * (numer - nm)).sum('time', skipna=0) / nday
+    # NOTE: Critical to use actual variance and covariance here (scaled by sum of
+    # weights) instead of raw sums so that sqrt(var) represents the actual standard
+    # deviation. Otherwise the 'projection' is scaled by erroneous sqrt(wgts) term.
+    wgts = denom.time.dt.days_in_month
+    wgts = wgts / wgts.sum('time')
+    navg = (wgts * numer).sum('time', skipna=False)
+    davg = (wgts * denom).sum('time', skipna=False)
+    covar = (wgts * (denom - davg) * (numer - navg)).sum('time', skipna=False)
+    var = (wgts * (denom - davg) ** 2).sum('time', skipna=False)
     slope = covar / var
     if proj:  # scaled pattern
         extra = covar / np.sqrt(var)
     else:  # regression intercept
-        extra = 0.5 * (nm - slope * dm)
+        extra = navg - slope * davg  # still linear since 'davg' is annual averages
+    return slope, extra
+
+
+def _regress_annual(numer, denom, proj=False, skipna=False):
+    """
+    Return an annual average-style feedback regression.
+
+    Parameters
+    ----------
+    numer, denom : xarray.DataArray
+        The numerator and denominator.
+    proj : bool, optional
+        Whether to return the slope scaled by standard deviation or the y-intercept.
+    """
+    # NOTE: The denominator should have 'time' coordinate with each slot filled
+    # by annual average. This makes both the slope estimator and y intercept linearly
+    # additive so that averages can be obtained afterward. See _annual_averages().
+    # NOTE: Assign a standardized time array so that subsequently loading into
+    # ensembles with results.py can concatenate more easily. Pick 1800 because it
+    # has 28 days on February (for weighted average) and is sort of pre-industrial.
+    navg = numer.groupby('time.month').mean('time', skipna=False)
+    davg = denom.groupby('time.month').mean('time', skipna=False)
+    covar = (denom.groupby('time.month') - davg) * (numer.groupby('time.month') - navg)
+    var = (denom.groupby('time.month') - davg) ** 2
+    covar = covar.groupby('time.month').mean('time', skipna=False)
+    var = var.groupby('time.month').mean('time', skipna=False)
+    slope = covar / var
+    if proj:  # scaled pattern
+        extra = covar / np.sqrt(var)
+    else:  # regression intercept
+        extra = navg - slope * davg  # still linear since 'davg' is annual averages
+    slope = assign_dates(slope)
+    extra = assign_dates(extra)
     return slope, extra
 
 
@@ -662,7 +692,7 @@ def _feedbacks_from_fluxes(
         in `_fluxes_from_anomalies` using standardized radiative kernel data.
     forcing : path-like, optional
         The explicit forcing data. Required for ratio-style feedbacks.
-    style : {'annual', 'monthly', 'ratio'}, optional
+    style : {'monthly', 'annual', 'ratio'}, optional
         The type of feedback calcluation to perform.
     pattern : bool, optional
         Whether to include the local temperature pattern term in the output dataset.
@@ -678,7 +708,7 @@ def _feedbacks_from_fluxes(
     # on global temperature and annual feedbacks from average of regressions on
     # annual temperature. So remove 'average_periods' and replace with simpler
     # function that gets annual temperature averages, e.g. from observed.py
-    style = style or ('annual' if forcing is None else 'ratio')
+    style = style or 'monthly'
     print = printer or builtins.print
     print(f'Calculating {style} climate feedbacks.')
     print('Getting average spatial regions.')
@@ -686,14 +716,9 @@ def _feedbacks_from_fluxes(
     if style == 'monthly':
         temp = fluxes.ts
     elif style == 'annual' or style == 'ratio':
-        temp = average_periods(fluxes.ts, seasonal=False, monthly=False)
-        temp = temp.sel(period='ann', drop=True)  # drop singleton 'period'
-        ic(fluxes.ts)
-        zero = xr.zeros_like(fluxes.ts)
-        with xr.set_options(keep_attrs=True):  # tile 'year' onto 'time'
-            temp = zero.groupby('time.year') + temp
+        temp = _fill_annual(fluxes.ts)
     else:
-        raise ValueError(f"Invalid {style=}. Expected 'annual', 'monthly', or 'ratio'.")
+        raise ValueError(f"Invalid {style=}. Expected 'monthly', 'annual', or 'ratio'.")
     if style == 'ratio' and fluxes.sizes['time'] > 12:
         raise ValueError('Fluxes have too many time coordinates for ratio-style feedback.')  # noqa: E501
     if style == 'ratio' and forcing is None:
@@ -740,30 +765,32 @@ def _feedbacks_from_fluxes(
         flux = fluxes[name]  # pointwise radiative flux
 
         # Possibly adjust for forcing masking
-        # NOTE: This depends on calculating the net flux feedbacks before
-        # the cloud and residual components.
+        # NOTE: Should have no effect if forcing is constant. Also this requires
+        # calculating the net flux feedbacks before the cloud and residual components.
         # NOTE: Soden et al. (2008) used standard horizontally uniform value of 15%
         # the full forcing but no reason not to use regressed forcing estimates.
-        skies = ('', 'cs') if component in ('cl', 'resid') else ()
-        masks = list(f'{rad}{sky}_erf' for sky in skies)
-        if message := ', '.join(repr(mask) for mask in masks if mask not in output):
+        erfs = tuple(f'{rad}{sky}_erf' for sky in ('', 'cs'))
+        erfs = erfs if component in ('cl', 'resid') else ()
+        if message := ', '.join(repr(erf) for erf in erfs if erf not in output):
             print(
                 'Warning: Output dataset is missing cloud-masking forcing '
                 f'adjustment variable(s) {message}. Cannot make adjustment.'
             )
             continue
-        if masks:  # already ensured in output
-            mask = output[masks[0]] - output[masks[1]]
+        if erfs:  # already ensured in output
+            diff = output[erfs[0]] - output[erfs[1]]  # all-sky minus clear-sky
             if wavelength == 'longwave' and component == 'cl':
-                min_, max_, mean = mask.min().item(), mask.max().item(), mask.mean().item()  # noqa: E501
-                print(format('  mask flux:', ' <12s'), end=' ')
+                min_, max_, mean = diff.min().item(), diff.max().item(), diff.mean().item()  # noqa: E501
+                print(format('  masking:', ' <12s'), end=' ')
                 print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
+            if style == 'annual' or style == 'ratio':  # convert 12 times to 'month'
+                flux = flux.groupby('time.month')
+                diff = diff.groupby('time.month').mean()  # no-op
+            scale = -1 if component == 'cl' else 1  # add or remove
+            scale = ureg.Quantity(scale, 'W m^-2')
             with xr.set_options(keep_attrs=True):
-                if component == 'cl':  # remove masking effect
-                    flux = flux - mask * ureg('W m^-2')
-                else:  # add back masking effect
-                    flux = flux + mask * ureg('W m^-2')
-            del mask
+                flux = flux + scale * diff  # add monthly masking
+            del diff
             gc.collect()
 
         # Perform the regression or division
@@ -774,10 +801,12 @@ def _feedbacks_from_fluxes(
         # NOTE: Previously did separate regressions with and without intercept...
         # but piControl regressions are *always* centered on origin because they
         # are deviations from the average by *construction*. So unnecessary.
-        if style == 'annual':  # denominator filled with annual averages
-            lam, erf = _calc_annual_feedback(flux, temp)
-        elif style == 'monthly':  # simple weighted monthly regressions
-            lam, erf = _calc_monthly_feedback(flux, temp)
+        if style == 'monthly':  # simple weighted monthly regressions
+            lam, erf = _regress_monthly(flux, temp)
+            erf = 0.5 * erf  # double CO2
+        elif style == 'annual':  # denominator filled with annual averages
+            lam, erf = _regress_annual(flux, temp)
+            erf = 0.5 * erf  # double CO2
         else:
             erf = forcing.climo.get(f'{name}_erf', quantify=True)
             lam = (flux - 2.0 * erf) / temp
@@ -829,10 +858,10 @@ def _feedbacks_from_fluxes(
     if pattern:
         numer = temp.sel(region='point')  # original monthly data
         denom = temp.sel(region='globe')  # annual-averaged data
-        if style == 'annual':
-            slope, proj = _calc_annual_feedback(numer, denom, proj=True)
-        elif style == 'monthly':
-            slope, proj = _calc_monthly_feedback(numer, denom, proj=True)
+        if style == 'monthly':
+            slope, proj = _regress_monthly(numer, denom, proj=True)
+        elif style == 'annual':
+            slope, proj = _regress_annual(numer, denom, proj=True)
         else:
             proj = numer  # simply the actual warming
             slope = numer / denom  # simply the ratio of differences
@@ -891,7 +920,7 @@ def get_feedbacks(
     source : str, default: 'eraint'
         The source for the kernel data (e.g. ``'eraint'``). This searches for files
         in the `kernels` directory formatted as ``kernels_{source}.nc``.
-    style : {'annual', 'monthly', 'ratio'}, optional
+    style : {'monthly', 'annual', 'ratio'}, optional
         Whether to compute feedbacks with annual anomalies, monthly anomalies, or a
         ratio instead of a regression (latter only possible with abrupt experiments).
     **inputs : tuple of path-like lists
@@ -963,7 +992,7 @@ def get_feedbacks(
     select = select or (0, 150)
     response = response or (0, 150)
     source = source or 'eraint'
-    style = style or 'annual'
+    style = style or 'monthly'
     series = 'ratio' if style == 'ratio' else 'slope'
     nodrift = nodrift and 'nodrift' or ''
     outputs = []
@@ -1046,10 +1075,10 @@ def get_feedbacks(
             forcing = forcing.parent / forcing.name.replace('ratio', 'annual')
             print(f'Loading forcing data from file: {forcing.name}')
             forcing = load_file(forcing, project=project, validate=False)
-        elif style == 'annual' or style == 'monthly':
+        elif style == 'monthly' or style == 'annual':
             forcing = None
         else:
-            raise ValueError(f"Invalid {style=}. Expected 'annual', 'monthly', or 'ratio'.")  # noqa: E501
+            raise ValueError(f"Invalid {style=}. Expected 'monthly', 'annual', or 'ratio'.")  # noqa: E501
         feedbacks = _feedbacks_from_fluxes(fluxes, style=style, forcing=forcing, printer=print)  # noqa: E501
         if forcing:
             forcing.close()
@@ -1082,7 +1111,7 @@ def process_feedbacks(
     ----------
     *paths : path-like, optional
         Location(s) for the climate and series data.
-    style : {'annual', 'monthly', 'ratio'}, optional
+    style : {'monthly', 'annual', 'ratio'}, optional
         The type of feedback calcluation to perform.
     source : str, default: 'eraint'
         The source for the kernels.
@@ -1112,14 +1141,14 @@ def process_feedbacks(
     # NOTE: Paradigm is to use climate monthly mean surface pressure when interpolating
     # to model levels and keep surface pressure time series when getting feedback
     # kernel integrals. Helps improve accuracy since so much stuff depends on kernels.
-    style = style or 'annual'
+    style = style or 'monthly'
     logging = logging and not dryrun
     experiment = experiment or 'abrupt4xCO2'
     source = source or 'eraint'
     nodrift = 'nodrift' if nodrift else ''
     suffix = nodrift and '-' + nodrift
     control = control or (0, 150)
-    if style == 'annual' or style == 'monthly':
+    if style == 'monthly' or style == 'annual':
         response = response or (0, 150)
         control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
         response_suffix = f'{control[0]:04d}-{control[1]:04d}-series{suffix}'
@@ -1128,7 +1157,7 @@ def process_feedbacks(
         control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
         response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
     else:
-        raise ValueError(f"Invalid {style=}. Expected 'annual', 'monthly', or 'ratio'.")
+        raise ValueError(f"Invalid {style=}. Expected 'monthly', 'annual', or 'ratio'.")
     response, select = control, response
     suffixes = (*(format(int(t), '04d') for t in select), source, style, nodrift)
     constraints = {
@@ -1144,7 +1173,7 @@ def process_feedbacks(
         print = Logger('feedbacks', *suffixes, project=project, **constraints)
     else:
         print = builtins.print
-    print()
+    print()  # before getting logger
     print('Generating database.')
     files, *_ = glob_files(*paths, project=project)
     facets = ('project', 'model', 'ensemble', 'grid')

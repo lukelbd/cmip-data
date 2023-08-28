@@ -4,6 +4,7 @@ Utilities for reading and handling results.
 """
 import builtins
 
+import cftime
 import climopy as climo  # noqa: F401  # add accessor
 import numpy as np
 import xarray as xr
@@ -21,7 +22,7 @@ __all__ = [
 
 def assign_dates(data):
     """
-    Assign a standard year for months in the file.
+    Assign a standard year and day for time coordinates in the file.
 
     Parameters
     ----------
@@ -31,17 +32,28 @@ def assign_dates(data):
     Returns
     -------
     output : xarray.Dataset or xarray.DataArray
-        The standardized data.
+        The data with updated time coordinates.
     """
     # NOTE: This is used when *loading* datasets and combining along models. Should
     # not put this into per-model climate and feedback processing code.
-    months = data.time.dt.strftime('%m')
-    if len(months) != 12:
-        raise ValueError(f'Cannot standardize time. Expected 12 got {data.time.size}.')
-    attrs = {'axis': 'T', 'standard_name': 'time'}
-    time = [f'2000-{month.item()}-01' for month in months.values]
-    time = np.array(time).astype('datetime64')
-    time = xr.DataArray(time, attrs=attrs)
+    if not ('month' in data.sizes) ^ ('time' in data.sizes):
+        raise ValueError('Unexpected input array. Expected months or times.')
+    if 'time' in data.sizes:
+        year = data.time.dt.year
+        month = data.time.dt.month
+        ntime = len(data.time)
+    else:
+        data = data.rename(month='time')
+        month = data.month
+        ntime = len(month)
+    if ntime == 12:
+        time = [cftime.datetime(1800, m, 15) for m in month]
+    elif ntime % 12 == 0:
+        time = [cftime.datetime(y, m, 15) for y, m in zip(year, month)]
+    else:
+        raise ValueError('Unexpected time coordinates. Should be multiple of 12.')
+    time = xr.CFTimeIndex(time)  # prefer cftime
+    time = xr.DataArray(time, dims='time', attrs=data.time.attrs)
     data = data.assign_coords(time=time)
     return data
 
@@ -64,8 +76,8 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
     output : xarray.Dataset
         The standardized data.
     """
-    # NOTE: The 'seasonal' and 'monthly' no longer used after transition from 'slope'
-    # files with period coordinates to 'annual' files with original month coordinates.
+    # NOTE: This is no longer used in feedacks.py. Instead regress monthly flux against
+    # annual average temperature anomalies rebuild annual feedbacks when loading.
     # NOTE: The new climopy cell duration calculation will auto-detect monthly and
     # yearly data, but not yet done, so use explicit days-per-month weights for now.
     # NOTE: Here resample(time='AS') and groupby('time.year') yield identical results,
@@ -159,27 +171,27 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
     for data in input.climo._iter_data_vars():
         output = {'point': data} if point else {}
         if latitude:
-            da = xr.ones_like(data) * data.climo.average('lon')
-            da.name = data.name
-            da.attrs.update(data.attrs)
-            output['latitude'] = da
+            avgs = xr.ones_like(data) * data.climo.average('lon')
+            avgs.name = data.name
+            avgs.attrs.update(data.attrs)
+            output['latitude'] = avgs
         if hemisphere:
-            sh = data.climo.sel_hemisphere('sh').climo.average('area')
-            nh = data.climo.sel_hemisphere('nh').climo.average('area')
-            sh = sh.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
-            nh = nh.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
-            sh = sh.transpose(*data.sizes)
-            nh = nh.transpose(*data.sizes)
-            da = data.astype(np.float64)
-            da.loc[{'lat': slice(None, 0 - eps)}] = sh
-            da.loc[{'lat': slice(0 + eps, None)}] = nh
-            da.loc[{'lat': slice(0 - eps, 0 + eps)}] = 0.5 * (sh + nh)
-            output['hemisphere'] = da
+            shemi = data.climo.sel_hemisphere('sh').climo.average('area')
+            nhemi = data.climo.sel_hemisphere('nh').climo.average('area')
+            shemi = shemi.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
+            nhemi = nhemi.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
+            shemi = shemi.transpose(*data.sizes)
+            nhemi = nhemi.transpose(*data.sizes)
+            avgs = data.astype(np.float64)
+            avgs.loc[{'lat': slice(None, 0 - eps)}] = shemi
+            avgs.loc[{'lat': slice(0 + eps, None)}] = nhemi
+            avgs.loc[{'lat': slice(0 - eps, 0 + eps)}] = 0.5 * (shemi + nhemi)
+            output['hemisphere'] = avgs
         if globe:
-            da = xr.ones_like(data) * data.climo.average('area')
-            da.name = data.name
-            da.attrs.update(data.attrs)
-            output['globe'] = da
+            avgs = xr.ones_like(data) * data.climo.average('area')
+            avgs.name = data.name
+            avgs.attrs.update(data.attrs)
+            output['globe'] = avgs
         outputs.append(output)
     if isinstance(input, xr.DataArray):
         output, = outputs
