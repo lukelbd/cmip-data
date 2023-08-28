@@ -4,8 +4,8 @@
 #------------------------------------------------------------------------------#
 # exps=(abrupt4xCO2 piControl)
 shopt -s nullglob
-root=$HOME/ldavis/data/cmip
-# root=/mdata2/ldavis/cmip5
+root=$HOME/data/cmip
+# root=$HOME/scratch
 exps=(piControl)
 # exps=(abrupt4xCO2 piControl)
 tables=(Amon)

@@ -14,7 +14,7 @@ mcm=false
 # but this also failed... so elected to explicitly iterate over file names.
 if $gfdl; then
   for experiment in piControl abrupt4xCO2; do
-    path=$HOME/scratch2/cmip5-${experiment,,}-amon
+    path=$HOME/scratch/cmip5-${experiment,,}-amon
     cd $path || { echo "Error: Cannot find destination $path"; exit 1; }
     for model in GFDL-CM3 GFDL-ESM2G GFDL-ESM2M; do
       for variable in ta va zg ts vas rsut rsutcs rsus rsuscs; do
@@ -48,7 +48,7 @@ fi
 # summarize_ranges() so that range validation is skipped for these files.
 if $mcm; then
   for experiment in picontrol abrupt4xco2; do
-    path=$HOME/scratch5/cmip6-$experiment-amon
+    path=$HOME/scratch/cmip6-$experiment-amon
     cd $path || { echo "Error: Cannot find location $path"; exit 1; }
     for rtmt in rtmt_Amon_MCM-UA-1-0*; do
       rlut=${rtmt/rtmt/rlut}

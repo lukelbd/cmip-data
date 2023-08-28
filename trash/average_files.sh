@@ -14,7 +14,7 @@ shopt -s nullglob
 overwrite=false
 dryrun=false
 data=$HOME/data
-[[ "$OSTYPE" =~ darwin* ]] && root=$data || root=/mdata5/ldavis
+[[ "$OSTYPE" =~ darwin* ]] && root=$data || root=~/scratch
 
 # Simple helper functions
 # See: https://unix.stackexchange.com/a/13779/112647
