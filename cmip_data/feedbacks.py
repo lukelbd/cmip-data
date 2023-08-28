@@ -8,6 +8,7 @@ import itertools
 import traceback
 from pathlib import Path
 
+import cftime
 import numpy as np  # noqa: F401
 import xarray as xr
 from climopy import const, ureg
@@ -72,19 +73,73 @@ VARIABLE_DEPENDENCIES = {
     'tapi': ('ta',),  # control data for humidity kernels and integration bounds
     # 'ps4x': ('ps',),  # response data for integration bounds
     # 'ta4x': ('ta',),  # response data for integration bounds
-    'ts': ('ts',),  # anomaly data
-    'ta': ('ta',),  # anomaly data
-    'hus': ('hus',),  # anomaly data
-    'alb': ('rsus', 'rsds'),  # out of and into the surface
-    'rlnt': ('rlut',),  # out of the atmosphere
-    'rsnt': ('rsut',),  # out of the atmosphere (ignore constant rsdt)
-    'rlns': ('rlds', 'rlus'),  # out of and into the atmosphere
-    'rsns': ('rsds', 'rsus'),  # out of and into the atmosphere
-    'rlntcs': ('rlutcs',),  # out of the atmosphere
-    'rsntcs': ('rsutcs',),  # out of the atmosphere (ignore constant rsdt)
-    'rlnscs': ('rldscs', 'rlus'),  # out of and into the atmosphere
-    'rsnscs': ('rsdscs', 'rsuscs'),  # out of and into the atmosphere
+    'ts': ('ts',),  # anomaly data for kernel fluxes
+    'ta': ('ta',),  # anomaly data for kernel fluxes
+    'hus': ('hus',),  # anomaly data for kernel fluxes
+    'alb': ('rsus', 'rsds'),  # evaluates to rsus / rsds (out over in)
+    'rlnt': ('rlut',),  # evaluates to -rlut (minus out)
+    'rsnt': ('rsut',),  # evaluates to -rsut (minus out, ignoring constant rsdt)
+    'rlns': ('rlds', 'rlus'),  # evaluates to rlus - rlds (in minus out)
+    'rsns': ('rsds', 'rsus'),  # evaluates to rsus - rsds (in minus out)
+    'rlntcs': ('rlutcs',),  # evaluates to -rlutcs (minus out)
+    'rsntcs': ('rsutcs',),  # evaluates to -rsutcs (minus out, ignoring constant rsdt)
+    'rlnscs': ('rldscs', 'rlus'),  # evaluates to rlus - rldscs (in minus out)
+    'rsnscs': ('rsdscs', 'rsuscs'),  # evaluates to rsdscs - rsuscs (in minus out)
 }
+
+
+def _calc_annual_feedback(numer, denom, proj=False):
+    """
+    Return an annual average-style feedback regression.
+
+    Parameters
+    ----------
+    numer, denom : xarray.DataArray
+        The numerator and denominator.
+    proj : bool, optional
+        Whether to retun an extra projection version or a forcing estimate.
+    """
+    # NOTE: Assign a standardized time array so that subsequently loading into
+    # ensembles with results.py can concatenate more easily. Pick 1800 because it
+    # has 28 days on February (for weighted average) and is sort of pre-industrial.
+    nm = numer.groupby('time.month').mean('time', skipna=0)
+    dm = denom.groupby('time.month').mean('time', skipna=0)
+    var = ((denom - dm) ** 2).groupby('time.month').mean('time', skipna=0)
+    covar = ((denom - dm) * (numer - nm)).groupby('time.month').mean('time', skipna=0)
+    slope = covar / var
+    if proj:  # scaled pattern
+        extra = covar / np.sqrt(var)
+    else:  # regression intercept
+        extra = 0.5 * (nm - slope * dm)
+    time = xr.CFTimeIndex([cftime.datetime(1800, m, 15) for m in range(1, 13)])
+    slope = slope.climo.replace_coords(time=time)  # keep attrs
+    extra = extra.climo.replace_coords(time=time)
+    return slope, extra
+
+
+def _calc_monthly_feedback(numer, denom, proj=False):
+    """
+    Return a monthly-style weighted feedback regression.
+
+    Parameters
+    ----------
+    numer, denom : xarray.DataArray
+        The numerator and denominator.
+    proj : bool, optional
+        Whether to retun an extra projection version or a forcing estimate.
+    """
+    days = denom.time.dt.days_in_month
+    nday = days.sum('time')  # denominator
+    nm = (days * numer).sum('time', skipna=0) / nday
+    dm = (days * denom).sum('time', skipna=0) / nday
+    var = (days * (denom - dm) ** 2).sum('time', skipna=0) / nday
+    covar = (days * (denom - dm) * (numer - nm)).sum('time', skipna=0) / nday
+    slope = covar / var
+    if proj:  # scaled pattern
+        extra = covar / np.sqrt(var)
+    else:  # regression intercept
+        extra = 0.5 * (nm - slope * dm)
+    return slope, extra
 
 
 def _get_file_pairs(data, *args, printer=None):
@@ -381,7 +436,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     anoms : xarray.Dataset
         The climate anomaly data.
     kernels : xarray.Dataset
-        The radiative kernel data.
+        The radiative kernel kernels.
     printer : callable, default: `print`
         The print function.
     """
@@ -514,49 +569,49 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
         # Component fluxes
         # NOTE: Need to assign cell height coordinates for Planck feedback since
         # they are not defined on the kernel data array prior to multiplication.
-        anom = mask = kernel = None  # ensure exists
+        anom = mask = kern = None  # ensure exists
         if component == '' or component == 'cs':  # net flux
             data = 1.0 * anoms[rad]
         elif component == 'resid':  # residual flux
             data = anoms[rad] - running
         elif component == 'alb':  # albedo flux (longwave skipped above)
-            kernel = kernels[f'alb_{rad}']
+            kern = kernels[f'alb_{rad}']
             anom = anoms['alb']
-            data = kernel * anom.groupby('time.month')
+            data = kern * anom.groupby('time.month')
         elif component[:2] == 'pl':  # planck flux (shortwave skipped for 'pl')
-            kernel = 0.0 * ureg('W m^-2 Pa^-1 K^-1')
+            kern = 0.0 * ureg('W m^-2 Pa^-1 K^-1')
             if wavelength[0] == 'l':
-                kernel = kernel + kernels[f'ta_{rad}']
+                kern = kern + kernels[f'ta_{rad}']
             if component == 'pl*':
-                kernel = kernel + kernels[f'hus_{rad}']
+                kern = kern + kernels[f'hus_{rad}']
             anom = anoms['ts']  # has no cell height
-            data = kernel * anom.groupby('time.month')
+            data = kern * anom.groupby('time.month')
             data = data.assign_coords(cell_height=anoms.cell_height)
             data = data.climo.integral('plev')
             if wavelength[0] == 'l':
-                kernel = kernels[f'ts_{rad}']
-                data = data + kernel * anom.groupby('time.month')
+                kern = kernels[f'ts_{rad}']
+                data = data + kern * anom.groupby('time.month')
         elif component[:2] == 'lr':  # lapse rate flux (shortwave skipped for 'lr')
-            kernel = 0.0 * ureg('W m^-2 Pa^-1 K^-1')
+            kern = 0.0 * ureg('W m^-2 Pa^-1 K^-1')
             if wavelength[0] == 'l':
-                kernel = kernel + kernels[f'ta_{rad}']
+                kern = kern + kernels[f'ta_{rad}']
             if component == 'lr*':
-                kernel = kernel + kernels[f'hus_{rad}']
+                kern = kern + kernels[f'hus_{rad}']
             anom = anoms['ta'] - anoms['ts']
-            data = kernel * anom.groupby('time.month')
+            data = kern * anom.groupby('time.month')
             data = data.climo.integral('plev')
         elif component[:2] == 'hu':  # specific and relative humidity fluxes
-            kernel = kernels[f'hus_{rad}']
+            kern = kernels[f'hus_{rad}']
             anom = scale * anoms['hus'].groupby('time.month')
             if component == 'hur':
                 anom = anom - anoms['ta']
-            data = kernel * anom.groupby('time.month')
+            data = kern * anom.groupby('time.month')
             data = data.climo.integral('plev')
         elif component == 'cl':  # shortwave and longwave cloud fluxes
             data = anoms[rad] - anoms[f'{rad}cs']
             for var in variables:  # relevant longwave or shortwave variables
-                kernel = kernels[f'{var}_{rad}'] - kernels[f'{var}_{rad}cs']
-                mask = kernel * anoms[var].groupby('time.month')  # mask adjustment
+                kern = kernels[f'{var}_{rad}'] - kernels[f'{var}_{rad}cs']
+                mask = kern * anoms[var].groupby('time.month')  # mask adjustment
                 if var == 'hus':
                     mask = scale * mask.groupby('time.month')
                 if var in ('ta', 'hus'):
@@ -564,7 +619,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
                 data = data - mask.climo.to_units('W m^-2')  # apply adjustment
         else:
             raise RuntimeError(f'Invalid flux component {component!r}.')
-        del anom, mask, kernel
+        del anom, mask, kern
         gc.collect()
 
         # Update the input dataset with resulting component fluxes.
@@ -592,7 +647,9 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
     return output
 
 
-def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **kwargs):
+def _feedbacks_from_fluxes(
+    fluxes, style=None, forcing=None, pattern=True, printer=None, **kwargs
+):
     """
     Return a dataset containing feedbacks calculated along all combinations of
     `average_regions` (points, latitudes, hemispheres, and global, with ``region``
@@ -604,8 +661,9 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
         The source for the flux anomaly data. Should have been generated
         in `_fluxes_from_anomalies` using standardized radiative kernel data.
     forcing : path-like, optional
-        Source for the forcing data. If passed then the time-average anomalies are
-        used rather than regressions. This can be used with response-climate data.
+        The explicit forcing data. Required for ratio-style feedbacks.
+    style : {'annual', 'monthly', 'ratio'}, optional
+        The type of feedback calcluation to perform.
     pattern : bool, optional
         Whether to include the local temperature pattern term in the output dataset.
     printer : callable, default: `print`
@@ -616,28 +674,44 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
     # Load data and perform averages
     # NOTE: Need to extract 'plev' top and bottom because for some reason they get
     # dropped from 'input' since they are defined on the coordinate dictionary.
+    # NOTE: New idea is to retrieve global feedbacks from average of regressions
+    # on global temperature and annual feedbacks from average of regressions on
+    # annual temperature. So remove 'average_periods' and replace with simpler
+    # function that gets annual temperature averages, e.g. from observed.py
+    style = style or ('annual' if forcing is None else 'ratio')
     print = printer or builtins.print
-    statistic = 'slope' if forcing is None else 'ratio'
-    print(f'Calculating radiative feedbacks using {statistic}s.')
+    print(f'Calculating {style} climate feedbacks.')
     print('Getting average spatial regions.')
     fluxes = fluxes.climo.add_cell_measures()
-    zeros = xr.zeros_like(fluxes.ts)
-    denoms = average_periods(fluxes.ts, seasonal=False, monthly=False)
-    denoms = denoms.sel(period='ann', drop=True)
-    with xr.set_options(keep_attrs=True):  # place annual average on each month
-        denoms = zeros.groupby('time.year') + denoms
-    denoms = average_regions(denoms, **kwargs)  # add region coordinate
+    if style == 'monthly':
+        temp = fluxes.ts
+    elif style == 'annual' or style == 'ratio':
+        temp = average_periods(fluxes.ts, seasonal=False, monthly=False)
+        temp = temp.sel(period='ann', drop=True)  # drop singleton 'period'
+        ic(fluxes.ts)
+        zero = xr.zeros_like(fluxes.ts)
+        with xr.set_options(keep_attrs=True):  # tile 'year' onto 'time'
+            temp = zero.groupby('time.year') + temp
+    else:
+        raise ValueError(f"Invalid {style=}. Expected 'annual', 'monthly', or 'ratio'.")
+    if style == 'ratio' and fluxes.sizes['time'] > 12:
+        raise ValueError('Fluxes have too many time coordinates for ratio-style feedback.')  # noqa: E501
+    if style == 'ratio' and forcing is None:
+        raise ValueError('Forcing estimate required for ratio-style feedbacks.')
+    temp = average_regions(temp, **kwargs)  # add region coordinate
+    temp = temp.climo.quantify()
+    temp.attrs['long_name'] = 'temperature averaging region'
     fluxes = fluxes.climo.quantify()
-    denoms = denoms.climo.quantify()
 
     # Iterate over fluxes
+    # NOTE: Operating one region at a time was necessary on previous server with
+    # smaller cache. On new server operate on every region at once (more efficient).
     # NOTE: Since forcing is constant, the cloud masking adjustment has no effect on
     # feedback estimates, but does affect the 'cl_erf' cloud adjustment forcing. Also
     # shortwave clear-sky effects are just albedo and small water vapor effect, so very
     # small, but longwave component is always very significant.
-    outputs = {}
-    for region, boundary, wavelength, (component, descrip) in itertools.product(
-        denoms.region.values,
+    output = {}  # save time by writing dataset afterward
+    for boundary, wavelength, (component, descrip) in itertools.product(
         ('TOA', 'surface'),
         ('longwave', 'shortwave'),
         FEEDBACK_DESCRIPTIONS.items(),
@@ -650,9 +724,7 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
         # not exist so skip (e.g. temperature shortwave).
         rad = f'r{wavelength[0]}n{boundary[0].lower()}'
         if wavelength == 'longwave' and component == '':
-            print(f'Calculating {region} {boundary} forcing and feedback.')
-        if wavelength == 'longwave' and component == '' and boundary == 'TOA':
-            outputs[region] = output = {}
+            print(f'Calculating {boundary} forcing and feedback.')
         if component in ('', 'cs'):
             name = f'{rad}{component}'
         elif all(keys for keys in FEEDBACK_DEPENDENCIES[component].values()):
@@ -665,8 +737,7 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
                 f'dependency {missing!r}. Skipping calculation.'
             )
             continue
-        numer = fluxes[name]  # pointwise radiative flux
-        denom = denoms.sel(region=region)  # possibly averaged temperature
+        flux = fluxes[name]  # pointwise radiative flux
 
         # Possibly adjust for forcing masking
         # NOTE: This depends on calculating the net flux feedbacks before
@@ -689,9 +760,9 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
                 print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f}')
             with xr.set_options(keep_attrs=True):
                 if component == 'cl':  # remove masking effect
-                    numer = numer - mask * ureg('W m^-2')
+                    flux = flux - mask * ureg('W m^-2')
                 else:  # add back masking effect
-                    numer = numer + mask * ureg('W m^-2')
+                    flux = flux + mask * ureg('W m^-2')
             del mask
             gc.collect()
 
@@ -703,23 +774,20 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
         # NOTE: Previously did separate regressions with and without intercept...
         # but piControl regressions are *always* centered on origin because they
         # are deviations from the average by *construction*. So unnecessary.
-        if forcing is not None:
-            erf = forcing[f'{name}_erf'].sel(region=region, drop=True)
-            erf = erf.climo.quantify()
-            lam = (numer - 2.0 * erf) / denom  # time already averaged
-        elif 'time' in numer.sizes:
-            nm, dm = numer.mean('time', skipna=False), denom.mean('time', skipna=False)
-            lam = ((denom - dm) * (numer - nm)).sum('time') / ((denom - dm) ** 2).sum('time')  # noqa: E501
-            erf = 0.5 * (nm - lam * dm)  # possibly zero minus zero
+        if style == 'annual':  # denominator filled with annual averages
+            lam, erf = _calc_annual_feedback(flux, temp)
+        elif style == 'monthly':  # simple weighted monthly regressions
+            lam, erf = _calc_monthly_feedback(flux, temp)
         else:
-            raise ValueError('Time coordinate required for slope-style feedbacks.')
-        del numer, denom
+            erf = forcing.climo.get(f'{name}_erf', quantify=True)
+            lam = (flux - 2.0 * erf) / temp
+        del flux
         gc.collect()
 
         # Standardize the results
         # NOTE: Always keep non-net forcing estimates as these represent rapid
         # adjustments. Also previously also recored equilibrium climate sensitivity
-        # but this is always nonsense on local scales, so now compute a posterior only.
+        # but this is always nonsense on local kernels, so now compute a posterior only.
         component = 'net' if component == '' else component
         descrip = 'net' if component == '' else descrip
         lam = lam.climo.to_units('W m^-2 K^-1')
@@ -743,24 +811,14 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
         del erf, lam
         gc.collect()
 
-    # Concatenate result along 'region' axis
-    # NOTE: This should have skipped impossible combinations
-    print('Concatenating feedback regions.')
-    coord = xr.DataArray(
-        list(outputs),
-        dims='region',
-        name='region',
-        attrs={'long_name': 'temperature averaging region'}
-    )
-    output = xr.concat(
-        tuple(xr.Dataset(output) for output in outputs.values()),
-        dim=coord,
-        coords='minimal',
-        compat='equals',
-    )
-    output.attrs['title'] = (
-        f'{statistic}-derived forcing-feedback decompositions'
-    )
+    # Add final pattern effect and pressure terms
+    # NOTE: For weighting see https://stats.stackexchange.com/a/489949/156605
+    # NOTE: Region coordinate is necessary for pattern effect so it can be shown
+    # for different feedback versions. Non-globe values get auto-filled with nan.
+    print('Adding pattern and pressure terms.')
+    output = xr.Dataset(output)
+    output = output.transpose('region', ..., 'lat', 'lon')
+    output.attrs['title'] = f'{style.title()} forcing-feedback decompositions'
     for key in ('pbot', 'ptop'):
         if key not in fluxes:
             continue
@@ -768,32 +826,24 @@ def _feedbacks_from_fluxes(fluxes, forcing=None, pattern=True, printer=None, **k
         if 'time' in data.dims:  # i.e. seasonal averages as function of year
             data = data.mean(dim='time', keep_attrs=True)
         output[key] = data.climo.dequantify()
-
-    # Add final pattern effect term
-    # NOTE: Region coordinate is necessary for pattern effect so it can be shown
-    # for different feedback versions. Non-globe values get auto-filled with nan.
-    print('Calculating pattern effect terms.')
     if pattern:
-        # point = denoms.sel(region='point')  # outdated denominator
-        numer = fluxes.ts  # original monthly data
-        denom = denoms.sel(region='globe')  # annual-averaged data
-        if forcing is not None:
+        numer = temp.sel(region='point')  # original monthly data
+        denom = temp.sel(region='globe')  # annual-averaged data
+        if style == 'annual':
+            slope, proj = _calc_annual_feedback(numer, denom, proj=True)
+        elif style == 'monthly':
+            slope, proj = _calc_monthly_feedback(numer, denom, proj=True)
+        else:
             proj = numer  # simply the actual warming
             slope = numer / denom  # simply the ratio of differences
-        elif 'time' in numer.sizes:
-            nm, dm = numer.mean('time', skipna=False), denom.mean('time', skipna=False)
-            proj = ((denom - dm) * (numer - nm)).sum('time') / np.sqrt(((denom - dm) ** 2).sum('time'))  # noqa:E501
-            slope = ((denom - dm) * (numer - nm)).sum('time') / ((denom - dm) ** 2).sum('time')  # noqa: E501
-        else:
-            raise ValueError('Time coordinte required for slope-style pattern effect.')
         proj = proj.climo.dequantify()
         proj = proj.assign_coords(region='globe').expand_dims('region')
         proj.attrs.update(units='K', long_name='regional warming')
-        output['tstd'] = proj
+        output['tstd'] = proj  # other regions auto-filled with np.nan
         slope = slope.climo.dequantify()
         slope = slope.assign_coords(region='globe').expand_dims('region')
         slope.attrs.update(units='K / K', long_name='relative warming')
-        output['tpat'] = slope
+        output['tpat'] = slope  # other regions auto-filled with np.nan
     return output
 
 
@@ -804,7 +854,7 @@ def get_feedbacks(
     select=None,
     response=None,
     source=None,
-    ratio=None,
+    style=None,
     project=None,
     experiment=None,
     ensemble=None,
@@ -824,11 +874,14 @@ def get_feedbacks(
     Parameters
     ----------
     feedbacks : path-like, optional
-        The feedback directory. Subfolder ``{project}-{experiment}-feedbacks`` is used.
+        The output feedback directory.
+        Subfolder ``{project}-{experiment}-feedbacks`` is used.
     fluxes : path-like, optional
-        The flux directory. Subfolder ``{project}-{experiment}-fluxes`` is used.
+        The input/output flux directory. Used for repeated feedback calculations.
+        Subfolder ``{project}-{experiment}-fluxes`` is used.
     kernels : path-like, optional
-        The kernel data directory. Default folder is ``~/cmip-kernels``.
+        The input kernel scale directory.
+        Default folder is ``~/cmip-kernels``.
     select : 2-tuple of int, optional
         The start and stop years. Used in the output file name. If relevant the anomaly
         data is filtered to these years using ``.isel(slice(12 * start, 12 * stop))``.
@@ -838,9 +891,9 @@ def get_feedbacks(
     source : str, default: 'eraint'
         The source for the kernel data (e.g. ``'eraint'``). This searches for files
         in the `kernels` directory formatted as ``kernels_{source}.nc``.
-    ratio : bool, optional
-        Whether to compute feedbacks with a ratio of a regression. The latter is
-        only possible with abrupt response data where there is timescale separation.
+    style : {'annual', 'monthly', 'ratio'}, optional
+        Whether to compute feedbacks with annual anomalies, monthly anomalies, or a
+        ratio instead of a regression (latter only possible with abrupt experiments).
     **inputs : tuple of path-like lists
         Tuples of ``(control_inputs, response_inputs)`` for the variables
         required to compute the feedbacks, passed as keyword arguments for
@@ -869,8 +922,8 @@ def get_feedbacks(
         The path of the output file, formatted according to cmip conventions as
         ``feedbacks_{table}_{model}_{experiment}_{ensemble}_{options}.nc`` where
         `table`, `model`, `experiment`, and `ensemble` are applied only if passed
-        by the user and `options` is set to ``{source}-{statistic}-{nodrift}``,
-        where `source` is the kernel source; `statistic` is one of ``regression``
+        by the user and `options` is set to ``{source}-{style}-{nodrift}``,
+        where `source` is the kernel source; `style` is one of ``annual``, ``monthly``
         or ``ratio``; and ``-nodrift`` is added only if ``nodrift`` is ``True``.
 
     Important
@@ -895,7 +948,7 @@ def get_feedbacks(
     unavailable (note dominant longwave and shortwave inter-model spread is from
     longwave and shortwave cloud feedbacks). They are also needed for the ratio
     feedback calculations to plug in as estimates for the effective forcing (when
-    ``ratio=True`` this function looks for ``'slope'`` files to retrieve the
+    ``style='ratio'`` this function looks for ``'annual'`` files to retrieve the
     forcing estimates). The all-sky and clear-sky regressions are both needed for an
     estimate of cloud masking of the radiative forcing to plug into the Soden et al.
     adjusted cloud radiative effect estimates to get the effective cloud forcing.
@@ -910,20 +963,21 @@ def get_feedbacks(
     select = select or (0, 150)
     response = response or (0, 150)
     source = source or 'eraint'
-    statistic = 'ratio' if ratio else 'slope'
+    style = style or 'annual'
+    series = 'ratio' if style == 'ratio' else 'slope'
     nodrift = nodrift and 'nodrift' or ''
     outputs = []
     subfolder = _item_join((project, experiment, table))
     tuples = (  # try to load from parent flux file if possible
-        (fluxes, 'fluxes', select),
-        (fluxes, 'fluxes', response),
-        (feedbacks, 'feedbacks', select),
-        (feedbacks, 'feedbacks', response),
+        (fluxes, 'fluxes', series, select),
+        (fluxes, 'fluxes', series, response),
+        (feedbacks, 'feedbacks', style, select),
+        (feedbacks, 'feedbacks', style, response),
     )
-    for folder, prefix, times in tuples:
+    for folder, prefix, suffix, times in tuples:
         file = _item_join(
             prefix, table, model, experiment, ensemble,
-            (*(format(int(t), '04d') for t in times), source, statistic, nodrift),
+            (*(format(int(t), '04d') for t in times), source, suffix, nodrift),
             modify=False
         ) + '.nc'
         path = Path(folder).expanduser() / subfolder / file
@@ -948,7 +1002,8 @@ def get_feedbacks(
     fluxes_exist = tuple(flux.is_file() and flux.stat().st_size > 0 for flux in fluxes)
     feedbacks_exist = feedbacks.is_file() and feedbacks.stat().st_size > 0
     overwrite = overwrite or feedbacks_exist and not any(fluxes_exist)
-    if not overwrite and not dryrun and any(fluxes_exist):
+    # if not overwrite and not dryrun and any(fluxes_exist):
+    if not dryrun and any(fluxes_exist):
         output = fluxes[0] if fluxes_exist[0] else fluxes[1]
         print(f'Loading flux data from file: {output.name}')
         fluxes = load_file(output, validate=False)
@@ -972,7 +1027,7 @@ def get_feedbacks(
         kernels = load_file(kernels, project=project, validate=False)
         kwargs = dict(select=select, project=project, model=model, dryrun=dryrun)
         anoms = _anomalies_from_files(printer=print, **kwargs, **inputs)
-        fluxes = _fluxes_from_anomalies(anoms, kernels=kernels, printer=print)
+        fluxes = _fluxes_from_anomalies(anoms, kernels, printer=print)
         for dataset in (anoms, kernels):
             dataset.close()
         if not dryrun:  # save after compressing repeated values
@@ -987,13 +1042,15 @@ def get_feedbacks(
     else:
         output = feedbacks  # use the name 'feedbacks' for dataset
         print(f'Output feedback file: {output.name}')
-        if ratio:
-            forcing = forcing.parent / forcing.name.replace('ratio', 'slope')
+        if style == 'ratio':
+            forcing = forcing.parent / forcing.name.replace('ratio', 'annual')
             print(f'Loading forcing data from file: {forcing.name}')
             forcing = load_file(forcing, project=project, validate=False)
-        else:
+        elif style == 'annual' or style == 'monthly':
             forcing = None
-        feedbacks = _feedbacks_from_fluxes(fluxes, forcing=forcing, printer=print)
+        else:
+            raise ValueError(f"Invalid {style=}. Expected 'annual', 'monthly', or 'ratio'.")  # noqa: E501
+        feedbacks = _feedbacks_from_fluxes(fluxes, style=style, forcing=forcing, printer=print)  # noqa: E501
         if forcing:
             forcing.close()
         if not dryrun:  # save after compressing repeated values
@@ -1006,7 +1063,7 @@ def get_feedbacks(
 
 def process_feedbacks(
     *paths,
-    ratio=None,
+    style=None,
     source=None,
     control=None,
     response=None,
@@ -1025,8 +1082,8 @@ def process_feedbacks(
     ----------
     *paths : path-like, optional
         Location(s) for the climate and series data.
-    ratio : bool, optional
-        Whether to use ratio feedbacks.
+    style : {'annual', 'monthly', 'ratio'}, optional
+        The type of feedback calcluation to perform.
     source : str, default: 'eraint'
         The source for the kernels.
     control : 2-tuple of int, default: (0, 150)
@@ -1055,23 +1112,25 @@ def process_feedbacks(
     # NOTE: Paradigm is to use climate monthly mean surface pressure when interpolating
     # to model levels and keep surface pressure time series when getting feedback
     # kernel integrals. Helps improve accuracy since so much stuff depends on kernels.
+    style = style or 'annual'
     logging = logging and not dryrun
-    statistic = 'ratio' if ratio else 'slope'
     experiment = experiment or 'abrupt4xCO2'
     source = source or 'eraint'
     nodrift = 'nodrift' if nodrift else ''
     suffix = nodrift and '-' + nodrift
     control = control or (0, 150)
-    if ratio:  # ratio-type
-        response = response or (120, 150)
-        control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
-        response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
-    else:  # NOTE: get anomaly data from time series file matching control years
+    if style == 'annual' or style == 'monthly':
         response = response or (0, 150)
         control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
         response_suffix = f'{control[0]:04d}-{control[1]:04d}-series{suffix}'
+    elif style == 'ratio':  # ratio-type
+        response = response or (120, 150)
+        control_suffix = f'{control[0]:04d}-{control[1]:04d}-climate{suffix}'
+        response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
+    else:
+        raise ValueError(f"Invalid {style=}. Expected 'annual', 'monthly', or 'ratio'.")
     response, select = control, response
-    suffixes = (*(format(int(t), '04d') for t in select), source, statistic, nodrift)
+    suffixes = (*(format(int(t), '04d') for t in select), source, style, nodrift)
     constraints = {
         'variable': sorted(set(k for d in VARIABLE_DEPENDENCIES.values() for k in d)),
         'experiment': ['piControl', experiment],
@@ -1085,6 +1144,7 @@ def process_feedbacks(
         print = Logger('feedbacks', *suffixes, project=project, **constraints)
     else:
         print = builtins.print
+    print()
     print('Generating database.')
     files, *_ = glob_files(*paths, project=project)
     facets = ('project', 'model', 'ensemble', 'grid')
@@ -1111,7 +1171,7 @@ def process_feedbacks(
     for group, data in database.items():
         group = dict(zip(database.group, group))
         print()
-        print(f'Computing {statistic} feedbacks:')
+        print(f'Computing {style} feedbacks:')
         print(', '.join(f'{key}: {value}' for key, value in group.items()))
         files = _get_file_pairs(
             data,
@@ -1130,7 +1190,7 @@ def process_feedbacks(
                 model=group['model'],
                 select=select,
                 response=response,
-                ratio=ratio,
+                style=style,
                 source=source,
                 nodrift=nodrift,
                 printer=print,

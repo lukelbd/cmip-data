@@ -64,7 +64,8 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
     output : xarray.Dataset
         The standardized data.
     """
-    # TODO: Remove this since outdated
+    # NOTE: The 'seasonal' and 'monthly' no longer used after transition from 'slope'
+    # files with period coordinates to 'annual' files with original month coordinates.
     # NOTE: The new climopy cell duration calculation will auto-detect monthly and
     # yearly data, but not yet done, so use explicit days-per-month weights for now.
     # NOTE: Here resample(time='AS') and groupby('time.year') yield identical results,
@@ -142,18 +143,16 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
     output : xarray.Dataset
         The standardized data.
     """
-    # NOTE: Alternative approach to feedbacks 'numerator' and 'denominator' is to
-    # get pointwise fluxes relative to different averages, then when we want non-local
-    # feedbacks, simply take averages of the local values. Will consider after testing.
-    # NOTE: Previously used a 2D array ((1x1, 1xM), (1x1, 1xM), (1x1, 1xM), (Nx1, NxM))
-    # for storing (rows) the global average, sh average, nh average, and fully-resolved
-    # latitude data, plus (cols) the global average and fully-resolved longitude data.
-    # This was built as a nested 4x2 list (with longitude and latitude coordinates of
-    # NaN, ... and NaN, -Inf, Inf, ..., and default NaN-filled arrays in each slot),
-    # subsequently combined with combine_nested. However this was unnecessary... way
-    # easier to just broadcast averages in existing space coordinates. Also normal
-    # xarray-style slice selection fails with NaN or +/-Inf coordinates so selections
-    # would always need to use .isel() rather than .sel()... even more awkward.
+    # NOTE: Previously stored separate 'numerator' and 'denominator' averaging
+    # methods with numerator='globe' and denominator='globe' corresponding to global
+    # feedbacks. Now just take global average of pointwise global feedback.
+    # NOTE: Previously used a 2D array for storing (rows) the global average, sh
+    # average, nh average, and fully-resolved latitude data, plus (cols) the global
+    # average and fully-resolved longitude data. This was built as a nested 4x2 list
+    # with longitude and latitude coordinates of NaN, ... and NaN, -Inf, Inf, ..., and
+    # default NaN-filled arrays in each slot, subsequently combined with combine_nested.
+    # However this was overly complicated and no longer saves space now that we do not
+    # save average feedbacks. Note .sel() does not work with NaN and Inf coordinates.
     eps = 1e-10  # avoid assigning twice
     input = input.climo.add_cell_measures()
     outputs = []

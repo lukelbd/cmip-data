@@ -2,8 +2,8 @@
 """
 Create files containing combined time-mean and time-variance quantities.
 """
-# TODO TODO TODO: Updated climate loading utils on 2023-02-14. Must merge
-# those changes with these changes. Think they were not merged.
+# TODO TODO TODO: Updated results.py utils on 2023-02-14. Must merge those
+# changes with these changes. Think they were not merged. Use git diff.
 import builtins
 import itertools
 import traceback
@@ -380,7 +380,7 @@ def _update_climate_energetics(dataset, clear=False, drop_components=True):
     return dataset
 
 
-def _update_climate_moisture(dataset, ratio=True, liquid=False):
+def _update_climate_hydrology(dataset, ratio=True, liquid=False):
     """
     Add relative humidity and ice and liquid water terms and standardize
     the insertion order for the resulting dataset variables.
@@ -640,7 +640,7 @@ def get_climate(output=None, project=None, **inputs):
     dataset = dataset.climo.add_cell_measures(surface=('ps' in dataset))
     dataset = _update_climate_energetics(dataset)  # must come before transport
     dataset = _update_climate_transport(dataset)
-    dataset = _update_climate_moisture(dataset)
+    dataset = _update_climate_hydrology(dataset)
     if 'time' in dataset:
         dataset = average_periods(dataset, **kw_periods)
     if 'plev' in dataset:
