@@ -20,14 +20,16 @@ __all__ = [
 ]
 
 
-def assign_dates(data):
+def assign_dates(data, year=None):
     """
     Assign a standard year and day for time coordinates in the file.
 
     Parameters
     ----------
     data : xarray.Dataset or xarray.DataArray
-        The input data.
+        The input data. Requires either time or month coordinate.
+    year : int, optional
+        The output year. Requires data with 12 time or month coordinates.
 
     Returns
     -------
@@ -36,22 +38,24 @@ def assign_dates(data):
     """
     # NOTE: This is used when *loading* datasets and combining along models. Should
     # not put this into per-model climate and feedback processing code.
-    if not ('month' in data.sizes) ^ ('time' in data.sizes):
-        raise ValueError('Unexpected input array. Expected months or times.')
-    if 'time' in data.sizes:
-        year = data.time.dt.year
-        month = data.time.dt.month
+    if 'time' in data.sizes and 'month' not in data.sizes:
         ntime = len(data.time)
-    else:
+        years = data.time.dt.year
+        months = data.time.dt.month
+    elif 'month' in data.sizes and 'time' not in data.sizes:
+        ntime = len(data.month)
+        months = data.month
         data = data.rename(month='time')
-        month = data.month
-        ntime = len(month)
-    if ntime == 12:
-        time = [cftime.datetime(1800, m, 15) for m in month]
-    elif ntime % 12 == 0:
-        time = [cftime.datetime(y, m, 15) for y, m in zip(year, month)]
     else:
-        raise ValueError('Unexpected time coordinates. Should be multiple of 12.')
+        raise ValueError('Unexpected input array. Expected months or times.')
+    if ntime == 12 and year is None:
+        raise ValueError('Monthly averages require an explicit input year.')
+    if ntime != 12 and year is not None:
+        raise ValueError('Cannot assign input year to data with more than 12 months.')
+    if years is not None:
+        time = [cftime.datetime(y, m, 15) for y, m in zip(years, months)]
+    else:
+        time = [cftime.datetime(1800, m, 15) for m in months]
     time = xr.CFTimeIndex(time)  # prefer cftime
     time = xr.DataArray(time, dims='time', attrs=data.time.attrs)
     data = data.assign_coords(time=time)

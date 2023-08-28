@@ -167,8 +167,8 @@ def _regress_annual(numer, denom, proj=False, skipna=False):
         extra = covar / np.sqrt(var)
     else:  # regression intercept
         extra = navg - slope * davg  # still linear since 'davg' is annual averages
-    slope = assign_dates(slope)
-    extra = assign_dates(extra)
+    slope = assign_dates(slope, year=1800)
+    extra = assign_dates(extra, year=1800)
     return slope, extra
 
 
