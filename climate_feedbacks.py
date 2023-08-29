@@ -64,9 +64,9 @@ if feedbacks:
         # ('abrupt4xCO2', 'monthly', (20, 150)),  # monthly mean regression
         # ('abrupt4xCO2', 'monthly', (0, 50)),  # monthly mean regression
         # ('abrupt4xCO2', 'monthly', (100, 150)),  # monthly mean regression
-        ('piControl', 'annual', (0, 150)),  # annual mean regression
-        ('abrupt4xCO2', 'annual', (0, 150)),  # annual mean regression
-        ('abrupt4xCO2', 'annual', (0, 20)),  # annual mean regression
+        # ('piControl', 'annual', (0, 150)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (0, 150)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (0, 20)),  # annual mean regression
         ('abrupt4xCO2', 'annual', (20, 150)),  # annual mean regression
         ('abrupt4xCO2', 'annual', (0, 50)),  # annual mean regression
         ('abrupt4xCO2', 'annual', (100, 150)),  # annual mean regression

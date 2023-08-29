@@ -109,9 +109,8 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
             times[name] = ('time.month', month)
     for name, (key, value) in times.items():
         data = input if key is None else input.sel(time=(input.coords[key] == value))
-        days = data.time.dt.days_in_month
+        days = data.time.dt.days_in_month.astype(data.dtype)  # preserve float32
         wgts = days.groupby('time.year') / days.groupby('time.year').sum()
-        wgts = wgts.astype(data.dtype)  # preserve float32 variables
         with xr.set_options(keep_attrs=True):
             data = (data * wgts).groupby('time.year').sum(dim='time', skipna=False)
         output[name] = data

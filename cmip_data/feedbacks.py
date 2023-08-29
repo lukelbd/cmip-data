@@ -87,29 +87,6 @@ VARIABLE_DEPENDENCIES = {
 }
 
 
-def _fill_annual(data):
-    """
-    Return an array with each time slots filled by its annual average.
-
-    Parameters
-    ----------
-    data : xarray.DataArray
-        The input array.
-    """
-    # NOTE: This replaces utils.py average_periods() now that we no longer explicitly
-    # save season or annual averages.
-    days = data.time.dt.days_in_month
-    wgts = days.groupby('time.year') / days.groupby('time.year').sum()
-    wgts = wgts.astype(data.dtype)  # preserve float32 variables
-    zero = xr.zeros_like(data, data.dtype)  # preserve float32 variables
-    with xr.set_options(keep_attrs=True):
-        numer = (data * wgts).groupby('time.year').sum(dim='time', skipna=False)
-        denom = wgts.groupby('time.year').sum(dim='time', skipna=False)
-        avgs = numer / denom
-        avgs = zero.groupby('time.year') + avgs  # tile 'year' onto 'time'
-    return avgs
-
-
 def _regress_monthly(numer, denom, proj=False):
     """
     Return a monthly-style weighted feedback regression.
@@ -717,7 +694,11 @@ def _feedbacks_from_fluxes(
     if style == 'monthly':
         temp = fluxes.ts
     elif style == 'annual' or style == 'ratio':
-        temp = _fill_annual(fluxes.ts)
+        days = fluxes.time.dt.days_in_month.astype(fluxes.ts.dtype)
+        wgts = days.groupby('time.year') / days.groupby('time.year').sum()
+        with xr.set_options(keep_attrs=True):
+            temp = (fluxes.ts * wgts).groupby('time.year').sum(dim='time', skipna=False)
+            temp = xr.zeros_like(fluxes.ts).groupby('time.year') + temp
     else:
         raise ValueError(f"Invalid {style=}. Expected 'monthly', 'annual', or 'ratio'.")
     if style == 'ratio' and fluxes.sizes['time'] > 12:
@@ -894,6 +875,7 @@ def get_feedbacks(
     overwrite=False,
     printer=None,
     dryrun=False,
+    noload=False,
     **inputs
 ):
     """
@@ -945,6 +927,8 @@ def get_feedbacks(
         The print function.
     dryrun : bool, optional
         Whether to run with only three years of data.
+    noload : bool, optional
+        Whether to speed things up by skipping loading if the file exists.
 
     Returns
     -------
@@ -1021,10 +1005,11 @@ def get_feedbacks(
         raise TypeError(f'Unexpected kwargs {message}. Must be 2-tuple of paths.')
 
     # Load kernels and cimpute flux components and feedback estimates
-    # NOTE: Try to load from same fluxes files for feedbacks estimated from subset
-    # of full time series to avoid duplicating expensive calculations.
     # NOTE: Always overwrite if at least flux data is missing so that we never have
     # feedback data inconsistent with the flux data on storage.
+    # NOTE: Try to load from same fluxes files for feedbacks estimated from subset
+    # of full time series to avoid duplicating expensive calculations. Requires
+    # writing full perturbed feedbacks before 'early' and 'late' feedbacks.
     # NOTE: Even for kernel-derived flux responses, rapid adjustments and associated
     # pattern effects may make the effective radiative forcing estimate non-zero (see
     # Andrews et al.) so we always save the regression intercept data.
@@ -1032,13 +1017,16 @@ def get_feedbacks(
     fluxes_exist = tuple(flux.is_file() and flux.stat().st_size > 0 for flux in fluxes)
     feedbacks_exist = feedbacks.is_file() and feedbacks.stat().st_size > 0
     overwrite = overwrite or feedbacks_exist and not any(fluxes_exist)
-    # if not overwrite and not dryrun and any(fluxes_exist):
-    if not dryrun and any(fluxes_exist):
+    if not dryrun and any(fluxes_exist):  # TODO: also 'not overwrite' here?
         output = fluxes[0] if fluxes_exist[0] else fluxes[1]
-        print(f'Loading flux data from file: {output.name}')
-        fluxes = load_file(output, validate=False)
-        if not fluxes_exist[0]:  # must subselect from loaded data
-            init, start, stop = *response[:1], *select
+        if noload and feedbacks_exist and not overwrite:
+            print('Skipping loading flux data.')
+            fluxes = output
+        else:
+            print(f'Loading flux data from file: {output.name}')
+            fluxes = load_file(output, validate=False)
+        if isinstance(fluxes, xr.Dataset) and not fluxes_exist[0]:
+            init, start, stop = *response[:1], *select  # subselect from perturbed data
             if init is not None:
                 init = int(init) * 12
             if start is not None:
@@ -1065,10 +1053,15 @@ def get_feedbacks(
             output.unlink(missing_ok=True)
             fluxes.to_netcdf(output, engine='netcdf4', encoding=encoding)
             print(f'Created output file: {output.name}')
+        print('Skipping loading flux data.')
     if not overwrite and not dryrun and feedbacks_exist:
         output = feedbacks
-        print(f'Loading feedback data from file: {output.name}')
-        feedbacks = load_file(output, validate=False)
+        if noload:
+            print('Skipping loading feedback data.')
+            feedbacks = output
+        else:
+            print(f'Loading feedback data from file: {output.name}')
+            feedbacks = load_file(output, validate=False)
     else:
         output = feedbacks  # use the name 'feedbacks' for dataset
         print(f'Output feedback file: {output.name}')
@@ -1103,6 +1096,7 @@ def process_feedbacks(
     logging=False,
     dryrun=False,
     nowarn=False,
+    noload=False,
     **kwargs
 ):
     """
@@ -1225,11 +1219,13 @@ def process_feedbacks(
                 nodrift=nodrift,
                 printer=print,
                 dryrun=dryrun,
+                noload=True,
                 **kwargs,
                 **files,
             )
             for dataset in datasets:
-                dataset.close()
+                if isinstance(dataset, xr.Dataset):
+                    dataset.close()
         except Exception as error:
             if dryrun or nowarn:
                 raise error
