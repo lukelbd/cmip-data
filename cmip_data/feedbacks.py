@@ -117,7 +117,7 @@ def _regress_monthly(numer, denom, proj=False):
     return slope, extra
 
 
-def _regress_annual(numer, denom, proj=False, skipna=False):
+def _regress_annual(numer, denom, proj=False):
     """
     Return an annual average-style feedback regression.
 
@@ -437,7 +437,7 @@ def _anomalies_from_files(
     return output
 
 
-def _fluxes_from_anomalies(anoms, kernels, printer=None):
+def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
     """
     Return a dataset containing the actual radiative flux responses and the radiative
     flux responses implied by the radiative kernels and input anomaly data.
@@ -450,6 +450,8 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
         The radiative kernel kernels.
     printer : callable, default: `print`
         The print function.
+    components : tuple, optional
+        The components to generate.
     """
     # Prepare kernel dataset before combining with anomaly dataset
     # WARNING: Had unbelievably frustrating issue where pressure level coordinates
@@ -553,6 +555,8 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
         dependencies = list(variables)  # anomaly and kernel variables
         if component == '':
             print(f'Calculating {wavelength} {boundary} fluxes using kernel method.')
+        if components and component not in components:
+            continue
         if component == '':
             running = 0.0 * ureg('W m^-2')
         if component == '':
@@ -659,7 +663,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
 
 
 def _feedbacks_from_fluxes(
-    fluxes, style=None, forcing=None, pattern=True, verbose=True, printer=None, **kwargs
+    fluxes, style=None, forcing=None, pattern=True, verbose=True, printer=None, components=None, **kwargs  # noqa: E501
 ):
     """
     Return a dataset containing feedbacks calculated along all combinations of
@@ -681,6 +685,8 @@ def _feedbacks_from_fluxes(
         Whether to print extra information while performing calculations.
     printer : callable, default: `print`
         The print function.
+    components : tuple, optional
+        The components to generate.
     **kwargs
         Passed to `average_regions`.
     """
@@ -724,9 +730,7 @@ def _feedbacks_from_fluxes(
     # small, but longwave component is always very significant.
     output = {}  # save time by writing dataset afterward
     for boundary, wavelength, (component, descrip) in itertools.product(
-        ('TOA', 'surface'),
-        ('longwave', 'shortwave'),
-        FEEDBACK_DESCRIPTIONS.items(),
+        ('TOA', 'surface'), ('longwave', 'shortwave'), FEEDBACK_DESCRIPTIONS.items(),
     ):
         # Get the flux components
         # TODO: Update 'flux' files and remove code that translates e.g. 'alb_rfnt'
@@ -736,6 +740,8 @@ def _feedbacks_from_fluxes(
         # combines shortwave and longwave components as needed.
         if component == '':  # print header
             print(f'Calculating {boundary} {wavelength} forcing and feedback.')
+        if components and component not in components:
+            continue
         rad = f'r{wavelength[0]}n{boundary[0].lower()}'  # this wavelength
         full = f'{component}_rfn{boundary[0].lower()}'  # full wavelength
         count = sum(map(bool, FEEDBACK_DEPENDENCIES[component].values()))
