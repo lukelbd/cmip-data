@@ -649,9 +649,10 @@ def _validate_ranges(variable, table='Amon'):
     # centers to use for validating simulations and published netcdf files. They
     # were copied into VALIDATE.txt from esgf website (see header for details).
     path = Path(__file__).parent.parent / 'VALIDATE.txt'
-    data = open(path).read()
     keys = ('valid_min', 'valid_max', 'ok_min_mean_abs', 'ok_max_mean_abs')
     values = [None, None, None, None]
+    with open(path) as file:
+        data = file.read()
     for part in data.split('\n\n'):
         if (
             part[0] == '['

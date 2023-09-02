@@ -17,7 +17,7 @@ import xarray as xr
 from climopy import diff, const, ureg
 from icecream import ic  # noqa: F401
 
-from .utils import average_periods, load_file
+from .utils import assign_dates, load_file
 from .internals import Database, Logger, glob_files, _item_dates, _item_parts
 
 __all__ = [
@@ -137,29 +137,6 @@ MOISTURE_COMPONENTS = [
 # hfls = Lv * evsp + Ls * sbl exactly (compare below terms), where the sbl term is
 # equivalent to adding the latent heat of fusion required to melt snow before a
 # liquid-vapor transition, an additional correction is not needed here.
-TRANSPORT_DESCRIPTIONS = {
-    'gse': 'potential static',
-    'hse': 'sensible static',
-    'dse': 'dry static',
-    'lse': 'latent static',
-    'mse': 'moist static',
-    'ocean': 'storage + ocean',
-    'total': 'total',
-}
-TRANSPORT_SCALES = {  # scaling prior to implicit transport calculations
-    'pr': const.Lv,
-    'prl': const.Lv,
-    'pri': const.Ls - const.Lv,  # remove the 'pri * Lv' implied inside 'pr' term
-    'ev': const.Lv,
-    'evl': const.Lv,
-    'evi': const.Ls - const.Lv,  # remove the 'evi * Lv' implied inside 'pr' term
-}
-TRANSPORT_IMPLICIT = {
-    'dse': (('hfss', 'rlns', 'rsns', 'rlnt', 'rsnt', 'pr', 'pri'), ()),
-    'lse': (('hfls',), ('pr', 'pri')),
-    'ocean': ((), ('hfss', 'hfls', 'rlns', 'rsns')),  # flux into atmosphere
-    'total': (('rlnt', 'rsnt'), ()),
-}
 TRANSPORT_INDIVIDUAL = {
     'gse': ('zg', const.g, 'dam m s^-1'),
     'hse': ('ta', const.cp, 'K m s^-1'),
@@ -169,6 +146,29 @@ TRANSPORT_INTEGRATED = {
     'dse': (1, 'intuadse', 'intvadse'),
     'mse': (1, 'intuamse', 'intvamse'),  # not currently provided in cmip
     'lse': (const.Lv, 'intuaw', 'intvaw'),
+}
+TRANSPORT_IMPLICIT = {
+    'dse': (('hfss', 'rlns', 'rsns', 'rlnt', 'rsnt', 'pr', 'pri'), ()),
+    'lse': (('hfls',), ('pr', 'pri')),
+    'ocean': ((), ('hfss', 'hfls', 'rlns', 'rsns')),  # flux into atmosphere
+    'total': (('rlnt', 'rsnt'), ()),
+}
+TRANSPORT_SCALES = {  # scaling prior to implicit transport calculations
+    'pr': const.Lv,
+    'prl': const.Lv,
+    'pri': const.Ls - const.Lv,  # remove the 'pri * Lv' implied inside 'pr' term
+    'ev': const.Lv,
+    'evl': const.Lv,
+    'evi': const.Ls - const.Lv,  # remove the 'evi * Lv' implied inside 'pr' term
+}
+TRANSPORT_DESCRIPTIONS = {
+    'gse': 'potential static',
+    'hse': 'sensible static',
+    'dse': 'dry static',
+    'lse': 'latent static',
+    'mse': 'moist static',
+    'ocean': 'storage + ocean',
+    'total': 'total',
 }
 
 
@@ -612,8 +612,6 @@ def get_climate(output=None, project=None, **inputs):
     # NOTE: Critical to overwrite the time coordinates after loading or else xarray
     # coordinate matching will apply all-NaN values for climatolgoies with different
     # base years (e.g. due to control data availability or response calendar diffs).
-    keys_periods = ('annual', 'seasonal', 'monthly')
-    kw_periods = {key: inputs.pop(key) for key in keys_periods if key in inputs}
     climate, series = {}, {}
     for variable, paths in inputs.items():
         for path, output in zip(paths, (climate, series)):
@@ -630,10 +628,9 @@ def get_climate(output=None, project=None, **inputs):
     # NOTE: Empirical testing revealed limiting integration to troposphere
     # often prevented strong transient heat transport showing up in overturning
     # cells due to aliasing of overemphasized stratospheric geopotential transport.
-    # WARNING: Critical to place average_periods after adjustments so that
-    # time-covariance of surface pressure and near-surface flux terms is
-    # effectively factored in (since average_periods only includes explicit
-    # month-length weights and ignores implicit cell height weights).
+    # WARNING: Critical to place time averaging after transport calculations so that
+    # time-covariance of surface pressure and near-surface flux terms is factored
+    # in (otherwise would need to include cell heights before averaging).
     dataset = xr.Dataset(output)
     if 'ps' not in dataset:
         print('Warning: Surface pressure is unavailable.', end=' ')
@@ -641,10 +638,12 @@ def get_climate(output=None, project=None, **inputs):
     dataset = _update_climate_energetics(dataset)  # must come before transport
     dataset = _update_climate_transport(dataset)
     dataset = _update_climate_hydrology(dataset)
-    if 'time' in dataset:
-        dataset = average_periods(dataset, **kw_periods)
     if 'plev' in dataset:
-        dataset = dataset.sel(plev=slice(None, 7000))
+        slice_ = slice(None, 7000)
+        dataset = dataset.sel(plev=slice_)
+    if 'time' in dataset:  # possibly no-op average?
+        dataset = dataset.groupby('time.month').mean('time', skipna=True)
+        dataset = assign_dates(dataset, year=1800)  # see also _regress_annual
     drop = ['cell_', '_bot', '_top']
     drop = [key for key in dataset.coords if any(o in key for o in drop)]
     dataset = dataset.drop_vars(drop)

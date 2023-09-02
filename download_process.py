@@ -44,10 +44,10 @@ dependencies = True  # dependency data for emergent constraintss?
 explicit = True  # control and response data for explicit circulation stuff?
 download = False
 filter = False
-process = False
-summarize = True
+process = True
+summarize = False
 climate = True
-series = True
+series = False
 # analysis = False  # control and response data for feedback analysis?
 # circulation = False  # control and response data for implicit circulation stuff?
 # constraints = True  # control data for emergent constraints?
@@ -311,8 +311,8 @@ if process:
             projects = ('CMIP6',)
         else:
             projects = ('CMIP6', 'CMIP5')
-        projects = projects and ('CMIP6',)  # TODO: remove
-        kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])  # TODO: remove
+        # projects = projects and ('CMIP6',)  # TODO: remove
+        # kwargs.setdefault('model', ['CanESM5-1', 'E3SM-2-0'])
         # kwargs.setdefault('model', ['FIO-ESM-2-0', 'NESM3'])
         for project in projects:
             experiments = {'piControl': 150, 'abrupt-4xCO2': (120, 150)}
@@ -341,7 +341,7 @@ if process:
                     overwrite=False,  # WARNING: monitor
                     logging=True,
                     dryrun=False,
-                    nowarn=False,
+                    nowarn=True,
                     **kw,
                 )
             experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
@@ -366,7 +366,7 @@ if process:
                     overwrite=False,  # WARNING: monitor
                     logging=True,  # ignored if dryrun true
                     dryrun=False,
-                    nowarn=False,
+                    nowarn=True,
                     **kw,
                 )
 

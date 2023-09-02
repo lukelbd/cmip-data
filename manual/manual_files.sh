@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Scripts for manually downloading and processing missing data.
-gfdl=true
+gfdl=false
 mcm=false
+rename=true
 
 # Manually acquire missing CMIP5 GFDL data
 # See: https://data1.gfdl.noaa.gov/faq.html
@@ -67,6 +68,69 @@ if $mcm; then
         -setattribute,rsdt@long_name="TOA Zero Times Incident Shortwave Radiation" \
         -setattribute,rsdt@standard_name="toa_zero_times_incoming_shortwave_flux" \
         -chname,rtmt,rsdt -mulc,0 "$rtmt" "$rsdt"
+    done
+  done
+fi
+
+# Remove unnecessary 'full' variables from flux and feedback files and rename
+# longwave-only or shortwave-only components from 'full' to just their component.
+nclist() {
+  command ncdump -h "$1" | sed -n '/variables:/,$p' | sed '/^$/q' \
+    | grep -v '[:=]' | cut -d';' -f1 | cut -d'(' -f1 | sed 's/ *$//g;s/.* //g' \
+    | xargs | tr ' ' '\n' | grep -v '[{}]' | sort
+}
+if $rename; then
+  for base in $HOME/scratch/cmip-fluxes $HOME/data/cmip-feedbacks; do
+    for folder in $base/*; do
+      echo && echo "Folder: ${folder#$HOME/}"
+      for file in $folder/*{series,slope}.nc; do
+        [ -r "$file" ] || continue
+        names=($(nclist "$file" | xargs))
+        [ ${#names[@]} -gt 0 ] || continue
+        echo "File: ${file##*/}"
+        unset delete rename
+        for component in '' cs alb pl lr hus pl* lr* hur cl resid; do
+          case "$component" in
+            pl|lr) wavelengths=(l) ;;
+            alb)   wavelengths=(s) ;;
+            *)     wavelengths=(s l) ;;
+          esac
+          case "$component" in
+            ''|cs) prefix='' suffix=${component} ;;
+            *)     prefix=${component}_ suffix='' ;;
+          esac
+          for boundary in t s; do  # NOTE: 'a' has never been stored
+            for param in '' _lam _erf; do
+              unset parts
+              full="${prefix}rfn${boundary}${suffix}${param}"
+              for wavelength in ${wavelengths[@]}; do
+                part="${prefix}r${wavelength}n${boundary}${suffix}${param}"
+                [[ " ${names[*]} " =~ " ${part} " ]] && parts+=("$part")
+              done
+              if [[ " ${names[*]} " =~ " ${full} " ]]; then
+                [ ${#parts[@]} -eq ${#wavelengths[@]} ] \
+                  && delete+=${full},  # delete unneeded 'full' wavelength variable
+                [ ${#parts[@]} -eq 0 ] && [ ${#wavelengths[@]} -eq 1 ] \
+                  && rename+=(-v ${full},${part})  # rename 'full' to correct wavelength
+              fi
+            done
+          done
+        done
+        if [ ${#delete[@]} -gt 0 ]; then
+          delete=${delete//\*/\\\*}  # replace naked asterisks with raw asterisks
+          echo "Removing variables: ${delete%,}" && temp=${file%/*}/tmp.nc
+          ncks -O -x -v "${delete%,}" "$file" "$temp" && mv "$temp" "$file" || rm "$temp"
+        fi
+        if [ ${#rename[@]} -gt 0 ]; then
+          rename=("${rename[@]//\*/\\\*}")  # replace naked asterisks with raw asterisks
+          echo "Renaming variables: ${rename[*]}"
+          ncrename "${rename[@]}" "$file"
+        fi
+        if [ ${#delete[@]} -gt 0 ] || [ ${#rename[@]} -gt 0 ]; then
+          names=($(nclist "$file" | xargs))
+          echo "Remaining names: ${names[*]}"
+        fi
+      done
     done
   done
 fi

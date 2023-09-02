@@ -58,6 +58,7 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+from icecream import ic  # noqa: F401
 
 from . import Atted, CDOException, Rename, cdo, nco
 from .internals import (
@@ -458,6 +459,7 @@ def repair_files(*paths, dryrun=False, printer=None):
     # So critical to include 'lev:bounds = "lev_bnds"' and have "lev_bnds" attrs
     # that point to the "a_bnds" and "b_bnds" hybrid level interfaces.
     print = printer or builtins.print
+    as_str = lambda att: opt if isinstance(opt := att.prn_option(), str) else ' '.join(opt)  # noqa: E501
     pure_sigma = 'atmosphere_sigma_coordinate'
     hybrid_pressure = 'atmosphere_hybrid_sigma_pressure_coordinate'
     hybrid_pressure_atted = []
@@ -466,15 +468,15 @@ def repair_files(*paths, dryrun=False, printer=None):
         bnd = ' bounds' if '_' in name else ''
         idx = '+1/2' if '_' in name else ''
         hybrid_pressure_atted.extend(
-            att.prn_option() for att in (
-                Atted('overwrite', 'long_name', name, f'atmospheric model level{bnd}'),  # noqa: E501
+            as_str(att) for att in (
+                Atted('overwrite', 'long_name', name, f'atmospheric model level{bnd}'),
                 Atted('overwrite', 'standard_name', name, hybrid_pressure),
                 Atted('overwrite', 'formula', name, 'p = ap + b*ps'),
                 Atted('overwrite', 'formula_terms', name, f'ap: ap{end} b: b{end} ps: ps'),  # noqa: E501
             )
         )
         hybrid_pressure_atted.extend(
-            att.prn_option().replace('" "', '') for term in ('b', 'ap') for att in (
+            as_str(att).replace('" "', '') for term in ('b', 'ap') for att in (  # noqa: E501
                 Atted('delete', ' ', f'{term}{end}'),  # remove all attributes
                 Atted('overwrite', 'long_name', f'{term}{end}', f'vertical coordinate formula term: {term}(k{idx})'),  # noqa: E501
             )
@@ -491,7 +493,7 @@ def repair_files(*paths, dryrun=False, printer=None):
     # delete these attributes when detected on candidate 'pfull' data.
     hybrid_height = 'atmosphere_hybrid_height_coordinate'
     hybrid_height_atted = [
-        att.prn_option() for name in ('lev', 'lev_bnds') for att in (
+        as_str(att) for name in ('lev', 'lev_bnds') for att in (
             Atted('overwrite', 'standard_name', name, 'height'),
             Atted('delete', 'long_name', name),
             Atted('delete', 'units', name),
@@ -500,7 +502,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         )
     ]
     hybrid_height_atted_extra = [
-        att.prn_option() for att in (
+        as_str(att) for att in (
             Atted('delete', 'climatology', 'time'),
             Atted('delete', 'bounds', 'time'),  # prevents clean merge
         )
@@ -530,7 +532,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 remove = ['-x', '-v', ','.join(var_extra)]
                 nco.ncks(input=str(path), output=str(path), options=remove)
         if any('formula_term' in kw for kw in attrs.values()):
-            rename = [Rename('a', {'.formula_term': 'formula_terms'}).prn_option()]
+            rename = [as_str(Rename('a', {'.formula_term': 'formula_terms'}))]
             print(
                 'Warning: Repairing GFDL-like misspelling of formula_terms '
                 + f'attribute(s) for {path.name!r}:', *rename
@@ -539,7 +541,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 nco.ncrename(input=str(path), output=str(path), options=rename)
         if 'presnivs' in sizes:
             rename = [
-                Rename(c, {'presnivs': 'lev'}).prn_option()
+                as_str(Rename(c, {'presnivs': 'lev'}))
                 for c, src in (('d', sizes), ('v', attrs)) if 'presnivs' in src
             ]
             print(
@@ -551,7 +553,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             if not dryrun:
                 nco.ncrename(input=str(path), output=str(path), options=rename)
         if 'lev' in attrs and attrs['lev'].get('axis', '') != 'Z':
-            atted = [Atted('overwrite', 'axis', 'lev', 'Z').prn_option()]
+            atted = [as_str(Atted('overwrite', 'axis', 'lev', 'Z'))]
             print(
                 'Warning: Repairing IPSL-like missing level variable axis '
                 + f'attribute for {path.name!r}:', *atted
@@ -682,7 +684,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         # inverted. That is handled with an ncap2 block below.
         if lev_std != hybrid_pressure and lev_bnds_std == hybrid_pressure:
             atted = [
-                Atted('overwrite', key, 'lev', new).prn_option()
+                as_str(Atted('overwrite', key, 'lev', new))
                 for key, old in attrs[lev_bnds_key].items()
                 if (new := old.replace(' bounds', '').replace('_bnds', ''))
             ]
@@ -788,7 +790,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             and any(model in path.stem for model in models)
         ):
             atted = [
-                Atted('delete', 'bounds', key).prn_option()
+                as_str(Atted('delete', 'bounds', key))
                 for key in (lon, lat)
             ]
             print(
@@ -1198,7 +1200,7 @@ def standardize_vertical(
             data = '\n'.join(cdo.zaxisdes(input=str(dependency)))
             open(text, 'w').write(data)
             merge = f'{merge} -setzaxis,{text}'  # applied to original file
-            atted = [Atted('overwrite', 'long_name', 'lev', 'generalized height').prn_option()]  # noqa: E501
+            atted = [format(Atted('overwrite', 'long_name', 'lev', 'generalized height'))]  # noqa: E501
 
     # Add dependencies and interpolate
     # NOTE: Removing unneeded variables by leading chain with -delname,ps,orog,pfull

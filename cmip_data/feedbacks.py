@@ -101,8 +101,8 @@ def _regress_monthly(numer, denom, proj=False):
     # NOTE: Critical to use actual variance and covariance here (scaled by sum of
     # weights) instead of raw sums so that sqrt(var) represents the actual standard
     # deviation. Otherwise the 'projection' is scaled by erroneous sqrt(wgts) term.
-    wgts = denom.time.dt.days_in_month
-    wgts = wgts / wgts.sum('time')
+    days = denom.time.dt.days_in_month
+    wgts = days / days.sum('time')
     navg = (wgts * numer).sum('time', skipna=False)
     davg = (wgts * denom).sum('time', skipna=False)
     covar = wgts * (denom - davg) * (numer - navg)
@@ -130,10 +130,13 @@ def _regress_annual(numer, denom, proj=False, skipna=False):
     """
     # NOTE: The denominator should have 'time' coordinate with each slot filled
     # by annual average. This makes both the slope estimator and y intercept linearly
-    # additive so that averages can be obtained afterward. See _annual_averages().
+    # additive so that averages can be obtained afterward. See _feedbacks_from_fluxes()
     # NOTE: Assign a standardized time array so that subsequently loading into
     # ensembles with results.py can concatenate more easily. Pick 1800 because it
     # has 28 days on February (for weighted average) and is sort of pre-industrial.
+    # Tested calendars in 'cmip-fluxes' and most are 'noleap' or 'standard'/'gregorian'
+    # however HadGEM and UK-ESM are '360_day' so there may be slight errors there.
+    # Try: for f in *.nc; do echo "$f: $(ncvarinfo time $f | grep calendar)"; done
     navg = numer.groupby('time.month').mean('time', skipna=False)
     davg = denom.groupby('time.month').mean('time', skipna=False)
     covar = (denom.groupby('time.month') - davg) * (numer.groupby('time.month') - navg)
@@ -656,7 +659,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None):
 
 
 def _feedbacks_from_fluxes(
-    fluxes, style=None, forcing=None, pattern=True, printer=None, **kwargs
+    fluxes, style=None, forcing=None, pattern=True, verbose=True, printer=None, **kwargs
 ):
     """
     Return a dataset containing feedbacks calculated along all combinations of
@@ -674,6 +677,8 @@ def _feedbacks_from_fluxes(
         The type of feedback calcluation to perform.
     pattern : bool, optional
         Whether to include the local temperature pattern term in the output dataset.
+    verbose : bool, optional
+        Whether to print extra information while performing calculations.
     printer : callable, default: `print`
         The print function.
     **kwargs
@@ -697,7 +702,7 @@ def _feedbacks_from_fluxes(
         days = fluxes.time.dt.days_in_month.astype(fluxes.ts.dtype)
         wgts = days.groupby('time.year') / days.groupby('time.year').sum()
         with xr.set_options(keep_attrs=True):
-            temp = (fluxes.ts * wgts).groupby('time.year').sum(dim='time', skipna=False)
+            temp = (fluxes.ts * wgts).groupby('time.year').sum('time', skipna=False)
             temp = xr.zeros_like(fluxes.ts).groupby('time.year') + temp
     else:
         raise ValueError(f"Invalid {style=}. Expected 'monthly', 'annual', or 'ratio'.")
@@ -724,33 +729,38 @@ def _feedbacks_from_fluxes(
         FEEDBACK_DESCRIPTIONS.items(),
     ):
         # Get the flux components
-        # TODO: Previously computed and stored 'full' components here with appropriate
-        # renames but no longer do that. Need to make 'process.py' automatically rename
-        # or combine longwave and shortwave feedback components.
-        # NOTE: Here if a component has no 'dependencies' it does
-        # not exist so skip (e.g. temperature shortwave).
-        rad = f'r{wavelength[0]}n{boundary[0].lower()}'
-        if wavelength == 'longwave' and component == '':
-            print(f'Calculating {boundary} forcing and feedback.')
+        # TODO: Update 'flux' files and remove code that translates e.g. 'alb_rfnt'
+        # arrays to 'alb_rsnt'. Should write variable renaming script.
+        # NOTE: Previously computed and stored 'full' components here with appropriate
+        # renames but no longer do that. Instead process.py get_data() automatically
+        # combines shortwave and longwave components as needed.
+        if component == '':  # print header
+            print(f'Calculating {boundary} {wavelength} forcing and feedback.')
+        rad = f'r{wavelength[0]}n{boundary[0].lower()}'  # this wavelength
+        full = f'{component}_rfn{boundary[0].lower()}'  # full wavelength
+        count = sum(map(bool, FEEDBACK_DEPENDENCIES[component].values()))
         if component in ('', 'cs'):
             name = f'{rad}{component}'
-        elif all(keys for keys in FEEDBACK_DEPENDENCIES[component].values()):
+        elif FEEDBACK_DEPENDENCIES[component][wavelength]:
             name = f'{component}_{rad}'
-        else:  # skips e.g. non-full planck and albedo
+        else:  # skips e.g. shortwave planck or longwave albedo
             continue
-        if (missing := name) not in fluxes or (missing := 'ts') not in fluxes:
+        if name in fluxes:
+            flux = fluxes[name]  # pointwise radiative flux
+        elif full in fluxes and count == 1:
+            flux = fluxes[full]  # outdated flux data with 's' and 'l' renamed to 'f'
+        else:
             print(
                 'Warning: Input dataset is missing the feedback '
-                f'dependency {missing!r}. Skipping calculation.'
+                f'dependency {name!r}. Skipping calculation.'
             )
             continue
-        flux = fluxes[name]  # pointwise radiative flux
 
         # Possibly adjust for forcing masking
         # NOTE: Should have no effect if forcing is constant. Also this requires
         # calculating the net flux feedbacks before the cloud and residual components.
         # NOTE: Soden et al. (2008) used standard horizontally uniform value of 15%
-        # the full forcing but no reason not to use regressed forcing estimates.
+        # the full forcing but no rcason not to use regressed forcing estimates.
         erfs = tuple(f'{rad}{sky}_erf' for sky in ('', 'cs'))
         erfs = erfs if component in ('cl', 'resid') else ()
         if message := ', '.join(repr(erf) for erf in erfs if erf not in output):
@@ -790,7 +800,7 @@ def _feedbacks_from_fluxes(
             lam, erf = _regress_annual(flux, temp)
             erf = 0.5 * erf  # double CO2
         else:
-            erf = forcing.climo.get(f'{name}_erf', quantify=True)
+            erf = forcing.climo.get(f'{name}_erf', quantify=True).assign_coords(time=temp.time)  # noqa: E501
             lam = (flux - 2.0 * erf) / temp
         del flux
         gc.collect()
@@ -806,7 +816,7 @@ def _feedbacks_from_fluxes(
         lam.name = f'{name}_lam'
         lam.attrs['long_name'] = f'{boundary} {wavelength} {descrip} feedback parameter'
         output[lam.name] = lam
-        if wavelength == 'longwave':
+        if verbose:
             min_, max_, mean = lam.min().item(), lam.max().item(), lam.mean().item()
             print(format(f'  {component} lam:', ' <12s'), end=' ')
             print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
@@ -815,7 +825,7 @@ def _feedbacks_from_fluxes(
         erf.name = f'{name}_erf'  # halved from quadrupled co2
         erf.attrs['long_name'] = f'{boundary} {wavelength} {descrip} effective forcing'
         output[erf.name] = erf
-        if wavelength == 'longwave':
+        if verbose:
             min_, max_, mean = erf.min().item(), erf.max().item(), erf.mean().item()
             print(format(f'  {component} erf:', ' <12s'), end=' ')
             print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501

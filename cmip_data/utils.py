@@ -109,7 +109,7 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
             times[name] = ('time.month', month)
     for name, (key, value) in times.items():
         data = input if key is None else input.sel(time=(input.coords[key] == value))
-        days = data.time.dt.days_in_month.astype(data.dtype)  # preserve float32
+        days = data.time.dt.days_in_month.astype(np.float32)  # preserve float32
         wgts = days.groupby('time.year') / days.groupby('time.year').sum()
         with xr.set_options(keep_attrs=True):
             data = (data * wgts).groupby('time.year').sum(dim='time', skipna=False)
@@ -182,10 +182,11 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
             nhemi = nhemi.drop_vars(('lon', 'lat')).expand_dims(('lon', 'lat'))
             shemi = shemi.transpose(*data.sizes)
             nhemi = nhemi.transpose(*data.sizes)
+            dim = 'lat'  # assignment coordinate
             avgs = data.astype(np.float64)
-            avgs.loc[{'lat': slice(None, 0 - eps)}] = shemi
-            avgs.loc[{'lat': slice(0 + eps, None)}] = nhemi
-            avgs.loc[{'lat': slice(0 - eps, 0 + eps)}] = 0.5 * (shemi + nhemi)
+            avgs.loc[{dim: slice(None, 0 - eps)}] = shemi
+            avgs.loc[{dim: slice(0 + eps, None)}] = nhemi
+            avgs.loc[{dim: slice(0 - eps, 0 + eps)}] = 0.5 * (shemi + nhemi)
             output['hemisphere'] = avgs
         if globe:
             avgs = xr.ones_like(data) * data.climo.average('area')
@@ -276,16 +277,17 @@ def load_file(
             )
 
     # Validate time coordinates
-    # NOTE: Testing reveals that calling 'cdo ymonmean' on files that extend from
-    # december-november instead of january-december will result in january-december
-    # climate files with non-monotonic time steps. This will mess up the .groupby()
-    # operations in average_periods, so we auto-convert time array to be monotonic
-    # and standardize the days (so that cell_duration calculations are correct).
     # NOTE: Some files will have duplicate times (i.e. due to using cdo mergetime on
     # files with overlapping time coordinates) and drop_duplicates(time, keep='first')
     # does not work since it is only available on DataArrays, so use manual method.
     # See: https://github.com/pydata/xarray/issues/1072
     # See: https://github.com/pydata/xarray/discussions/6297
+    # NOTE: Testing reveals that calling 'cdo ymonmean' on files that extend from
+    # december-november instead of january-december will result in january-december
+    # climate files with non-monotonic time steps. This will mess up the .groupby()
+    # operations in average_periods, so we auto-convert time array to be monotonic
+    # and standardize the days (so that cell_duration calculations are correct). Note
+    # this is distinct from assign_dates() required for concatenating ensemble models.
     if 'time' in dataset.coords and dataset.time.size > 1:
         time = dataset.time.values
         mask = dataset.get_index('time').duplicated(keep='first')
@@ -296,9 +298,9 @@ def load_file(
                 f'time values: {message}. Kept only the first values.'
             )
         years, months = dataset.time.dt.year, dataset.time.dt.month
-        if years.size == 12 and sorted(months.values) == sorted(range(1, 13)):
+        if sorted(months.values) == sorted(range(1, 13)):
             cls = type(dataset.time[0].item())  # e.g. CFTimeNoLeap
-            std = [cls(min(years), t.month, 1) for t in dataset.time.values]
+            std = [cls(min(years), t.month, 15) for t in dataset.time.values]
             std = xr.DataArray(std, dims='time', name='time', attrs=dataset.time.attrs)
             dataset = dataset.assign_coords(time=std)  # assign with same attributes
             dataset = dataset.sortby('time')  # sort in case months are non-monotonic
