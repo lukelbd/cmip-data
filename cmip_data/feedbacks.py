@@ -437,7 +437,9 @@ def _anomalies_from_files(
     return output
 
 
-def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
+def _fluxes_from_anomalies(
+    anoms, kernels, components=None, boundaries=None, verbose=True, printer=None,
+):
     """
     Return a dataset containing the actual radiative flux responses and the radiative
     flux responses implied by the radiative kernels and input anomaly data.
@@ -448,10 +450,14 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
         The climate anomaly data.
     kernels : xarray.Dataset
         The radiative kernel kernels.
-    printer : callable, default: `print`
-        The print function.
     components : tuple, optional
         The components to generate.
+    boundaries : tuple, optional
+        The boundaries to include.
+    verbose : bool, optional
+        Whether to print summary statistics.
+    printer : callable, default: `print`
+        The print function.
     """
     # Prepare kernel dataset before combining with anomaly dataset
     # WARNING: Had unbelievably frustrating issue where pressure level coordinates
@@ -500,9 +506,10 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
     anoms = anoms.assign_coords(coords)
     anoms = anoms.climo.quantify()
     output = {'ts': anoms.ts.climo.dequantify()}
-    min_, max_, mean = height.min().item(), height.max().item(), height.mean().item()
+    if verbose:
+        min_, max_, mean = height.min().item(), height.max().item(), height.mean().item()  # noqa: 501
+        print(f'Cell height range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
     del height
-    print(f'Cell height range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
 
     # Get Clausius-Clapeyron adjustments and pressure variables
     # TODO: Increase efficiency of tropopause calculation now that it is merely
@@ -518,23 +525,24 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
     pbot = pbot.climo.to_units('Pa') + base  # possibly expand along response times
     pbot.attrs['long_name'] = 'surface pressure'
     output['pbot'] = pbot.climo.dequantify()
-    min_, max_, mean = pbot.min().item(), pbot.max().item(), pbot.mean().item()
-    del pbot
-    print(f'Surface pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
+    if verbose:
+        min_, max_, mean = pbot.min().item(), pbot.max().item(), pbot.mean().item()
+        print(f'Surface pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
     ptop = anoms.plev_top.climo.quantify().climo.to_units('Pa')
     base = array.groupby('time.month') if 'month' in ptop.dims else scalar
     ptop = ptop.climo.to_units('Pa') + base  # possibly expand along response times
     ptop.attrs['long_name'] = 'tropopause pressure'
     output['ptop'] = ptop.climo.dequantify()
-    min_, max_, mean = ptop.min().item(), ptop.max().item(), ptop.mean().item()
-    del ptop
-    print(f'Tropopause pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')
+    if verbose:
+        min_, max_, mean = ptop.min().item(), ptop.max().item(), ptop.mean().item()
+        print(f'Tropopause pressure range: min {min_:.0f} max {max_:.0f} mean {mean:.0f}')  # noqa: E501
     # pa = anoms.climo.coords.plev.climo.dequantify()
     ta = anoms.tapi.climo.dequantify()
     scale = _get_clausius_scaling(ta)  # _get_clausius_scaling(ta, pa)
-    min_, max_, mean = scale.min().item(), scale.max().item(), scale.mean().item()
-    del ta, base, array  # del pa, ta, base
-    print(f'Clausius-Clapeyron range: min {min_:.2f} max {max_:.2f} mean {mean:.2f}')
+    if verbose:
+        min_, max_, mean = scale.min().item(), scale.max().item(), scale.mean().item()
+        print(f'Clausius-Clapeyron range: min {min_:.2f} max {max_:.2f} mean {mean:.2f}')  # noqa: E501
+    del ta, pbot, ptop
 
     # Iterate over flux components
     # NOTE: Here cloud feedback comes about from change in cloud radiative forcing (i.e.
@@ -553,6 +561,8 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
         rads = (rad,) = (f'r{wavelength[0]}n{boundary[0].lower()}',)
         variables = FEEDBACK_DEPENDENCIES[component][wavelength]  # empty for fluxes
         dependencies = list(variables)  # anomaly and kernel variables
+        if boundaries and boundary[0].lower() not in map(str.lower, boundaries):
+            continue
         if component == '':
             print(f'Calculating {wavelength} {boundary} fluxes using kernel method.')
         if components and component not in components:
@@ -651,9 +661,10 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
         if component in ('pl', 'lr', 'hus', 'alb', 'cl'):
             running = data + running
         output[data.name] = data = data.climo.dequantify()
-        min_, max_, mean = data.min().item(), data.max().item(), data.mean().item()
-        print(format(f'  {component} flux:', ' <15s'), end=' ')
-        print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')
+        if verbose:
+            min_, max_, mean = data.min().item(), data.max().item(), data.mean().item()
+            print(format(f'  {component} flux:', ' <15s'), end=' ')
+            print(f'min {min_: <+7.2f} max {max_: <+7.2f} mean {mean: <+7.2f} ({descrip})')  # noqa: E501
         del data
         gc.collect()
 
@@ -663,7 +674,7 @@ def _fluxes_from_anomalies(anoms, kernels, printer=None, components=None):
 
 
 def _feedbacks_from_fluxes(
-    fluxes, style=None, forcing=None, pattern=True, verbose=True, printer=None, components=None, **kwargs  # noqa: E501
+    fluxes, style=None, forcing=None, pattern=True, components=None, boundaries=None, verbose=True, printer=None, **kwargs  # noqa: E501
 ):
     """
     Return a dataset containing feedbacks calculated along all combinations of
@@ -681,12 +692,14 @@ def _feedbacks_from_fluxes(
         The type of feedback calcluation to perform.
     pattern : bool, optional
         Whether to include the local temperature pattern term in the output dataset.
+    components : tuple, optional
+        The components to include.
+    boundaries : tuple, optional
+        The boundaries to include.
     verbose : bool, optional
-        Whether to print extra information while performing calculations.
+        Whether to print summary statistics.
     printer : callable, default: `print`
         The print function.
-    components : tuple, optional
-        The components to generate.
     **kwargs
         Passed to `average_regions`.
     """
@@ -738,13 +751,15 @@ def _feedbacks_from_fluxes(
         # NOTE: Previously computed and stored 'full' components here with appropriate
         # renames but no longer do that. Instead process.py get_data() automatically
         # combines shortwave and longwave components as needed.
+        rad = f'r{wavelength[0]}n{boundary[0].lower()}'  # this wavelength
+        full = f'{component}_rfn{boundary[0].lower()}'  # full wavelength
+        count = sum(map(bool, FEEDBACK_DEPENDENCIES[component].values()))
+        if boundaries and boundary[0].lower() not in map(str.lower, boundaries):
+            continue
         if component == '':  # print header
             print(f'Calculating {boundary} {wavelength} forcing and feedback.')
         if components and component not in components:
             continue
-        rad = f'r{wavelength[0]}n{boundary[0].lower()}'  # this wavelength
-        full = f'{component}_rfn{boundary[0].lower()}'  # full wavelength
-        count = sum(map(bool, FEEDBACK_DEPENDENCIES[component].values()))
         if component in ('', 'cs'):
             name = f'{rad}{component}'
         elif FEEDBACK_DEPENDENCIES[component][wavelength]:
