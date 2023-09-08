@@ -169,7 +169,7 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
     'variable',
 )
 
-# Model institutes
+# Model institutes (flagship models come last)
 # NOTE: This was copied from the INSTITUTES.txt file produced by manual_checks.py, used
 # for grouping models before 'coupled' project analysis. Previously used model names but
 # this was unreliable (e.g. ACCESS/CSIRO are CSIRO, MPI/ICON are MPI, and CESM/CCSM are
@@ -184,7 +184,7 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 # See: http://jmr.cmsjournal.net/article/doi/10.1007/s13351-020-9164-0
 # Here MCM is based on the 'Manabe' model and is very primitive compared to others.
 # See: http://u.arizona.edu/~ronaldstouffer/MCM_Description_Summary.html
-# Prefer ACCESS to CSIRO becase latter is more complex.
+# Prefer ACCESS to CSIRO becase former is more complex.
 # See: https://www.researchgate.net/publication/258763480_The_ACCESS_coupled_model_Description_control_climate_and_evaluation  # noqa: E501
 # Prefer ESM2M to ESM2G since it simulates surface climate better.
 # See: https://journals.ametsoc.org/view/journals/clim/25/19/jcli-d-11-00560.1.xml
@@ -686,7 +686,10 @@ def glob_files(*paths, pattern='*', project=None):
     files = _sort_facets(  # have only seen .nc4 but this is just in case
         (
             file for ext in ('.nc', '.nc[0-9]') for path in paths
-            for folder in Path(path).expanduser().glob(f'{project}*')
+            for folder in (
+                (path,) if 'ceres' in Path(path).name  # observations special case
+                else Path(path).expanduser().glob(f'{project}*')
+            )
             for file in folder.glob(pattern + ext)
             if '_standard-' not in file.name  # skip intermediate files
             and file.name.count('_') >= 4  # skip temporary files

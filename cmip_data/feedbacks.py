@@ -354,7 +354,9 @@ def _anomalies_from_files(
         # NOTE: Here subtraction from 'groupby' objects can only be used if the array
         # has a coordinate with the corresponding indices, i.e. in this case 'month'
         # instead of 'time'. Use .groupby('time.month').mean() to turn time indices
-        # into month indices (works for both time series and pre-averaged data).
+        # into month indices (works for both time series and pre-averaged data). Then
+        # can easily store monthly climate data and time series in same array since
+        # they no longer have same 'time' coordinate. Use this for integration bounds.
         with xr.set_options(keep_attrs=True):
             if variable in ('tapi', 'pspi'):  # control data itself
                 (control,), (response,) = controls, responses
@@ -397,7 +399,7 @@ def _anomalies_from_files(
             if control is None:
                 data = response
             elif response is None:
-                data = control.groupby('time.month').mean()  # match to response times
+                data = control.groupby('time.month').mean()  # convert to 'month'
             else:
                 data = response.groupby('time.month') - control.groupby('time.month').mean()  # noqa: E501
         if variable == 'alb':  # enforce new name and new units
@@ -478,6 +480,10 @@ def _fluxes_from_anomalies(
     kernels = kernels.assign_coords(plev=plev)  # critical (see above)
 
     # Get cell height measures and standardize dataset
+    # NOTE: Heights will be derived from 'air_temperature and 'surface_pressure'
+    # variables stored in dataset (see VARIABLE_DEPENDENCIES). If from pre-industrial
+    # then these are time-average control data (dimension 'month') added onto dataset
+    # otherwise containing time series. Keeps things much simpler generally.
     # NOTE: Initially used response time series for tropopause consistent with Zelinka
     # stated methodology of 'time-varying tropopause' but got bizarre issue with Planck
     # feedback biased positive for certain models (seemingly due to higher surface
@@ -734,7 +740,7 @@ def _feedbacks_from_fluxes(
     temp.attrs['long_name'] = 'temperature averaging region'
     fluxes = fluxes.climo.quantify()
 
-    # Iterate over fluxes
+    # Iterate over flux components
     # NOTE: Operating one region at a time was necessary on previous server with
     # smaller cache. On new server operate on every region at once (more efficient).
     # NOTE: Since forcing is constant, the cloud masking adjustment has no effect on
@@ -894,7 +900,8 @@ def get_feedbacks(
     fluxes='~/data',
     kernels='~/data/cmip-kernels',
     select=None,
-    response=None,
+    entire=None,
+    early=None,
     source=None,
     style=None,
     project=None,
@@ -928,9 +935,12 @@ def get_feedbacks(
     select : 2-tuple of int, optional
         The start and stop years. Used in the output file name. If relevant the anomaly
         data is filtered to these years using ``.isel(slice(12 * start, 12 * stop))``.
-    response : 2-tuple of int, optional
-        The full response start and stop years. Used to load flux data containing a
-        superset of `select` times and to load forcing data for ratio-style feedbacks.
+    entire : 2-tuple of int, optional
+        The full start and stop years. Used to load flux data containing a superset
+        of `select` times. Ignored if creating new flux data.
+    early : 2-tuple of int, optional
+        The early start and stop years. Used to load forcing data for calculating
+        ratio-style feedbacks. Ignored for regression style feedbacks.
     source : str, default: 'eraint'
         The source for the kernel data (e.g. ``'eraint'``). This searches for files
         in the `kernels` directory formatted as ``kernels_{source}.nc``.
@@ -1006,18 +1016,19 @@ def get_feedbacks(
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
     select = select or (0, 150)
-    response = response or (0, 150)
+    entire = entire or (0, 150)
+    early = early or (0, 20)
     source = source or 'eraint'
     style = style or 'monthly'
-    series = 'ratio' if style == 'ratio' else 'slope'
+    series = 'climate' if style == 'ratio' else 'series'
     nodrift = nodrift and 'nodrift' or ''
     outputs = []
     subfolder = _item_join((project, experiment, table))
     tuples = (  # try to load from parent flux file if possible
-        (fluxes, 'fluxes', series, select),
-        (fluxes, 'fluxes', series, response),
-        (feedbacks, 'feedbacks', style, select),
-        (feedbacks, 'feedbacks', style, response),
+        (fluxes, 'fluxes', series, select),  # original record
+        (fluxes, 'fluxes', series, entire),  # subselection on response period
+        (feedbacks, 'feedbacks', style, select),  # feedbacks file
+        (feedbacks, 'feedbacks', style, early),  # ratio forcing file
     )
     for folder, prefix, suffix, times in tuples:
         file = _item_join(
@@ -1057,7 +1068,7 @@ def get_feedbacks(
             print(f'Loading flux data from file: {output.name}')
             fluxes = load_file(output, validate=False)
         if isinstance(fluxes, xr.Dataset) and not fluxes_exist[0]:
-            init, start, stop = *response[:1], *select  # subselect from perturbed data
+            init, start, stop = *entire[:1], *select  # subselect from perturbed data
             if init is not None:
                 init = int(init) * 12
             if start is not None:
@@ -1184,7 +1195,7 @@ def process_feedbacks(
         response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
     else:
         raise ValueError(f"Invalid {style=}. Expected 'monthly', 'annual', or 'ratio'.")
-    response, select = control, response
+    select, entire = response, control
     suffixes = (*(format(int(t), '04d') for t in select), source, style, nodrift)
     constraints = {
         'variable': sorted(set(k for d in VARIABLE_DEPENDENCIES.values() for k in d)),
@@ -1244,7 +1255,7 @@ def process_feedbacks(
                 table=_item_parts['table'](tuple(files.values())[0][1]),
                 model=group['model'],
                 select=select,
-                response=response,
+                entire=entire,
                 style=style,
                 source=source,
                 nodrift=nodrift,

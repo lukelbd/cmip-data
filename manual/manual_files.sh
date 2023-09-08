@@ -83,7 +83,7 @@ if $rename; then
   for base in $HOME/scratch/cmip-fluxes $HOME/data/cmip-feedbacks; do
     for folder in $base/*; do
       echo && echo "Folder: ${folder#$HOME/}"
-      for file in $folder/*{series,slope}.nc; do
+      for file in $folder/*{climate,series,slope}.nc; do
         [ -r "$file" ] || continue
         names=($(nclist "$file" | xargs))
         [ ${#names[@]} -gt 0 ] || continue
