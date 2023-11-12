@@ -342,6 +342,7 @@ if process:
                     logging=True,
                     dryrun=False,
                     nowarn=True,
+                    noload=True,
                     **kw,
                 )
             experiments = {'piControl': 150, 'abrupt-4xCO2': 150}
@@ -367,6 +368,7 @@ if process:
                     logging=True,  # ignored if dryrun true
                     dryrun=False,
                     nowarn=True,
+                    noload=True,
                     **kw,
                 )
 

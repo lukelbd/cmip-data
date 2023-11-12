@@ -2,8 +2,8 @@
 """
 Create files containing combined time-mean and time-variance quantities.
 """
-# TODO TODO TODO: Updated results.py utils on 2023-02-14. Must merge those
-# changes with these changes. Think they were not merged. Use git diff.
+# TODO: Climate-related results.py utilities were updated on 2023-02-14. Must merge
+# them into this file before implementing. Use shell differencing utils
 import builtins
 import itertools
 import traceback
@@ -17,8 +17,8 @@ import xarray as xr
 from climopy import diff, const, ureg
 from icecream import ic  # noqa: F401
 
+from .facets import Database, Printer, glob_files, _item_dates, _item_parts
 from .utils import assign_dates, load_file
-from .internals import Database, Logger, glob_files, _item_dates, _item_parts
 
 __all__ = [
     'get_climate',
@@ -681,7 +681,7 @@ def process_climate(
     nodrift : bool, default: False
         Whether to use drift-corrected data.
     logging : bool, optional
-        Whether to build a custom logger.
+        Whether to log the printed output.
     dryrun : bool, optional
         Whether to run with only three years of data.
     nowarn : bool, optional
@@ -706,7 +706,7 @@ def process_climate(
     climate_suffix = f'{climate[0]:04d}-{climate[1]:04d}-climate{suffix}'
     suffixes = (*(format(int(t), '04d') for t in climate), 'standard', nodrift)
     if logging:
-        print = Logger('climate', *suffixes, project=project, experiment=experiment, table='Amon')  # noqa: E501
+        print = Printer('climate', *suffixes, project=project, experiment=experiment, table='Amon')  # noqa: E501
     else:
         print = builtins.print
     print('Generating database.')

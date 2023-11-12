@@ -10,7 +10,7 @@ import numpy as np
 import xarray as xr
 from icecream import ic  # noqa: F401
 
-from .internals import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
+from .facets import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
 
 __all__ = [
     'assign_dates',
@@ -58,6 +58,7 @@ def assign_dates(data, year=None):
         time = [cftime.datetime(y, m, 15) for y, m in zip(years, months)]
     time = xr.CFTimeIndex(time)  # prefer cftime
     time = xr.DataArray(time, dims='time', attrs=data.time.attrs)
+    time.attrs.update({'axis': 'T', 'standard_name': 'time'})
     data = data.assign_coords(time=time)
     return data
 
@@ -215,10 +216,10 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
 
 
 def load_file(
-    path, variable=None, validate=True, project=None, printer=None, demote=True,
+    path, variable=None, project=None, validate=True, demote=True, printer=None,
 ):
     """
-    Load an output dataset and repair possible coordinate issues.
+    Load an output dataset and possibly standardize time and pressure coordinates.
 
     Parameters
     ----------
@@ -226,37 +227,60 @@ def load_file(
         The path.
     variable : str, optional
         The variable. If passed a data array is returned.
+    project : str, optional
+        The project. If passed pressure levels are standardized.
     validate : bool, optional
         Whether to validate against quality control ranges.
-    project : str, optional
-        The project. If passed vertical levels are restricted.
+    demote : bool, optional
+        Whether to demote the precision to float32 for speed.
     printer : callable, optional
         The printer.
-    demote : bool, optional
-        Whether to demote the precision to float32.
 
     Returns
     -------
     output : xarray.Dataset or xarray.DataArray
         The resulting data.
     """
-    # Validate pressure coordinates
-    # NOTE: Since CMIP6 includes 2 extra levels have to drop them to get it to work
-    # with CMIP5 data (this is used to get standard kernels to work with cmip5 data).
-    # NOTE: Merging files with ostensibly the same pressure levels can result in
-    # new staggered levels due to inexact float pressure coordinates. Fix this when
-    # building multi-model datasets by using the standard level array for coordinates.
-    # NOTE: Some datasets have a pressure 'bounds' variable but appears calculated
-    # naively as halfway points between levels. Since inconsistent between files
-    # just strip all bounds attribute and rely on climopy calculations. Try file:
-    # ta_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_0000-0150-climate-nodrift.nc
+    # Load the dataset
+    # TODO: Currently ensembles are made with xr.concat() which requires loading into
+    # memory. In future should make open_files() function that uses open_mfdataset()
+    # and refactor open_dataset() utility in coupled/results.py (remove averaging
+    # utility, standardize after concatenating). For now since loading required anyway
+    # below uses load_dataset() and demotes float64 to float32 by default to help
+    # reduce memory usage. See: https://github.com/pydata/xarray/issues/4628
+    # NOTE: Use dataset[name].variable._data to check whether data is loaded (tried
+    # ic() on dataset[name] and reading the array output but this seems to sometimes
+    # / inconsistently trigger loading itself). In future along with open_mfdataset()
+    # may use dask for its lazy loading / lazy operations even if chunking not needed.
+    # Also note cache=False prevents storing loaded values on original dataset when
+    # operation triggers load, but if result of operation is same size as the dataset
+    # (i.e. did not slice first) and remains as a session variable (e.g. not a function
+    # variable) then may still cause memory issues. Should be lazy-loading aware in
+    # all dataset manipulations. See: https://stackoverflow.com/a/45644654/4970632.
     print = printer or builtins.print
-    dataset = xr.open_dataset(path, use_cftime=True)
+    dataset = xr.load_dataset(path, use_cftime=True)  # see above
     dataset = dataset.drop_vars(dataset.coords.keys() - dataset.sizes.keys())
     for coord in dataset.coords.values():  # remove missing bounds variables
         coord.attrs.pop('bounds', None)
-    if project and 'plev' in dataset.coords and dataset.plev.size > 1:
-        plev = dataset.plev.values
+    if variable is None:
+        data = dataset
+    else:
+        data = dataset[variable]
+    if demote:  # also triggers lazy load so should remove if switching workflows
+        data = data.astype(np.float32)
+
+    # Validate pressure coordinates
+    # WARNING: Merging files with ostensibly the same pressure levels can result in
+    # new staggered levels due to inexact float pressure coordinates. Fix this when
+    # building multi-model datasets by using the standard level array for coordinates.
+    # NOTE: CMIP6 has two more levels than CMIP5. Have to drop them to avoid issues
+    # with concatenation issues or kernel integration e.g. due to improper weights or
+    # NaN results from NaN data levels (see also _fluxes_from_anomalies() kernel data).
+    # NOTE: Some datasets have a pressure 'bounds' variable but appears calculated
+    # naively as halfway points between levels. Since inconsistent between files
+    # just strip all bounds attribute and rely on climopy calculations.
+    if project and 'plev' in data.coords and data.plev.size > 1:
+        plev = data.plev.values
         project = project and project.lower()
         if project == 'cmip5':
             levels = STANDARD_LEVELS_CMIP5
@@ -265,11 +289,11 @@ def load_file(
         else:
             raise ValueError(f'Invalid {project=} for determining levels.')
         levs = [levels[idx.item()] for p in plev if len(idx := np.where(np.isclose(p, levels))[0])]  # noqa: E501
-        levs = xr.DataArray(levs, name='plev', dims='plev', attrs=dataset.plev.attrs)
+        levs = xr.DataArray(levs, name='plev', dims='plev', attrs=data.plev.attrs)
         drop = [p for p in plev if not np.any(np.isclose(p, levels))]
         missing = [p for p in levels if not np.any(np.isclose(p, plev))]
-        dataset = dataset.drop_sel(plev=drop)  # no message since this is common
-        dataset = dataset.assign_coords(plev=levs)  # retain original attributes
+        data = data.drop_sel(plev=drop)  # no message since this is common
+        data = data.assign_coords(plev=levs)  # retain original attributes
         if message := ', '.join(format(p / 100, '.0f') for p in missing):
             print(
                 f'Warning: File {path.name!r} has {len(missing)} missing '
@@ -288,22 +312,22 @@ def load_file(
     # operations in average_periods, so we auto-convert time array to be monotonic
     # and standardize the days (so that cell_duration calculations are correct). Note
     # this is distinct from assign_dates() required for concatenating ensemble models.
-    if 'time' in dataset.coords and dataset.time.size > 1:
-        time = dataset.time.values
-        mask = dataset.get_index('time').duplicated(keep='first')
+    if 'time' in data.coords and data.time.size > 1:
+        time = data.time.values
+        mask = data.get_index('time').duplicated(keep='first')
         if message := ', '.join(str(t) for t in time[mask]):
-            dataset = dataset.isel(time=~mask)  # WARNING: drop_isel fails here
+            data = data.isel(time=~mask)  # WARNING: drop_isel fails here
             print(
                 f'Warning: File {path.name!r} has {mask.sum().item()} duplicate '
                 f'time values: {message}. Kept only the first values.'
             )
-        years, months = dataset.time.dt.year, dataset.time.dt.month
-        if sorted(months.values) == sorted(range(1, 13)):
-            cls = type(dataset.time[0].item())  # e.g. CFTimeNoLeap
-            std = [cls(min(years), t.month, 15) for t in dataset.time.values]
-            std = xr.DataArray(std, dims='time', name='time', attrs=dataset.time.attrs)
-            dataset = dataset.assign_coords(time=std)  # assign with same attributes
-            dataset = dataset.sortby('time')  # sort in case months are non-monotonic
+        years, months = data.time.dt.year, data.time.dt.month
+        if sorted(months.values) == sorted(range(1, 13)):  # standardize times
+            cls = type(data.time[0].item())  # e.g. CFTimeNoLeap
+            std = [cls(max(years), t.month, 15) for t in data.time.values]
+            std = xr.DataArray(std, dims='time', name='time', attrs=data.time.attrs)
+            data = data.assign_coords(time=std)  # assign with same attributes
+            data = data.sortby('time')  # sort in case months are non-monotonic
 
     # Validate variable data
     # NOTE: Here the model id recorded under 'source_id' or 'model_id' often differs
@@ -315,27 +339,27 @@ def load_file(
     # cdo -infon -timmin -selname,hus revealed pretty large anomalies up to -5e-4
     # at the surface so use dynamic adjustment with floor offset of 1e-6).
     model = path.name.split('_')[2] if path.name.count('_') >= 4 else None
-    names = dataset.data_vars if validate else ()
-    ranges = {name: _validate_ranges(name, 'Amon') for name in names}
-    if 'pr' in dataset.data_vars and model == 'CIESM':  # kludge
+    datas = {} if not validate else {data.name: data} if variable else data.data_vars
+    ranges = {name: _validate_ranges(name, 'Amon') for name in datas}
+    if 'pr' in datas and model == 'CIESM':  # kludge
         print(
             'Warning: Adjusting CIESM precipitation flux with obviously '
             'incorrect units by 1e3 (guess to recover correct units).'
         )
-        dataset['pr'].data *= 1e3
-    if 'hus' in dataset.data_vars and np.any(dataset.hus.values <= 0.0):
+        datas['pr'].data *= 1e3
+    if 'hus' in datas and np.any(datas['hus'].values <= 0.0):
         print(
             'Warning: Adjusting negative specific humidity values by enforcing '
             'absolute minimum of 1e-6 (consistent with other model stratospheres).'
         )
-        dataset['hus'].data[dataset.hus.data < 1e-6] = 1e-6
-    for name in names:
-        array = test = dataset[name]
+        datas['hus'].data[datas['hus'].data < 1e-6] = 1e-6
+    for name, array in datas.items():
+        sample = array  # default
         if 'bnds' in array.sizes or 'bounds' in array.sizes:
             continue
         if 'time' in array.sizes:  # TODO: ensure robust to individual timesteps
-            test = array.isel(time=0)
-        min_, max_ = test.min().item(), test.max().item()
+            sample = array.isel(time=0)
+        min_, max_ = sample.min().item(), sample.max().item()
         pmin, pmax, *_ = ranges[name]
         skip_range = name == 'rsut' and model == 'MCM-UA-1-0'
         skip_identical = name == 'rsdt' and model == 'MCM-UA-1-0'
@@ -361,14 +385,4 @@ def load_file(
                 f'Warning: Variable {name!r} range ({min_}, {max_}) is outside '
                 f'valid cmip range ({pmin}, {pmax}). Set all data to NaN.'
             )
-
-    # Optionally retrieve variable and demote precision
-    # NOTE: Here .astype() on datasets applies only to the data variables. All
-    # coordinate variable types are retained as e.g. string, int64, float64.
-    if variable is None:
-        data = dataset
-    else:
-        data = dataset[variable]
-    if demote:
-        data = data.astype(np.float32)
     return data

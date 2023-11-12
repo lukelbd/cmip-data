@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Utilities related to facet handling and logging.
+Utilities for grouping files and parsing facets.
 """
 import builtins
 import re
@@ -11,7 +11,7 @@ import numpy as np
 __all__ = [
     'glob_files',
     'Database',
-    'Logger',
+    'Printer',
 ]
 
 # Corrupt files that have to be manually ignored after bulk downloads. Can test using
@@ -169,22 +169,17 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
     'variable',
 )
 
-# Model institutes
+# Model institutes (flagship models come last)
 # NOTE: This was copied from the INSTITUTES.txt file produced by manual_checks.py, used
 # for grouping models before 'coupled' project analysis. Previously used model names but
 # this was unreliable (e.g. ACCESS/CSIRO are CSIRO, MPI/ICON are MPI, and CESM/CCSM are
 # NCAR). Some institutes also changed ids between cmip5 and cmip6 (e.g. dash instead
 # of space or new collaborators appended with dashes) -- fixed this so institues can be
-# identified across projects (original ids are in comments below). Also note preferred
-# model variants from the same institute are arranged last (see _parse_projects in
-# templates.py). In general prefer ESMs, high resolution, and later versions.
-# NOTE: Include 2-character ISO 3166 country codes for quick reference.
-# See: https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
-# There are several Chinese models from academies, ministries, and universities.
-# See: http://jmr.cmsjournal.net/article/doi/10.1007/s13351-020-9164-0
-# Here MCM is based on the 'Manabe' model and is very primitive compared to others.
-# See: http://u.arizona.edu/~ronaldstouffer/MCM_Description_Summary.html
-# Prefer ACCESS to CSIRO becase latter is more complex.
+# identified across projects (original ids are in comments below). Also include ISO
+# 3166 country codes from https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
+# NOTE: Preferred model variants from the same institute are last (see _parse_projects
+# in reduce.py). In general prefer earth system, high resolution, recent versions.
+# Prefer ACCESS to CSIRO becase former is more complex.
 # See: https://www.researchgate.net/publication/258763480_The_ACCESS_coupled_model_Description_control_climate_and_evaluation  # noqa: E501
 # Prefer ESM2M to ESM2G since it simulates surface climate better.
 # See: https://journals.ametsoc.org/view/journals/clim/25/19/jcli-d-11-00560.1.xml
@@ -210,6 +205,10 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 # See: https://noresm-docs.readthedocs.io/en/latest/start.html
 # Prefer UKESM to HadGEM because former is full earth system model
 # See: https://www.metoffice.gov.uk/research/approach/modelling-systems/new-flagship-climate-models  # noqa: E501
+# Note there are several Chinese models from academies, ministries, and universities.
+# See: http://jmr.cmsjournal.net/article/doi/10.1007/s13351-020-9164-0
+# Note MCM is based on the 'Manabe' model and is very primitive compared to others.
+# See: http://u.arizona.edu/~ronaldstouffer/MCM_Description_Summary.html
 INSTITUTES_LABELS = {  # map ids to (and alphabetize by) more familiar abbreviations
     'AS-RCEC': 'AS (TW)',  # 'AS',  # Taipei Academia Sinica, Taiwan
     'AWI': 'AWI (DE)',  # Alfred Wegener Institute, Germany
@@ -336,6 +335,7 @@ MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model la
     ('CMIP6', 'HadGEM3-GC31-MM'): 'MOHC',
     ('CMIP6', 'UKESM1-0-LL'): 'MOHC',  # ESM variant of HadGEM
     ('CMIP6', 'UKESM1-1-LL'): 'MOHC',  # latest version
+    ('CMIP6', 'CERES'): 'CERES',  # special
 }
 
 # Sorting facets in file and folder names, in database groups and sub-groups,
@@ -627,9 +627,7 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
         )
         for facet in facets
     }
-    if not restrict:
-        pass
-    elif not constraints.keys() - _item_parts.keys() <= {'project'}:
+    if restrict and not constraints.keys() - _item_parts.keys() <= {'project'}:
         raise ValueError(f'Facets {constraints.keys()} must be subset of: {_item_parts.keys()}')  # noqa: E501
     return project, constraints
 
@@ -679,14 +677,17 @@ def glob_files(*paths, pattern='*', project=None):
         The glob pattern preceding the file extension.
     """
     # NOTE: Could amend this to not look for subfolders if 'project' was not passed
-    # but prefer consistency with Logger and Database of always using cmip6
+    # but prefer consistency with Printer and Database of always using cmip6
     # as the default, and this is the only way to filter paths by 'project'.
     project = (project or 'cmip6').lower()
     paths = paths or ('~/data',)
     files = _sort_facets(  # have only seen .nc4 but this is just in case
         (
             file for ext in ('.nc', '.nc[0-9]') for path in paths
-            for folder in Path(path).expanduser().glob(f'{project}*')
+            for folder in (
+                (path,) if 'ceres' in Path(path).name  # observations special case
+                else Path(path).expanduser().glob(f'{project}*')
+            )
             for file in folder.glob(pattern + ext)
             if '_standard-' not in file.name  # skip intermediate files
             and file.name.count('_') >= 4  # skip temporary files
@@ -716,9 +717,9 @@ def glob_files(*paths, pattern='*', project=None):
     return files_filtered, files_duplicate, files_corrupt
 
 
-class Logger(object):
+class Printer(object):
     """
-    Simultaneously print the results and add them to an automatically named log file.
+    Print the results and add them to an automatically named log file.
     """
     def __init__(self, prefix, *suffixes, backup=False, **constraints):
         """
@@ -835,6 +836,7 @@ class Database(object):
         facets_key = tuple(facet for facet in _item_parts if facet not in facets)
 
         # Add lists to sub-dictionaries
+        # NOTE: Institute translating utilities
         # NOTE: Have special handling for feedback files -- only include when
         # users explicitly pass variable='feedbacks', exclude otherwise.
         self.database = {}

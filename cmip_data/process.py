@@ -61,14 +61,14 @@ import xarray as xr
 from icecream import ic  # noqa: F401
 
 from . import Atted, CDOException, Rename, cdo, nco
-from .internals import (
+from .facets import (
     FACETS_STORAGE,
     FACETS_SUMMARIZE,
     STANDARD_GRIDSPEC_CMIP,
     STANDARD_LEVELS_CMIP5,
     STANDARD_LEVELS_CMIP6,
     Database,
-    Logger,
+    Printer,
     glob_files,
     _item_dates,
     _item_join,
@@ -303,7 +303,7 @@ def process_files(
     overwrite : bool, default: True
         Whether to overwrite existing files or skip them.
     logging : bool, optional
-        Whether to build a custom logger.
+        Whether to log the printed output.
     dryrun : bool, optional
         Whether to only print time information and exit.
     nowarn : bool, optional
@@ -311,7 +311,7 @@ def process_files(
     **kwargs
         Passed to `standardize_time`, `standardize_vertical`, `standardize_horizontal`.
     **constraints
-        Passed to `Logger` and `Database`.
+        Passed to `Printer` and `Database`.
     """
     # Find files and restrict to unique constraints
     # NOTE: Here we only constrain search to the project, which is otherwise not
@@ -321,7 +321,7 @@ def process_files(
     gridspec, method = kwargs.pop('gridspec', None), kwargs.pop('method', None)
     searches = (search,) if isinstance(search, (str, Path)) else tuple(search or ())
     dates, kwargs, constraints = _parse_time(constraints=True, **kwargs)
-    print = Logger('process', *dates, **constraints) if logging else builtins.print
+    print = Printer('process', *dates, **constraints) if logging else builtins.print
     files, *_ = glob_files(*paths, project=constraints.get('project'))
     facets = facets or FACETS_STORAGE
     database = Database(files, facets, **constraints)
@@ -1378,10 +1378,10 @@ def summarize_descrips(*paths, facets=None, **constraints):
     facets : str, optional
         The facets to group by.
     **constraints
-        Passed to `Logger` and `Database`.
+        Passed to `Printer` and `Database`.
     """
     facets = facets or FACETS_SUMMARIZE
-    print = Logger('summary', 'descrips')
+    print = Printer('summary', 'descrips')
     print('Generating database.')
     files, *_ = glob_files(*paths, project=constraints.get('project'))
     database = Database(files, facets, **constraints)
@@ -1419,11 +1419,11 @@ def summarize_processed(*paths, facets=None, **constraints):
     facets : str, optional
         The facets to group by in the database.
     **constraints
-        Passed to `Logger` and `Database`.
+        Passed to `Printer` and `Database`.
     """
     # Iterate over dates
     facets = facets or FACETS_SUMMARIZE
-    print = Logger('summary', 'processed', **constraints)
+    print = Printer('summary', 'processed', **constraints)
     glob, *_ = glob_files(*paths, project=constraints.get('project'))
     key = lambda pair: ('4xCO2' in pair[0], 'series' in pair[1], pair[1])
     opts = ('climate', 'series')  # recognized output file suffixes
@@ -1487,10 +1487,10 @@ def summarize_ranges(*paths, facets=None, **constraints):
     facets : str, optional
         The facets to group by.
     **constraints
-        Passed to `Logger` and `Database`.
+        Passed to `Printer` and `Database`.
     """
     facets = facets or FACETS_SUMMARIZE
-    print = Logger('summary', 'ranges', **constraints)
+    print = Printer('summary', 'ranges', **constraints)
     print('Generating database.')
     files, *_ = glob_files(*paths, project=constraints.get('project'))
     database = Database(files, facets, **constraints)

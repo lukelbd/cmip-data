@@ -36,7 +36,7 @@ if climate:
                 project=project,
                 experiment=experiment,
                 flagship_filter=True,
-                overwrite=False,
+                overwrite=False,  # WARNING: monitor
                 logging=True,  # ignored if dryrun true
                 dryrun=False,
                 nowarn=False,
@@ -47,39 +47,37 @@ if climate:
 # Calculate the control, response, and anomaly feedbacks (note control anomaly
 # feedbacks are impossible because cannot select a period to use for anomalies).
 # NOTE: The start and stop years are python-style endpoint-exclusive
-# and relative to native years.
+# and relative to native model years.
 # NOTE: The residual feedback will only be calculated if all kernels
 # for the associated flux are requested. Otherwise this is bypassed.
-# TODO: Run new annual files. Should generate feedback files with 'time' coordinate
-# of 12 months, then have results.py standardize dates before concatenating. Also
-# monthly-style feedbacks will uniquely have no time coordinate.
 if feedbacks:
     nodrifts = (False,)
     # nodrifts = (False, True)
     options = (
-        # ('historical', 'monthly', (2000, 2023)),  # observed data
-        # ('piControl', 'monthly', (0, 150)),  # monthly mean regression
-        # ('abrupt4xCO2', 'monthly', (0, 150)),  # monthly mean regression
-        # ('abrupt4xCO2', 'monthly', (0, 20)),  # monthly mean regression
-        # ('abrupt4xCO2', 'monthly', (20, 150)),  # monthly mean regression
-        # ('abrupt4xCO2', 'monthly', (0, 50)),  # monthly mean regression
-        # ('abrupt4xCO2', 'monthly', (100, 150)),  # monthly mean regression
-        ('piControl', 'annual', (0, 150)),  # annual mean regression
-        ('abrupt4xCO2', 'annual', (0, 150)),  # annual mean regression
-        ('abrupt4xCO2', 'annual', (0, 20)),  # annual mean regression
-        ('abrupt4xCO2', 'annual', (20, 150)),  # annual mean regression
-        ('abrupt4xCO2', 'annual', (0, 50)),  # annual mean regression
-        ('abrupt4xCO2', 'annual', (100, 150)),  # annual mean regression
-        ('abrupt4xCO2', 'ratio', (120, 150)),  # ratio feedbacks (requires annual)
+        ('piControl', 'monthly', (0, 150)),  # monthly mean regression
+        ('abrupt4xCO2', 'monthly', (0, 150)),  # monthly mean regression
+        ('abrupt4xCO2', 'monthly', (0, 20)),  # monthly mean regression
+        ('abrupt4xCO2', 'monthly', (20, 150)),  # monthly mean regression
+        ('abrupt4xCO2', 'monthly', (0, 50)),  # monthly mean regression
+        ('abrupt4xCO2', 'monthly', (100, 150)),  # monthly mean regression
+        ('abrupt4xCO2', 'monthly', (2, 20)),  # exclude first years
+        ('abrupt4xCO2', 'monthly', (2, 150)),  # exclude first years
+        # ('piControl', 'annual', (0, 150)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (0, 150)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (0, 20)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (20, 150)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (0, 50)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (100, 150)),  # annual mean regression
+        # ('abrupt4xCO2', 'annual', (2, 20)),  # exclude first years
+        # ('abrupt4xCO2', 'annual', (2, 150)),  # exclude first years
+        # ('abrupt4xCO2', 'ratio', (120, 150)),  # ratio feedbacks (requires annual)
     )
     for nodrift, (experiment, style, response) in itertools.product(nodrifts, options):
         projects = ('CMIP6', 'CMIP5')
-        # projects = ('CMIP6',)  # TODO: remove
-        # projects = ('CMIP5',)
         for project in projects:
             cmip_data.process_feedbacks(
                 '~/data/cmip-climate',  # source climate location
-                # '~/scratch/cmip-processed',  # TODO: move climate here
+                # '~/scratch/cmip-processed',  # TODO: move climate data here
                 '~/scratch/cmip-processed',  # source series location
                 fluxes='~/scratch/cmip-fluxes',  # intermediate flux location
                 kernels='~/data/cmip-kernels',  # dependency kernels location
@@ -90,10 +88,13 @@ if feedbacks:
                 project=project,
                 experiment=experiment,
                 flagship_filter=True,
-                overwrite=True,
-                logging=True,  # ignored if dryrun true
+                recompute=False,  # WARNING: monitor
+                overwrite=True,  # WARNING: monitor
+                logging=True,  # ignored if dryrun is True
                 dryrun=False,
-                nowarn=True,
+                nowarn=False,
+                noload=True,
+                # model=['ACCESS1-0'],
                 # model=['FIO-ESM-2-0', 'NESM3'],
                 # model=['CanESM5-1', 'E3SM-2-0'],
             )

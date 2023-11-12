@@ -18,13 +18,13 @@ from pathlib import Path
 from pyesgf.logon import LogonManager
 from pyesgf.search import SearchConnection
 
-from .internals import (
+from .facets import (
     ENSEMBLES_FLAGSHIP,
     FACETS_STORAGE,
     FACETS_SUMMARIZE,
     URLS_HOSTS,
     Database,
-    Logger,
+    Printer,
     glob_files,
     _item_file,
     _item_join,
@@ -181,7 +181,7 @@ def download_script(
     openid : str, optional
         The openid to hardcode into the resulting wget script.
     logging : bool, optional
-        Whether to build a custom logger.
+        Whether to log the printed output.
     flagship_filter : bool, optional
         Whether to select only flagship CMIP5 and CMIP6 ensembles.
     **kwargs
@@ -198,7 +198,7 @@ def download_script(
     keys = ('node', 'username', 'password')
     kwargs = {key: constraints.pop(key) for key in keys if key in constraints}
     project, constraints = _parse_constraints(restrict=False, **constraints)
-    print = Logger('download', **constraints) if logging else builtins.print
+    print = Printer('download', **constraints) if logging else builtins.print
     conn = init_connection(**kwargs)
     if flagship_filter:
         ensembles = [ens for key, ens in ENSEMBLES_FLAGSHIP.items() if key[0] == project]  # noqa: E501
@@ -358,7 +358,7 @@ def filter_script(
     endyears : bool, default: False
         Whether to download from the start or end of the available times.
     logging : bool, optional
-        Whether to build a custom logger.
+        Whether to log the printed output.
     facets_intersect : str or sequence, optional
         The facets that should be enforced to intersect across other facets.
     facets_folder : str or sequence, optional
@@ -368,7 +368,7 @@ def filter_script(
     always_exclude : dict-like, optional
         The constraints to always exclude from the output, ignoring the filters.
     **constraints
-        Passed to `Logger` and `Database`.
+        Passed to `Printer` and `Database`.
     """
     # Read the file and group lines into dictionaries indexed by the facets we
     # want to intersect and whose keys indicate the remaining facets, then find the
@@ -376,7 +376,7 @@ def filter_script(
     # NOTE: Since _parse_constraints imposes a default project this will enforce that
     # we never try to intersect projects and minimum folder id is the project name.
     path = Path(path).expanduser() / 'unfiltered'
-    print = Logger('filter', **constraints) if logging else builtins.print
+    print = Printer('filter', **constraints) if logging else builtins.print
     project = constraints.get('project') or 'cmip6'
     files = sorted(path.glob(f'wget_{project.lower()}_*.sh'))
     print('Source file(s):')
@@ -469,13 +469,13 @@ def summarize_downloads(
     remove : bool, optional
         Whether to remove detected missing files. Use this option with caution!
     **constraints
-        Passed to `Logger` and `Database`.
+        Passed to `Printer` and `Database`.
     """
     # Generate script and file databases
     # NOTE: This is generally used to remove unnecessarily downloaded files as
     # users refine their filtering or downloading steps.
     facets = facets or FACETS_SUMMARIZE
-    print = Logger('summary', 'downloads', **constraints)
+    print = Printer('summary', 'downloads', **constraints)
     print('Generating databases.')
     files_downloaded, files_duplicate, files_corrupt = glob_files(
         *paths, project=constraints.get('project', None),

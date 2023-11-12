@@ -14,9 +14,9 @@ from climopy import const, ureg
 from icecream import ic  # noqa: F401
 from numpy import ma  # noqa: F401
 
-from .internals import (
+from .facets import (
     Database,
-    Logger,
+    Printer,
     glob_files,
     _item_dates,
     _item_join,
@@ -31,9 +31,13 @@ __all__ = [
 
 
 # Global constants
+# WARNING: Previously skipped rsdt since it is 'constant' but found with CERES data
+# that since seasonal cycle so much larger than global trends (plus possibly due to
+# solar trends) it can then show up in monthly regressions. Critical to include.
 # NOTE: Here 'n' stands for net (follows Angie convention). These variables are built
 # from the 'u' and 'd' components of cmip fluxes and to prefix the kernel-implied net
-# fluxes 'alb', 'pl', 'lr', 'hu', 'cl', and 'resid' in _fluxes_from_anomalies.
+# fluxes 'alb', 'pl', 'lr', 'hu', 'cl', and 'resid' in _fluxes_from_anomalies. Also
+# use convention that 'positive' is into the atmosphere, negative out of atmosphere.
 # NOTE: Here all-sky fluxes are used for albedo (follows Angie convention). This is
 # because several models are missing clear-sky surface shortwave fluxes and ratio
 # of upwelling to downwelling should be identical between components (although for some
@@ -72,15 +76,15 @@ VARIABLE_DEPENDENCIES = {
     'ts': ('ts',),  # anomaly data for kernel fluxes
     'ta': ('ta',),  # anomaly data for kernel fluxes
     'hus': ('hus',),  # anomaly data for kernel fluxes
-    'alb': ('rsus', 'rsds'),  # evaluates to rsus / rsds (out over in)
+    'alb': ('rsds', 'rsus'),  # evaluates to rsus / rsds (up over down)
     'rlnt': ('rlut',),  # evaluates to -rlut (minus out)
-    'rsnt': ('rsut',),  # evaluates to -rsut (minus out, ignoring constant rsdt)
+    'rsnt': ('rsut', 'rsdt'),  # evaluates to rsdt - rsut (in minus out)
     'rlns': ('rlds', 'rlus'),  # evaluates to rlus - rlds (in minus out)
     'rsns': ('rsds', 'rsus'),  # evaluates to rsus - rsds (in minus out)
     'rlntcs': ('rlutcs',),  # evaluates to -rlutcs (minus out)
-    'rsntcs': ('rsutcs',),  # evaluates to -rsutcs (minus out, ignoring constant rsdt)
+    'rsntcs': ('rsutcs', 'rsdt'),  # evaluates to rsdt - rsutcs (in minus out)
     'rlnscs': ('rldscs', 'rlus'),  # evaluates to rlus - rldscs (in minus out)
-    'rsnscs': ('rsdscs', 'rsuscs'),  # evaluates to rsdscs - rsuscs (in minus out)
+    'rsnscs': ('rsdscs', 'rsuscs'),  # evaluates to rsuscs - rsdscs (in minus out)
 }
 
 
@@ -103,9 +107,9 @@ def _regress_monthly(numer, denom, proj=False):
     navg = (wgts * numer).sum('time', skipna=False)
     davg = (wgts * denom).sum('time', skipna=False)
     covar = wgts * (denom - davg) * (numer - navg)
-    covar = covar.sum('time', skipna=False)
     dvar = wgts * (denom - davg) ** 2
-    dvar = dvar.sum('time', skipna=False)
+    covar = covar.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
+    dvar = dvar.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
     slope = covar / dvar
     if proj:  # scaled pattern
         extra = covar / np.sqrt(dvar)
@@ -134,12 +138,12 @@ def _regress_annual(numer, denom, proj=False):
     # Tested calendars in 'cmip-fluxes' and most are 'noleap' or 'standard'/'gregorian'
     # however HadGEM and UK-ESM are '360_day' so there may be slight errors there.
     # Try: for f in *.nc; do echo "$f: $(ncvarinfo time $f | grep calendar)"; done
-    navg = numer.groupby('time.month').mean('time', skipna=False)
+    navg = numer.groupby('time.month').mean('time', skipna=False)  # 'month' coordinates
     davg = denom.groupby('time.month').mean('time', skipna=False)
-    covar = (denom.groupby('time.month') - davg) * (numer.groupby('time.month') - navg)
-    covar = covar.groupby('time.month').mean('time', skipna=False)
-    dvar = (denom.groupby('time.month') - davg) ** 2
-    dvar = dvar.groupby('time.month').mean('time', skipna=False)
+    danom = denom.groupby('time.month') - davg  # each 'month' coordinate
+    nanom = numer.groupby('time.month') - navg
+    covar = (danom * nanom).groupby('time.month').mean('time', skipna=False)
+    dvar = (danom ** 2).groupby('time.month').mean('time', skipna=False)
     slope = covar / dvar
     if proj:  # scaled pattern
         extra = covar / np.sqrt(dvar)
@@ -283,7 +287,7 @@ def _get_clausius_scaling(ta, pa=None, liquid=True):
     return scale
 
 
-def _anomalies_from_files(
+def _anomalies_from_files(  # test
     project=None, select=None, model=None, dryrun=False, printer=None, **inputs,
 ):
     """
@@ -353,7 +357,9 @@ def _anomalies_from_files(
         # NOTE: Here subtraction from 'groupby' objects can only be used if the array
         # has a coordinate with the corresponding indices, i.e. in this case 'month'
         # instead of 'time'. Use .groupby('time.month').mean() to turn time indices
-        # into month indices (works for both time series and pre-averaged data).
+        # into month indices (works for both time series and pre-averaged data). Then
+        # can easily store monthly climate data and time series in same array since
+        # they no longer have same 'time' coordinate. Use this for integration bounds.
         with xr.set_options(keep_attrs=True):
             if variable in ('tapi', 'pspi'):  # control data itself
                 (control,), (response,) = controls, responses
@@ -371,10 +377,10 @@ def _anomalies_from_files(
                 (control,), (response,) = controls, responses
                 control = np.log(control)
                 response = np.log(response)
-            elif variable == 'alb':  # ratio of outward and inward flux
-                (control_out, control_in), (response_out, response_in) = controls, responses  # noqa: E501
-                control = 100 * (control_out / control_in).clip(0, 1)
-                response = 100 * (response_out / response_in).clip(0, 1)
+            elif variable == 'alb':  # ratio of upward to downward shortwave flux
+                (control_down, control_up), (response_down, response_up) = controls, responses  # noqa: E501
+                control = 100 * (control_up / control_down).clip(0, 1)
+                response = 100 * (response_up / response_down).clip(0, 1)
             elif len(controls) == 1:  # outward flux to inward flux
                 (control_out,), (response_out,) = controls, responses
                 control = -1 * control_out
@@ -396,7 +402,7 @@ def _anomalies_from_files(
             if control is None:
                 data = response
             elif response is None:
-                data = control.groupby('time.month').mean()  # match to response times
+                data = control.groupby('time.month').mean()  # convert to 'month'
             else:
                 data = response.groupby('time.month') - control.groupby('time.month').mean()  # noqa: E501
         if variable == 'alb':  # enforce new name and new units
@@ -478,6 +484,10 @@ def _fluxes_from_anomalies(
     kernels = kernels.assign_coords(plev=plev)  # critical (see above)
 
     # Get cell height measures and standardize dataset
+    # NOTE: Heights will be derived from 'air_temperature and 'surface_pressure'
+    # variables stored in dataset (see VARIABLE_DEPENDENCIES). If from pre-industrial
+    # then these are time-average control data (dimension 'month') added onto dataset
+    # otherwise containing time series. Keeps things much simpler generally.
     # NOTE: Initially used response time series for tropopause consistent with Zelinka
     # stated methodology of 'time-varying tropopause' but got bizarre issue with Planck
     # feedback biased positive for certain models (seemingly due to higher surface
@@ -677,9 +687,8 @@ def _feedbacks_from_fluxes(
     fluxes, style=None, forcing=None, pattern=True, components=None, boundaries=None, verbose=True, printer=None, **kwargs  # noqa: E501
 ):
     """
-    Return a dataset containing feedbacks calculated along all combinations of
-    `average_regions` (points, latitudes, hemispheres, and global, with ``region``
-    coordinate indicating the averaging convention used in the denominator).
+    Return a dataset with feedbacks calculated along different surface temperature
+    averaging conventions (see `average_regions` for details).
 
     Parameters
     ----------
@@ -734,7 +743,7 @@ def _feedbacks_from_fluxes(
     temp.attrs['long_name'] = 'temperature averaging region'
     fluxes = fluxes.climo.quantify()
 
-    # Iterate over fluxes
+    # Iterate over flux components
     # NOTE: Operating one region at a time was necessary on previous server with
     # smaller cache. On new server operate on every region at once (more efficient).
     # NOTE: Since forcing is constant, the cloud masking adjustment has no effect on
@@ -894,7 +903,8 @@ def get_feedbacks(
     fluxes='~/data',
     kernels='~/data/cmip-kernels',
     select=None,
-    response=None,
+    entire=None,
+    early=None,
     source=None,
     style=None,
     project=None,
@@ -904,6 +914,7 @@ def get_feedbacks(
     model=None,
     nodrift=False,
     overwrite=False,
+    recompute=False,
     printer=None,
     dryrun=False,
     noload=False,
@@ -928,9 +939,12 @@ def get_feedbacks(
     select : 2-tuple of int, optional
         The start and stop years. Used in the output file name. If relevant the anomaly
         data is filtered to these years using ``.isel(slice(12 * start, 12 * stop))``.
-    response : 2-tuple of int, optional
-        The full response start and stop years. Used to load flux data containing a
-        superset of `select` times and to load forcing data for ratio-style feedbacks.
+    entire : 2-tuple of int, optional
+        The full start and stop years. Used to load flux data containing a superset
+        of `select` times. Ignored if creating new flux data.
+    early : 2-tuple of int, optional
+        The early start and stop years. Used to load forcing data for calculating
+        ratio-style feedbacks. Ignored for regression style feedbacks.
     source : str, default: 'eraint'
         The source for the kernel data (e.g. ``'eraint'``). This searches for files
         in the `kernels` directory formatted as ``kernels_{source}.nc``.
@@ -953,7 +967,9 @@ def get_feedbacks(
     nodrift : bool, optional
         Whether to append a ``-nodrift`` indicator to the end of the filename.
     overwrite : bool, default: False
-        Whether to overwrite existing output flux and feedback files.
+        Whether to overwrite existing feedback files. Turned on if flux file is missing.
+    recompute : bool, default: False
+        Whether to recompute existing flux files. Less commonly used than `overwrite`.
     printer : callable, default: `print`
         The print function.
     dryrun : bool, optional
@@ -1006,18 +1022,19 @@ def get_feedbacks(
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
     select = select or (0, 150)
-    response = response or (0, 150)
+    entire = entire or (0, 150)
+    early = early or (0, 20)
     source = source or 'eraint'
     style = style or 'monthly'
-    series = 'ratio' if style == 'ratio' else 'slope'
+    series = 'climate' if style == 'ratio' else 'series'
     nodrift = nodrift and 'nodrift' or ''
     outputs = []
     subfolder = _item_join((project, experiment, table))
     tuples = (  # try to load from parent flux file if possible
-        (fluxes, 'fluxes', series, select),
-        (fluxes, 'fluxes', series, response),
-        (feedbacks, 'feedbacks', style, select),
-        (feedbacks, 'feedbacks', style, response),
+        (fluxes, 'fluxes', series, select),  # original record
+        (fluxes, 'fluxes', series, entire),  # subselection on response period
+        (feedbacks, 'feedbacks', style, select),  # feedbacks file
+        (feedbacks, 'feedbacks', style, early),  # ratio forcing file
     )
     for folder, prefix, suffix, times in tuples:
         file = _item_join(
@@ -1048,7 +1065,7 @@ def get_feedbacks(
     fluxes_exist = tuple(flux.is_file() and flux.stat().st_size > 0 for flux in fluxes)
     feedbacks_exist = feedbacks.is_file() and feedbacks.stat().st_size > 0
     overwrite = overwrite or feedbacks_exist and not any(fluxes_exist)
-    if not dryrun and any(fluxes_exist):  # TODO: also 'not overwrite' here?
+    if not dryrun and not recompute and any(fluxes_exist):
         output = fluxes[0] if fluxes_exist[0] else fluxes[1]
         if noload and feedbacks_exist and not overwrite:
             print('Skipping loading flux data.')
@@ -1057,7 +1074,7 @@ def get_feedbacks(
             print(f'Loading flux data from file: {output.name}')
             fluxes = load_file(output, validate=False)
         if isinstance(fluxes, xr.Dataset) and not fluxes_exist[0]:
-            init, start, stop = *response[:1], *select  # subselect from perturbed data
+            init, start, stop = *entire[:1], *select  # subselect from perturbed data
             if init is not None:
                 init = int(init) * 12
             if start is not None:
@@ -1085,7 +1102,7 @@ def get_feedbacks(
             fluxes.to_netcdf(output, engine='netcdf4', encoding=encoding)
             print(f'Created output file: {output.name}')
         print('Skipping loading flux data.')
-    if not overwrite and not dryrun and feedbacks_exist:
+    if not dryrun and not overwrite and feedbacks_exist:
         output = feedbacks
         if noload:
             print('Skipping loading feedback data.')
@@ -1127,7 +1144,6 @@ def process_feedbacks(
     logging=False,
     dryrun=False,
     nowarn=False,
-    noload=False,
     **kwargs
 ):
     """
@@ -1152,7 +1168,7 @@ def process_feedbacks(
     nodrift : bool, default: False
         Whether to use drift-corrected data.
     logging : bool, optional
-        Whether to build a custom logger.
+        Whether to log the printed output.
     dryrun : bool, optional
         Whether to run with only three years of data.
     nowarn : bool, optional
@@ -1184,7 +1200,7 @@ def process_feedbacks(
         response_suffix = f'{response[0]:04d}-{response[1]:04d}-climate{suffix}'
     else:
         raise ValueError(f"Invalid {style=}. Expected 'monthly', 'annual', or 'ratio'.")
-    response, select = control, response
+    select, entire = response, control
     suffixes = (*(format(int(t), '04d') for t in select), source, style, nodrift)
     constraints = {
         'variable': sorted(set(k for d in VARIABLE_DEPENDENCIES.values() for k in d)),
@@ -1196,7 +1212,7 @@ def process_feedbacks(
         if any(s in key for s in ('model', 'flagship', 'ensemble'))
     })
     if logging:
-        print = Logger('feedbacks', *suffixes, project=project, **constraints)
+        print = Printer('feedbacks', *suffixes, project=project, **constraints)
     else:
         print = builtins.print
     print()  # before getting logger
@@ -1244,13 +1260,12 @@ def process_feedbacks(
                 table=_item_parts['table'](tuple(files.values())[0][1]),
                 model=group['model'],
                 select=select,
-                response=response,
+                entire=entire,
                 style=style,
                 source=source,
                 nodrift=nodrift,
                 printer=print,
                 dryrun=dryrun,
-                noload=True,
                 **kwargs,
                 **files,
             )
