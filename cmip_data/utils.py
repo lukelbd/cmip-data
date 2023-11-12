@@ -10,7 +10,7 @@ import numpy as np
 import xarray as xr
 from icecream import ic  # noqa: F401
 
-from .internals import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
+from .facets import STANDARD_LEVELS_CMIP5, STANDARD_LEVELS_CMIP6, _validate_ranges
 
 __all__ = [
     'assign_dates',
@@ -216,11 +216,10 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
 
 
 def load_file(
-    path,
-    variable=None, project=None, validate=True, demote=True, printer=None,
+    path, variable=None, project=None, validate=True, demote=True, printer=None,
 ):
     """
-    Load an output dataset and repair possible coordinate issues.
+    Load an output dataset and possibly standardize time and pressure coordinates.
 
     Parameters
     ----------
@@ -229,7 +228,7 @@ def load_file(
     variable : str, optional
         The variable. If passed a data array is returned.
     project : str, optional
-        The project. If passed vertical levels are restricted.
+        The project. If passed pressure levels are standardized.
     validate : bool, optional
         Whether to validate against quality control ranges.
     demote : bool, optional
@@ -247,15 +246,15 @@ def load_file(
     # memory. In future should make open_files() function that uses open_mfdataset()
     # and refactor open_dataset() utility in coupled/results.py (remove averaging
     # utility, standardize after concatenating). For now since loading required anyway
-    # use load_dataset() below and demote float64 to float32 by default to help reduce
-    # memory usage. See: https://github.com/pydata/xarray/issues/4628
+    # below uses load_dataset() and demotes float64 to float32 by default to help
+    # reduce memory usage. See: https://github.com/pydata/xarray/issues/4628
     # NOTE: Use dataset[name].variable._data to check whether data is loaded (tried
     # ic() on dataset[name] and reading the array output but this seems to sometimes
-    # / inconsistently trigger loading itself). In future may use dask for its lazy
-    # loading + lazy operations (even if chunking not needed). Also note cache=False
-    # prevents storing loaded values on original dataset when operation triggers load,
-    # but if result of operation is the same size as the dataset (i.e. did not slice
-    # first) and remains as a session variable (i.e. not a garbage-collected function
+    # / inconsistently trigger loading itself). In future along with open_mfdataset()
+    # may use dask for its lazy loading / lazy operations even if chunking not needed.
+    # Also note cache=False prevents storing loaded values on original dataset when
+    # operation triggers load, but if result of operation is same size as the dataset
+    # (i.e. did not slice first) and remains as a session variable (e.g. not a function
     # variable) then may still cause memory issues. Should be lazy-loading aware in
     # all dataset manipulations. See: https://stackoverflow.com/a/45644654/4970632.
     print = printer or builtins.print
@@ -323,9 +322,9 @@ def load_file(
                 f'time values: {message}. Kept only the first values.'
             )
         years, months = data.time.dt.year, data.time.dt.month
-        if sorted(months.values) == sorted(range(1, 13)):
+        if sorted(months.values) == sorted(range(1, 13)):  # standardize times
             cls = type(data.time[0].item())  # e.g. CFTimeNoLeap
-            std = [cls(min(years), t.month, 15) for t in data.time.values]
+            std = [cls(max(years), t.month, 15) for t in data.time.values]
             std = xr.DataArray(std, dims='time', name='time', attrs=data.time.attrs)
             data = data.assign_coords(time=std)  # assign with same attributes
             data = data.sortby('time')  # sort in case months are non-monotonic
