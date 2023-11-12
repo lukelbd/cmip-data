@@ -1,12 +1,10 @@
 What's here?
 ------------
 
-The `cmip_data.load` module contains functions for loading cmip data, radiative
-kernels, and climate feedback and sensitivity tables. The `cmip_data.download`
-module contains functions for downloading and averaging cmip data. The
-`download_script` function creates ESGF wget scripts for retrieving CMIP5 data,
-and the `filter_script` function consolidates these into a single scripts and filters to
-within the desired time range -- e.g. if there are 500 years of data but we only need a
-100 year climatology. The `cmip_data.process` module can then be used to create
-monthly climatologies or annual time series from files downloaded via the wget
-scripts, optionally with standardized horizontal and vertical coordinates.
+This repository contains functions for generating `wget` scripts that download
+CMIP6 and CMIP5 data, filtering and consolidating the `wget` scripts to specific
+time ranges or overlapping experiments, remapping data onto standardized horizontal
+grids, interpolating model levels onto standardized pressure levels, consolidating
+data into time series or averages, and calculating climate feedbacks and other
+physical variables from the time series and averages. See the docstrings for
+details and the top-level python executables for example usage.

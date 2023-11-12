@@ -12,9 +12,6 @@ import numpy as np  # noqa: F401
 import xarray as xr
 from climopy import const, ureg
 from icecream import ic  # noqa: F401
-from idealized import definitions  # noqa: F401
-from metpy import calc  # noqa: F401
-from metpy.units import units as mreg  # noqa: F401
 from numpy import ma  # noqa: F401
 
 from .internals import (
@@ -257,6 +254,8 @@ def _get_clausius_scaling(ta, pa=None, liquid=True):
     # WARNING: If using metpy, critical to replace climopy units with metpy units, or
     # else get hard-to-debug errors, e.g. temperature units mysteriously stripped. In
     # the end decided to go manual since metpy uses inaccurate Bolton (1980) method.
+    # from metpy.units import units as mreg  # noqa: F401
+    # from metpy import calc  # noqa: F401
     es_hus = lambda e, p: np.where(
         p < 5000, np.nan,  # ignore stratospheric values
         const.eps.magnitude * e / (p.data - (1 - const.eps.magnitude) * e)
@@ -465,6 +464,7 @@ def _fluxes_from_anomalies(
     # anoms.plev == kernels.plev returned empty array and assigning time-varying cell
     # heights to data before integration in Planck feedback block created array of
     # all NaNs. Still not sure why this happened but assign_coords seems to fix it.
+    from idealized import physics  # noqa: F401
     print = printer or builtins.print
     print('Calculating kernel-derived radiative fluxes.')
     plev = anoms.plev
