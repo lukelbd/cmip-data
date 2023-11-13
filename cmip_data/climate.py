@@ -17,7 +17,7 @@ import xarray as xr
 from climopy import diff, const, ureg
 from icecream import ic  # noqa: F401
 
-from .facets import Database, Printer, glob_files, _item_dates, _item_parts
+from .facets import Database, Printer, glob_files, _item_dates, _item_facets
 from .utils import assign_dates, load_file
 
 __all__ = [
@@ -747,9 +747,9 @@ def process_climate(
         try:
             datasets = get_climate(
                 project=group['project'],
-                experiment=_item_parts['experiment'](tuple(files.values())[0][1]),
-                ensemble=_item_parts['ensemble'](tuple(files.values())[0][1]),
-                table=_item_parts['table'](tuple(files.values())[0][1]),
+                experiment=_item_facets['experiment'](tuple(files.values())[0][1]),
+                ensemble=_item_facets['ensemble'](tuple(files.values())[0][1]),
+                table=_item_facets['table'](tuple(files.values())[0][1]),
                 model=group['model'],
                 printer=print,
                 dryrun=dryrun,

@@ -26,12 +26,12 @@ from .facets import (
     Database,
     Printer,
     glob_files,
+    _item_facets,
     _item_file,
-    _item_join,
-    _item_parts,
+    _item_label,
     _item_years,
     _parse_constraints,
-    _sort_facets,
+    _sort_items,
 )
 
 __all__ = [
@@ -106,8 +106,8 @@ def _write_script(
     print = printer or builtins.print
     path = Path(path).expanduser()
     path.mkdir(exist_ok=True)
-    _, constraints = _parse_constraints(reverse=True, **constraints)
-    name = _item_join(*constraints.values())  # e.g. ta-ts_amon_picontrol-abrupt4xco2
+    _, constraints = _parse_constraints(**constraints)
+    name = _item_label(*constraints.values())  # e.g. ta-ts_amon_picontrol-abrupt4xco2
     path = path / f'wget_{name}.sh'
     original = r'openId=\n'  # only replace if already unset
     replace = f'openId={openid!r}\n'
@@ -125,7 +125,7 @@ def _write_script(
     suffix = re.sub(re.escape(original), replace, suffix)
     if replace not in suffix:
         print('Warning: Failed to repair checksum comparison line.')
-    center = _sort_facets(center, (*_item_parts, 'dates', 'node'))
+    center = _sort_items(center, (*_item_facets, 'dates', 'node'))
     with open(path, 'w') as f:
         f.write(prefix + ''.join(center) + suffix)
     path.chmod(0o755)
@@ -195,16 +195,17 @@ def download_script(
     # NOTE: Thousands of these scripts can take up significant space... so instead we
     # consolidate results into a single script. Also increase the batch size from the
     # default of only 50 results to reduce the number of http requests.
+    kw = dict(decode=False, restrict=False)
     keys = ('node', 'username', 'password')
     kwargs = {key: constraints.pop(key) for key in keys if key in constraints}
-    project, constraints = _parse_constraints(restrict=False, **constraints)
+    project, constraints = _parse_constraints(**kw, **constraints)
     print = Printer('download', **constraints) if logging else builtins.print
     conn = init_connection(**kwargs)
     if flagship_filter:
         ensembles = [ens for key, ens in ENSEMBLES_FLAGSHIP.items() if key[0] == project]  # noqa: E501
         if not ensembles:
             raise ValueError(f'Invalid {project=} for {flagship_filter=}. Must be CMIP5 or CMIP6.')  # noqa: E501
-        _, constraints = _parse_constraints(restrict=False, ensemble=ensembles, **constraints)  # noqa: E501
+        _, constraints = _parse_constraints(**kw, **constraints, ensemble=ensembles)
         def flagship_filter(value):  # noqa: E301
             identifiers = [s.lower() for s in value.split('.')]
             for keys, ensemble in ENSEMBLES_FLAGSHIP.items():
@@ -269,12 +270,12 @@ def download_script(
         if not prefix and not suffix:
             prefix, suffix = _parse_script(script, complement=True)
         regex = re.compile('output[0-9]')  # cmip5 has this in place of variable
-        variables = sorted(set(map(_item_parts['variable'], lines)))
+        variables = sorted(set(map(_item_facets['variable'], lines)))
         for variable in variables:
             ilines = lines
             idataset = dataset
             if len(variables) > 1:
-                ilines = [line for line in lines if _item_parts['variable'](line) == variable]  # noqa: E501
+                ilines = [line for line in lines if _item_facets['variable'](line) == variable]  # noqa: E501
                 idataset = regex.sub(variable, dataset) if regex.search(dataset) else f'{variable}.{dataset}'  # noqa: E501
             if ilines:
                 versions = database.setdefault(idataset, {})
@@ -407,7 +408,7 @@ def filter_script(
         kwargs = {facet: (opt,) for facet, opt in group.items()}
         for facet, opts in constraints.items():
             kwargs.setdefault(facet, opts)
-        folder = path.parent / _item_join(group.values())  # e.g. cmip6-picontrol-amon
+        folder = path.parent / _item_label(group.values())  # e.g. cmip6-picontrol-amon
         center = []  # wget script lines
         print('Writing download script:')
         print(', '.join(f'{key}: {value}' for key, value in group.items()))

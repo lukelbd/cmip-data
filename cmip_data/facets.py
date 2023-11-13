@@ -128,22 +128,22 @@ FACETS_CMIP6 = [
     'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
 ]
 FACETS_DOTNAMES = {
-    ('CMIP5', 'ACCESS1-0'): 'ACCESS1.0',
-    ('CMIP5', 'ACCESS1-3'): 'ACCESS1.3',
-    ('CMIP5', 'CSIRO-Mk3-6-0'): 'CSIRO-Mk3.6.0',
-    ('CMIP5', 'bcc-csm1-1'): 'BCC-CSM1.1',
-    ('CMIP5', 'inmcm4'): 'INM-CM4',
+    ('CMIP5', 'ACCESS1.0'): 'ACCESS1-0',
+    ('CMIP5', 'ACCESS1.3'): 'ACCESS1-3',
+    ('CMIP5', 'CSIRO-Mk3.6.0'): 'CSIRO-Mk3-6-0',
+    ('CMIP5', 'BCC-CSM1.1'): 'bcc-csm1-1',
+    ('CMIP5', 'INM-CM4'): 'inmcm4',
 }
-FACETS_KEYNAMES = {
-    ('CMIP5', 'table'): 'cmor_table',
+FACETS_ESGNAMES = {
+    ('CMIP5', 'cmor_table'): 'table',
     ('CMIP5', 'institution'): 'institute',
-    ('CMIP5', 'frequency'): 'time_frequency',
-    ('CMIP6', 'variable'): 'variable_id',
-    ('CMIP6', 'table'): 'table_id',
-    ('CMIP6', 'model'): 'source_id',
-    ('CMIP6', 'experiment'): 'experiment_id',
-    ('CMIP6', 'ensemble'): 'variant_label',
-    ('CMIP6', 'institution'): 'institution_id',
+    ('CMIP5', 'time_frequency'): 'frequency',
+    ('CMIP6', 'variable_id'): 'variable',
+    ('CMIP6', 'table_id'): 'table',
+    ('CMIP6', 'source_id'): 'model',
+    ('CMIP6', 'experiment_id'): 'experiment',
+    ('CMIP6', 'variant_label'): 'ensemble',
+    ('CMIP6', 'institution_id'): 'institute',
 }
 FACETS_RENAMES = {
     ('CMIP5', 'hist-nat'): 'historicalNat',
@@ -170,7 +170,7 @@ FACETS_SUMMARIZE = (  # grouping in summarize logs
 )
 
 # Model institutes (flagship models come last)
-# NOTE: This was copied from the INSTITUTES.txt file produced by manual_checks.py, used
+# NOTE: This was copied from the INSTITUTES.txt file produced by manual_info.py, used
 # for grouping models before 'coupled' project analysis. Previously used model names but
 # this was unreliable (e.g. ACCESS/CSIRO are CSIRO, MPI/ICON are MPI, and CESM/CCSM are
 # NCAR). Some institutes also changed ids between cmip5 and cmip6 (e.g. dash instead
@@ -241,110 +241,111 @@ INSTITUTES_LABELS = {  # map ids to (and alphabetize by) more familiar abbreviat
     'THU': 'THU (CN)',  # 'CIESM',  # Beijing Tsinghua University, China
     'UA': 'UA (US)',  # 'MCM-UA',  # University of Arizonta, USA
 }
-MODELS_INSTITUTES = {  # map model ids to institute ids with 'flagship' model last
-    ('CMIP5', 'BNU-ESM'): 'BNU',
-    ('CMIP5', 'CCSM4'): 'NCAR',
-    ('CMIP5', 'CNRM-CM5'): 'CNRM-CERFACS',
-    ('CMIP5', 'CNRM-CM5-2'): 'CNRM-CERFACS',  # latest version
-    ('CMIP5', 'CanESM2'): 'CCCma',
-    ('CMIP5', 'CSIRO-Mk3-6-0'): 'CSIRO',  # 'CSIRO-QCCCE',  # overwritten by ACCESS
-    ('CMIP5', 'ACCESS1-0'): 'CSIRO',  # 'CSIRO-BOM',
-    ('CMIP5', 'ACCESS1-3'): 'CSIRO',  # 'CSIRO-BOM',  # latest version
-    ('CMIP5', 'FGOALS-s2'): 'CAS',  # 'LASG-IAP',
-    ('CMIP5', 'FGOALS-g2'): 'CAS',  # 'LASG-CESS',  # highest resolution
-    ('CMIP5', 'GFDL-CM3'): 'NOAA',  # 'NOAA GFDL',
-    ('CMIP5', 'GFDL-ESM2G'): 'NOAA',  # 'NOAA GFDL',
-    ('CMIP5', 'GFDL-ESM2M'): 'NOAA',  # 'NOAA GFDL',
-    ('CMIP5', 'GISS-E2-R'): 'NASA',  # 'NASA-GISS',
-    ('CMIP5', 'GISS-E2-H'): 'NASA',  # 'NASA-GISS',  # more complex
-    ('CMIP5', 'HadGEM2-ES'): 'MOHC',
-    ('CMIP5', 'IPSL-CM5B-LR'): 'IPSL',
-    ('CMIP5', 'IPSL-CM5A-LR'): 'IPSL',
-    ('CMIP5', 'IPSL-CM5A-MR'): 'IPSL',  # highest resolution
-    ('CMIP5', 'MIROC5'): 'MIROC',
-    ('CMIP5', 'MIROC-ESM'): 'MIROC',  # most complex
-    ('CMIP5', 'MPI-ESM-P'): 'MPI-M',
-    ('CMIP5', 'MPI-ESM-LR'): 'MPI-M',
-    ('CMIP5', 'MPI-ESM-MR'): 'MPI-M',  # highest resolution
-    ('CMIP5', 'MRI-CGCM3'): 'MRI',
-    ('CMIP5', 'NorESM1-ME'): 'NCC',
-    ('CMIP5', 'NorESM1-M'): 'NCC',  # highest resolution
-    ('CMIP5', 'bcc-csm1-1'): 'BCC',
-    ('CMIP5', 'bcc-csm1-1-m'): 'BCC',  # highest resoution
-    ('CMIP5', 'inmcm4'): 'INM',
-    ('CMIP6', 'ACCESS-CM2'): 'CSIRO',  # 'CSIRO-ARCCSS',
-    ('CMIP6', 'ACCESS-ESM1-5'): 'CSIRO',  # most complex
-    ('CMIP6', 'AWI-CM-1-1-MR'): 'AWI',
-    ('CMIP6', 'BCC-CSM2-MR'): 'BCC',
-    ('CMIP6', 'BCC-ESM1'): 'BCC',  # most complex
-    ('CMIP6', 'CAMS-CSM1-0'): 'CAMS',
-    ('CMIP6', 'CAS-ESM2-0'): 'CAS',
-    ('CMIP6', 'CESM2-FV2'): 'NCAR',
-    ('CMIP6', 'CESM2'): 'NCAR',
-    ('CMIP6', 'CESM2-WACCM-FV2'): 'NCAR',
-    ('CMIP6', 'CESM2-WACCM'): 'NCAR',  # highest resolution
-    ('CMIP6', 'CIESM'): 'THU',
-    ('CMIP6', 'CMCC-CM2-SR5'): 'CMCC',
-    ('CMIP6', 'CMCC-ESM2'): 'CMCC',  # most complex
-    ('CMIP6', 'CNRM-CM6-1'): 'CNRM-CERFACS',
-    ('CMIP6', 'CNRM-CM6-1-HR'): 'CNRM-CERFACS',
-    ('CMIP6', 'CNRM-ESM2-1'): 'CNRM-CERFACS',  # most complex
-    ('CMIP6', 'CanESM5'): 'CCCma',
-    ('CMIP6', 'CanESM5-1'): 'CCCma',
-    ('CMIP6', 'E3SM-1-0'): 'E3SM-Project',
-    ('CMIP6', 'E3SM-2-0'): 'E3SM-Project',
-    ('CMIP6', 'EC-Earth3-AerChem'): 'EC-Earth-Consortium',
-    ('CMIP6', 'EC-Earth3-CC'): 'EC-Earth-Consortium',
-    ('CMIP6', 'EC-Earth3-Veg-LR'): 'EC-Earth-Consortium',
-    ('CMIP6', 'EC-Earth3-Veg'): 'EC-Earth-Consortium',  # most relevant
-    ('CMIP6', 'EC-Earth3'): 'EC-Earth-Consortium',  # collaborative incl. many centers
-    ('CMIP6', 'FGOALS-f3-L'): 'CAS',
-    ('CMIP6', 'FGOALS-g3'): 'CAS',  # highest resolution
-    ('CMIP6', 'FIO-ESM-2-0'): 'FIO',
-    ('CMIP6', 'GFDL-CM4'): 'NOAA',  # 'NOAA-GFDL',
-    ('CMIP6', 'GFDL-ESM4'): 'NOAA',  # 'NOAA-GFDL',  # most complex
-    ('CMIP6', 'GISS-E2-1-G'): 'NASA',  # 'NASA-GISS',
-    ('CMIP6', 'GISS-E2-1-H'): 'NASA',  # 'NASA-GISS',
-    ('CMIP6', 'GISS-E2-2-G'): 'NASA',  # 'NASA-GISS',
-    ('CMIP6', 'GISS-E2-2-H'): 'NASA',  # 'NASA-GISS',  # highest resolution
-    ('CMIP6', 'IITM-ESM'): 'CCCR-IITM',
-    ('CMIP6', 'INM-CM4-8'): 'INM',
-    ('CMIP6', 'INM-CM5-0'): 'INM',  # latest version
-    ('CMIP6', 'IPSL-CM6A-LR'): 'IPSL',
-    ('CMIP6', 'IPSL-CM6A-LR-INCA'): 'IPSL',  # NOTE: only found in zelika table
-    ('CMIP6', 'IPSL-CM5A2'): 'IPSL',  # NOTE: not yet found in anything
-    ('CMIP6', 'IPSL-CM5A2-INCA'): 'IPSL',  # highest resolution
-    ('CMIP6', 'KACE-1-0-G'): 'NIMS-KMA',
-    ('CMIP6', 'KIOST-ESM'): 'KIOST',
-    ('CMIP6', 'MCM-UA-1-0'): 'UA',
-    ('CMIP6', 'MIROC6'): 'MIROC',
-    ('CMIP6', 'MIROC-ES2L'): 'MIROC',
-    ('CMIP6', 'MIROC-ES2H'): 'MIROC',  # latest version
-    ('CMIP6', 'ICON-ESM-LR'): 'MPI-M',  # overwritten by MPI
-    ('CMIP6', 'MPI-ESM-1-2-HAM'): 'MPI-M',  # 'HAMMOZ-Consortium',  # started from MPI
-    ('CMIP6', 'MPI-ESM1-2-LR'): 'MPI-M',
-    ('CMIP6', 'MPI-ESM1-2-HR'): 'MPI-M',  # highest resolution
-    ('CMIP6', 'MRI-ESM2-0'): 'MRI',
-    ('CMIP6', 'NESM3'): 'NUIST',
-    ('CMIP6', 'NorCPM1'): 'NCC',
-    ('CMIP6', 'NorESM2-LM'): 'NCC',
-    ('CMIP6', 'NorESM2-MM'): 'NCC',  # highest resolution
-    ('CMIP6', 'SAM0-UNICON'): 'SNU',
-    ('CMIP6', 'TaiESM1'): 'AS-RCEC',
-    ('CMIP6', 'HadGEM3-GC31-LL'): 'MOHC',  # overwritten by UKESM
-    ('CMIP6', 'HadGEM3-GC31-MM'): 'MOHC',
-    ('CMIP6', 'UKESM1-0-LL'): 'MOHC',  # ESM variant of HadGEM
-    ('CMIP6', 'UKESM1-1-LL'): 'MOHC',  # latest version
-    ('CMIP6', 'CERES'): 'CERES',  # special
+MODELS_INSTITUTES = {  # translate model to institute with 'flagship' version last
+    'CSIRO-Mk3-6-0': 'CSIRO',  # 'CSIRO-QCCCE',  # CMIP5  # overwritten by ACCESS
+    'ACCESS1-0': 'CSIRO',  # 'CSIRO-BOM',
+    'ACCESS1-3': 'CSIRO',  # 'CSIRO-BOM',  # latest version
+    'ACCESS-CM2': 'CSIRO',  # 'CSIRO-ARCCSS',  # CMIP6
+    'ACCESS-ESM1-5': 'CSIRO',  # most complex
+    'AWI-CM-1-1-MR': 'AWI',  # CMIP6
+    'bcc-csm1-1': 'BCC',  # CMIP5
+    'bcc-csm1-1-m': 'BCC',  # highest resoution
+    'BCC-CSM2-MR': 'BCC',  # CMIP6
+    'BCC-ESM1': 'BCC',  # most complex
+    'BNU-ESM': 'BNU',  # CMIP5
+    'CAMS-CSM1-0': 'CAMS',  # CMIP6
+    'CIESM': 'THU',  # CMIP6
+    'CMCC-CM2-SR5': 'CMCC',  # CMIP6
+    'CMCC-ESM2': 'CMCC',  # most complex
+    'CCSM4': 'NCAR',  # CMIP5
+    'CESM2-FV2': 'NCAR',  # CMIP6
+    'CESM2': 'NCAR',
+    'CESM2-WACCM-FV2': 'NCAR',
+    'CESM2-WACCM': 'NCAR',  # highest resolution
+    'CNRM-CM5': 'CNRM-CERFACS',  # CMIP5
+    'CNRM-CM5-2': 'CNRM-CERFACS',
+    'CNRM-CM6-1': 'CNRM-CERFACS',  # CMIP6
+    'CNRM-CM6-1-HR': 'CNRM-CERFACS',
+    'CNRM-ESM2-1': 'CNRM-CERFACS',  # most complex
+    'CanESM2': 'CCCma',  # CMIP5
+    'CanESM5': 'CCCma',  # CMIP6
+    'CanESM5-1': 'CCCma',
+    'E3SM-1-0': 'E3SM-Project',  # CMIP6
+    'E3SM-2-0': 'E3SM-Project',
+    'EC-Earth3-AerChem': 'EC-Earth-Consortium',  # CMIP6
+    'EC-Earth3-CC': 'EC-Earth-Consortium',
+    'EC-Earth3-Veg-LR': 'EC-Earth-Consortium',
+    'EC-Earth3-Veg': 'EC-Earth-Consortium',  # most relevant
+    'EC-Earth3': 'EC-Earth-Consortium',  # collaborative incl. many centers
+    'FGOALS-s2': 'CAS',  # 'LASG-IAP',  # CMIP5 (replaced with CMIP6 FGOALS institute)
+    'FGOALS-g2': 'CAS',  # 'LASG-CESS',  # highest resolution
+    'CAS-ESM2-0': 'CAS',  # CMIP6  # overwritten by FGOALS
+    'FGOALS-f3-L': 'CAS',
+    'FGOALS-g3': 'CAS',  # highest resolution
+    'FIO-ESM-2-0': 'FIO',  # CMIP6
+    'GFDL-CM3': 'NOAA',  # 'NOAA GFDL',  # CMIP5
+    'GFDL-ESM2G': 'NOAA',  # 'NOAA GFDL',
+    'GFDL-ESM2M': 'NOAA',  # 'NOAA GFDL',  # most complex
+    'GFDL-CM4': 'NOAA',  # 'NOAA-GFDL',  # CMIP6
+    'GFDL-ESM4': 'NOAA',  # 'NOAA-GFDL',  # more complex
+    'GISS-E2-R': 'NASA',  # 'NASA-GISS',  # CMIP5
+    'GISS-E2-H': 'NASA',  # 'NASA-GISS',  # more complex
+    'GISS-E2-1-G': 'NASA',  # 'NASA-GISS',  # CMIP6
+    'GISS-E2-1-H': 'NASA',  # 'NASA-GISS',
+    'GISS-E2-2-G': 'NASA',  # 'NASA-GISS',
+    'GISS-E2-2-H': 'NASA',  # 'NASA-GISS',  # highest resolution
+    'HadGEM2-ES': 'MOHC',  # CMIP5
+    'HadGEM3-GC31-LL': 'MOHC',  # CMIP6  # overwritten by UKESM
+    'HadGEM3-GC31-MM': 'MOHC',
+    'UKESM1-0-LL': 'MOHC',  # ESM variant of HadGEM
+    'UKESM1-1-LL': 'MOHC',  # latest version
+    'IITM-ESM': 'CCCR-IITM',  # CMIP6
+    'inmcm4': 'INM',  # CMIP5
+    'INM-CM4-8': 'INM',  # CMIP6
+    'INM-CM5-0': 'INM',  # latest version
+    'IPSL-CM5B-LR': 'IPSL',  # CMIP5
+    'IPSL-CM5A-LR': 'IPSL',
+    'IPSL-CM5A-MR': 'IPSL',  # highest resolution
+    'IPSL-CM6A-LR': 'IPSL',  # CMIP6
+    'IPSL-CM6A-LR-INCA': 'IPSL',  # NOTE: only found in zelika table
+    'IPSL-CM5A2': 'IPSL',  # NOTE: not yet found in anything
+    'IPSL-CM5A2-INCA': 'IPSL',  # highest resolution
+    'KACE-1-0-G': 'NIMS-KMA',  # CMIP6
+    'KIOST-ESM': 'KIOST',  # CMIP6
+    'MCM-UA-1-0': 'UA',  # CMIP6
+    'MIROC5': 'MIROC',  # CMIP5
+    'MIROC-ESM': 'MIROC',  # most complex
+    'MIROC6': 'MIROC',  # CMIP6
+    'MIROC-ES2L': 'MIROC',
+    'MIROC-ES2H': 'MIROC',  # latest version
+    'MPI-ESM-P': 'MPI-M',  # CMIP5
+    'MPI-ESM-LR': 'MPI-M',
+    'MPI-ESM-MR': 'MPI-M',  # highest resolution
+    'ICON-ESM-LR': 'MPI-M',  # CMIP6  # overwritten by MPI
+    'MPI-ESM-1-2-HAM': 'MPI-M',  # 'HAMMOZ-Consortium',  # started from MPI
+    'MPI-ESM1-2-LR': 'MPI-M',
+    'MPI-ESM1-2-HR': 'MPI-M',  # highest resolution
+    'MRI-CGCM3': 'MRI',  # CMIP5
+    'MRI-ESM2-0': 'MRI',  # CMIP6
+    'NESM3': 'NUIST',  # CMIP6
+    'NorESM1-ME': 'NCC',  # CMIP5
+    'NorESM1-M': 'NCC',  # highest resolution
+    'NorCPM1': 'NCC',  # CMIP6
+    'NorESM2-LM': 'NCC',
+    'NorESM2-MM': 'NCC',  # highest resolution
+    'SAM0-UNICON': 'SNU',  # CMIP6
+    'TaiESM1': 'AS-RCEC',  # CMIP6
+    'CERES': 'CERES',  # special
 }
 
-# Sorting facets in file and folder names, in database groups and sub-groups,
-# and in organizing wget script lines (see download.py for details).
+# Sorting facets in file and folder names, in database groups and sub-groups, and
+# in organizing wget script lines (see download.py _write_script() for details).
 # NOTE: Previously we removed bad or down nodes but this is unreliable and has to be
 # updated regularly. Instead now prioritize local nodes over distant nodes and then
 # wget script automatically skips duplicate files after successful download (see top).
 SORT_FACETS = [
     'project',  # same as folder
+    'institution', 'institution_id', 'institute_id',  # both attrs and facets
     'model', 'source_id',
     'experiment', 'experiment_id',  # same as folder
     'ensemble', 'variant_label',
@@ -353,11 +354,9 @@ SORT_FACETS = [
     'grid_label',
 ]
 SORT_OPTIONS = {
-    'experiment': [  # control runs come first
-        'control',
-        'historical',
-        'hist',
-    ],
+    'institute': list(MODELS_INSTITUTES.values()),  # ordered roughly by model name
+    'model': list(MODELS_INSTITUTES.keys()),  # older and simpler models first
+    'experiment': ['control', 'historical', 'hist'],  # control experiments first
     'node': [  # closer nodes come first
         'ucar.edu',  # colorado
         'anl.gov',  # illinois
@@ -506,78 +505,80 @@ STANDARD_LEVELS_CMIP6 = 100 * np.array(
 # ..._<member_id>[_<grid_label>[_<start_date>-<end_date>[-<climate_indicator>]]].nc
 # where grid labels are only in cmip6 and climate indicator is used for e.g. pfull.
 # See: https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json
-_item_file = lambda line: (
-    getattr(line, 'name', line).split()[0].strip("'")
-)
 _item_node = lambda line: (
     line.split()[1].strip("'").split('thredds')[0]
 )
+_item_file = lambda line: (
+    getattr(line, 'name', line).split()[0].strip("'")
+)
+_item_part = lambda file, idx: (
+    _item_file(file).split('.')[0].split('_')[idx]  # use part before .nc suffix
+)
 _item_dates = lambda file: (
-    d if (d := _item_piece(file, -1))[0].isdecimal() else ''
+    d if (d := _item_part(file, -1))[0].isdecimal() else ''
 )
 _item_years = lambda file: tuple(
     int(s[:4]) for s in _item_dates(file).split('-')[:2]
 )
-_item_piece = lambda file, idx: (
-    _item_file(file).split('.')[0].split('_')[idx]  # use part before .nc suffix
-)
-_item_parts = {
-    'model': lambda file: _item_piece(file, 2),
-    'experiment': lambda file: _item_piece(file, 3),
-    'ensemble': lambda file: _item_piece(file, 4),
-    'table': lambda file: _item_piece(file, 1),
-    'variable': lambda file: _item_piece(file, 0),
-    'grid': lambda file: g if (g := _item_piece(file, -2))[0] == 'g' else 'g',
+_item_facets = {
+    'institute': lambda file: MODELS_INSTITUTES.get(_item_facets['model'](file), 'UNKNOWN'),  # noqa: E501
+    'model': lambda file: FACETS_DOTNAMES.get(part := _item_part(file, 2), part),
+    'experiment': lambda file: _item_part(file, 3),
+    'ensemble': lambda file: _item_part(file, 4),
+    'table': lambda file: _item_part(file, 1),
+    'variable': lambda file: _item_part(file, 0),
+    'grid': lambda file: g if (g := _item_part(file, -2))[0] == 'g' else 'g',
 }
-_item_join = lambda *options, modify=True: '_'.join(
-    item for opts in options if opts and (
+_item_label = lambda *options, modify=True: '_'.join(
+    item for opts in options
+    if opts and (
         item := '-'.join(
             re.sub(r'\W+', '', opt.lower()) if modify else opt
-            for opt in filter(
-                None, opts.split(',') if isinstance(opts, str) else tuple(opts)
-            )
+            for opt in filter(None, opts.split(',') if isinstance(opts, str) else tuple(opts))  # noqa: E501
         )
     )
 )
 
-# Helper function for sorting based on facets
-# NOTE: Previously we sorted files alphabetically but this means when processing
-# files for the first time we iterate over abrupt variables before the control
-# variables required for drift correction are available. The generalized priority
-# sorting ensures control data comes first and leaves room for additional restrictions.
+# Helper function for sorting based on facets (see e.g. download.py _wget_script())
 # NOTE: Previously we detected and removed identical files available from multiple nodes
 # but this was terrible idea. The scripts will auto-skip files that both exist and are
 # recorded in the .wget cache file, so as they loop over files they ignore already
 # downloaded entries. This lets us maximize probability and speed of retrieving files
 # without having to explicitly filter bad nodes. Example indices for identical names:
 # ('00_ACCESS', ..., '02_esgf-data1.llnl.gov'), ('00_ACCESS', ..., '22_esgf.nci.org.au')
+# NOTE: Previously we sorted files alphabetically but this means when processing
+# files for the first time we iterate over abrupt variables before the control
+# variables required for drift correction are available. The generalized priority
+# sorting ensures control data comes first and leaves room for additional restrictions.
 _sort_part = lambda item, facet: (
     str(item) if '_' not in getattr(item, 'name', item)
-    else _item_dates(item) if facet == 'dates'
     else _item_node(item) if facet == 'node'
-    else _item_parts[facet](item)
+    else _item_dates(item) if facet == 'dates'
+    else FACETS_DOTNAMES.get(part := _item_facets[facet](item), part)
 )
-_sort_index = lambda item, facet: (
-    (part := _sort_part(item, facet))
-    and (opts := (*SORT_OPTIONS.get(facet, ()), part.lower()))  # adds default entry
-    and min(f'{i:02d}_{part}' for i, opt in enumerate(opts) if opt in part.lower())
+_sort_label = lambda item, facet: (
+    (opts := (*SORT_OPTIONS.get(facet, ()), (part := _sort_part(item, facet))))
+    and (
+        f'{opts.index(part):02d}_{part}' if facet not in ('node', 'experiment')
+        else min(f'{idx:02d}_{opt}' for idx, opt in enumerate(opts) if opt.lower() in part.lower())  # noqa: E501
+    )
 )
-_sort_facet = lambda items, facet: sorted(
-    set(items), key=lambda item: _sort_index(item, facet)
-)
-_sort_facets = lambda items, facets: sorted(
-    items, key=lambda item: tuple(_sort_index(item, facet) for facet in facets)
+_sort_items = lambda items, facets: sorted(
+    items, key=lambda item: tuple(
+        _sort_label(item, facet)
+        for facet in ((facets,) if isinstance(facets, str) else tuple(facets))
+    )
 )
 
 
-def _parse_constraints(reverse=False, restrict=True, **constraints):
+def _parse_constraints(decode=True, restrict=True, **constraints):
     """
     Standardize the constraints, accounting for facet aliases and option renames.
 
     Parameters
     ----------
-    reverse : bool, default: False
-        Whether to reverse translate facet aliases.
+    decode : bool, default: False
+        Whether to decode facets or encode for ESGF API.
     restrict : bool, default: True
         Whether to restrict to facets readable in script lines.
     **constraints
@@ -598,37 +599,34 @@ def _parse_constraints(reverse=False, restrict=True, **constraints):
         facet: list(set(opts.split(',') if isinstance(opts, str) else opts))
         for facet, opts in constraints.items()
     }
-    renames = FACETS_RENAMES.copy()
-    dotnames_encode = FACETS_DOTNAMES.copy()  # convert dash names to dot names
-    dotnames_decode = {(_, dotname): name for (_, name), dotname in dotnames_encode.items()}  # noqa: E501
-    keynames_encode = FACETS_KEYNAMES.copy()  # convert short names to long names
-    keynames_decode = {(_, long): short for (_, short), long in keynames_encode.items()}  # noqa: E501
+    dotnames_decode = FACETS_DOTNAMES.copy()  # convert dash names to dot names
+    dotnames_encode = {(_, dotname): name for (_, name), dotname in dotnames_decode.items()}  # noqa: E501
+    esgnames_decode = FACETS_ESGNAMES.copy()  # convert short names to long names
+    esgnames_encode = {(_, long): short for (_, short), long in esgnames_decode.items()}  # noqa: E501
     projects = constraints.setdefault('project', ['CMIP6'])
     if len(projects) != 1:
         raise NotImplementedError('Non-scalar projects are not supported.')
     projects[:] = [project := projects[0].upper()]
+    dotnames = dotnames_decode if decode else dotnames_encode
+    esgnames = esgnames_decode if decode else esgnames_encode
+    renames = FACETS_RENAMES.copy()
     facets = (
         *(facet for facet in SORT_FACETS if facet in constraints),  # impose order
         *(facet for facet in constraints if facet not in SORT_FACETS),  # retain order
     )
     constraints = {
-        (keynames_decode if reverse else keynames_encode)  # facet translations
-        .get((project, facet), facet):
-        _sort_facet(
+        esgnames.get((project, facet), facet):
+        _sort_items(
             (
-                (dotnames_decode if reverse else dotnames_encode)  # model translations
-                .get(
-                    (project, opt),
-                    renames.get((project, opt), opt)  # experiment translations
-                )
+                dotnames.get((project, opt), renames.get((project, opt), opt))
                 for opt in constraints[facet]
             ),
-            keynames_decode.get((project, facet), facet)  # need standard name here
+            esgnames_decode.get((project, facet), facet)  # single facet
         )
         for facet in facets
     }
-    if restrict and not constraints.keys() - _item_parts.keys() <= {'project'}:
-        raise ValueError(f'Facets {constraints.keys()} must be subset of: {_item_parts.keys()}')  # noqa: E501
+    if restrict and not constraints.keys() - _item_facets.keys() <= {'project'}:
+        raise ValueError(f'Facets {constraints.keys()} must be subset of: {_item_facets.keys()}')  # noqa: E501
     return project, constraints
 
 
@@ -681,7 +679,7 @@ def glob_files(*paths, pattern='*', project=None):
     # as the default, and this is the only way to filter paths by 'project'.
     project = (project or 'cmip6').lower()
     paths = paths or ('~/data',)
-    files = _sort_facets(  # have only seen .nc4 but this is just in case
+    files = _sort_items(  # have only seen .nc4 but this is just in case
         (
             file for ext in ('.nc', '.nc[0-9]') for path in paths
             for folder in (
@@ -695,7 +693,7 @@ def glob_files(*paths, pattern='*', project=None):
                 file.stat().st_size > 0 or file.unlink()
                 or print(f'Warning: Removed empty download file {file.name!r}')
             )
-        ), facets=(*_item_parts, 'dates'),
+        ), facets=(*_item_facets, 'dates'),
     )
     files_corrupt = []
     files_duplicate = []
@@ -734,8 +732,8 @@ class Printer(object):
         backup : bool, optional
             Whether to backup existing files.
         """
-        _, constraints = _parse_constraints(reverse=True, **constraints)
-        name = _item_join(prefix, *constraints.values(), suffixes) + '.log'
+        _, constraints = _parse_constraints(**constraints)
+        name = _item_label(prefix, *constraints.values(), suffixes) + '.log'
         path = Path(__file__).parent.parent / 'logs' / name
         path.parent.mkdir(exist_ok=True)
         if path.is_file():
@@ -831,18 +829,18 @@ class Database(object):
         if flagship_filter:  # alias for flagship_translate=True and ensemble='flagship'
             constraints['ensemble'] = 'flagship'
         facets = facets.split(',') if isinstance(facets, str) else tuple(facets)
-        project, constraints = _parse_constraints(reverse=True, **constraints)
-        facets_group = ('project', *(facet for facet in _item_parts if facet in facets))
-        facets_key = tuple(facet for facet in _item_parts if facet not in facets)
+        project, constraints = _parse_constraints(**constraints)
+        facets_group = ('project', *(facet for facet in _item_facets if facet in facets))  # noqa: E501
+        facets_key = tuple(facet for facet in _item_facets if facet not in facets)
 
         # Add lists to sub-dictionaries
         # NOTE: Institute translating utilities
         # NOTE: Have special handling for feedback files -- only include when
         # users explicitly pass variable='feedbacks', exclude otherwise.
         self.database = {}
-        for value in _sort_facets(source, facets=(*facets_group[1:], *facets_key)):
+        for value in _sort_items(source, facets=(*facets_group[1:], *facets_key)):
             parts = {'project': project}
-            parts.update({facet: func(value) for facet, func in _item_parts.items()})
+            parts.update({facet: func(value) for facet, func in _item_facets.items()})
             key_flagship = (project, parts['experiment'], parts['model'])
             ens_default = ENSEMBLES_FLAGSHIP[project, None, None]
             ens_flagship = ENSEMBLES_FLAGSHIP.get(key_flagship, ens_default)
@@ -892,9 +890,7 @@ class Database(object):
                 override = (override,)
             dicts = []
             for constraints in override:
-                _, constraints = _parse_constraints(
-                    reverse=True, project=self.project, **constraints
-                )
+                _, constraints = _parse_constraints(project=self.project, **constraints)
                 constraints.pop('project', None)
                 dicts.append(constraints)
             overrides.append(dicts)
@@ -937,7 +933,7 @@ class Database(object):
             or (printer or builtins.print)(*args, **kwargs)
         )
         flush = lambda dict_: tuple(
-            print(f'  {facet}s ({len(opts)}):', ', '.join(map(str, _sort_facet(opts, facet))))  # noqa: E501
+            print(f'  {facet}s ({len(opts)}):', ', '.join(map(str, _sort_items(opts, facet))))  # noqa: E501
             for facet, opts in dict_.items() if opts
         )
         database = {

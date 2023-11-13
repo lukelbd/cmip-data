@@ -19,8 +19,8 @@ from .facets import (
     Printer,
     glob_files,
     _item_dates,
-    _item_join,
-    _item_parts,
+    _item_facets,
+    _item_label,
 )
 from .utils import assign_dates, average_regions, load_file
 
@@ -1029,7 +1029,7 @@ def get_feedbacks(
     series = 'climate' if style == 'ratio' else 'series'
     nodrift = nodrift and 'nodrift' or ''
     outputs = []
-    subfolder = _item_join((project, experiment, table))
+    subfolder = _item_label((project, experiment, table))
     tuples = (  # try to load from parent flux file if possible
         (fluxes, 'fluxes', series, select),  # original record
         (fluxes, 'fluxes', series, entire),  # subselection on response period
@@ -1037,7 +1037,7 @@ def get_feedbacks(
         (feedbacks, 'feedbacks', style, early),  # ratio forcing file
     )
     for folder, prefix, suffix, times in tuples:
-        file = _item_join(
+        file = _item_label(
             prefix, table, model, experiment, ensemble,
             (*(format(int(t), '04d') for t in times), source, suffix, nodrift),
             modify=False
@@ -1255,9 +1255,9 @@ def process_feedbacks(
         try:
             datasets = get_feedbacks(
                 project=group['project'],
-                experiment=_item_parts['experiment'](tuple(files.values())[0][1]),
-                ensemble=_item_parts['ensemble'](tuple(files.values())[0][1]),
-                table=_item_parts['table'](tuple(files.values())[0][1]),
+                experiment=_item_facets['experiment'](tuple(files.values())[0][1]),
+                ensemble=_item_facets['ensemble'](tuple(files.values())[0][1]),
+                table=_item_facets['table'](tuple(files.values())[0][1]),
                 model=group['model'],
                 select=select,
                 entire=entire,

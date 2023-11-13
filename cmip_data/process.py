@@ -71,8 +71,8 @@ from .facets import (
     Printer,
     glob_files,
     _item_dates,
-    _item_join,
-    _item_parts,
+    _item_facets,
+    _item_label,
     _item_years,
     _validate_ranges,
 )
@@ -260,7 +260,7 @@ def _output_path(path=None, *parts):
     else:
         path = Path()
     if path.is_dir():
-        name = _item_join(*parts, modify=False)  # e.g. ACCESS1-0_0000-0150-climate
+        name = _item_label(*parts, modify=False)  # e.g. ACCESS1-0_0000-0150-climate
         if name:
             path = path / f'{name}.nc'
         else:
@@ -346,8 +346,8 @@ def process_files(
         # Initial stuff
         folder = output / files[0].parent.name  # TODO: use explicit components?
         folder.mkdir(exist_ok=True)
-        model = _item_parts['model'](files[0])
-        variable = _item_parts['variable'](files[0])
+        model = _item_facets['model'](files[0])
+        variable = _item_facets['variable'](files[0])
         search = (*searches, files[0].parent.parent)  # use the parent cmip folder
         if variable == 'pfull':
             continue
@@ -1427,7 +1427,7 @@ def summarize_processed(*paths, facets=None, **constraints):
     glob, *_ = glob_files(*paths, project=constraints.get('project'))
     key = lambda pair: ('4xCO2' in pair[0], 'series' in pair[1], pair[1])
     opts = ('climate', 'series')  # recognized output file suffixes
-    pairs = set((_item_parts['experiment'](file), _item_dates(file)) for file in glob)
+    pairs = set((_item_facets['experiment'](file), _item_dates(file)) for file in glob)
     pairs = sorted((pair for pair in pairs if any(o in pair[1] for o in opts)), key=key)
     interval = 500
     database = Database(glob, facets, **constraints)
