@@ -82,7 +82,7 @@ nclist() {
 if $rename; then
   for base in $HOME/scratch/cmip-fluxes $HOME/data/cmip-feedbacks; do
     for folder in $base/*; do
-      echo && echo "Folder: ${folder#$HOME/}"
+      echo && echo "Folder: ${folder#"$HOME/"}"
       for file in $folder/*{climate,series,slope}.nc; do
         [ -r "$file" ] || continue
         names=($(nclist "$file" | xargs))
@@ -118,8 +118,8 @@ if $rename; then
         done
         if [ ${#delete[@]} -gt 0 ]; then
           delete=${delete//\*/\\\*}  # replace naked asterisks with raw asterisks
-          echo "Removing variables: ${delete%,}" && temp=${file%/*}/tmp.nc
-          ncks -O -x -v "${delete%,}" "$file" "$temp" && mv "$temp" "$file" || rm "$temp"
+          echo "Removing variables: ${delete%,}" && tmp=${file%/*}/tmp.nc
+          ncks -O -x -v "${delete%,}" "$file" "$tmp" && mv "$tmp" "$file" || rm "$tmp"
         fi
         if [ ${#rename[@]} -gt 0 ]; then
           rename=("${rename[@]//\*/\\\*}")  # replace naked asterisks with raw asterisks

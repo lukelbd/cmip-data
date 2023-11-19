@@ -2,51 +2,6 @@
 """
 Process groups of files downloaded from the ESGF.
 """
-# NOTE: Some models use hybrid coordinates but have different names. The GFDL and CNRM
-# models have zaxistype 'hybrid' and longname 'atmospheric model level' instead of the
-# 'hybrid sigma pressure coordinate' (seems due to using an 'ap' pressure term instead
-# of an 'a' coefficient times a 'p0' reference), and some FGOALS models have zaxistype
-# 'generic' and longname 'sigma coordinate' instead of zaxistype 'hybrid' (also the
-# CMIP5 hybrid FGOALS-s2 model, but not the CMIP6 hybrid FGOALS-f3-L model, use 'ap'
-# pressure coordinates despite naming them 'a' and indicating 'a' in formula terms).
-# However 'cdo ml2pl' is general so works (seems to parse 'formula'). Relevant files:
-# cmip6-picontrol-amon/cl_Amon_GFDL-CM4_piControl_r1i1p1f1_gr1_015101-025012.nc
-# cmip6-picontrol-amon/cl_Amon_GFDL-ESM4_piControl_r1i1p1f1_gr1_000101-010012.nc
-# cmip6-picontrol-amon/cl_Amon_CNRM-CM6-1_piControl_r1i1p1f2_gr_185001-194912.nc
-# cmip6-picontrol-amon/cl_Amon_CNRM-ESM2-1_piControl_r1i1p1f2_gr_185001-194912.nc
-# cmip5-picontrol-amon/cl_Amon_FGOALS-g2_piControl_r1i1p1_020101-021012.nc
-# cmip6-picontrol-amon/cl_Amon_FGOALS-g3_piControl_r1i1p1f1_gn_020001-020912.nc
-# NOTE: Some models have zaxistype 'generic' and longname 'hybrid height coordinates'
-# and require 'pfull' for vertical interpolation. These consist of ACCESS, HadGEM, KACE,
-# and UKESM. Since CMIP5 only provides 'pfull' for control experiments we use these
-# even for forced experiments. Also HadGEM only provides 'pfull' for control-1950 and
-# UKESM only provides 'pfull' for AERmon instead of Amon so we manually obtained wget
-# scripts using the online interface (see also the filter command). Relevant files:
-# cmip5-picontrol-amon/cl_Amon_ACCESS1-0_piControl_r1i1p1_030001-032412.nc
-# cmip5-picontrol-amon/cl_Amon_ACCESS1-3_piControl_r1i1p1_025001-027412.nc
-# cmip6-picontrol-amon/cl_Amon_ACCESS-CM2_piControl_r1i1p1f1_gn_095001-096912.nc
-# cmip6-picontrol-amon/cl_Amon_ACCESS-ESM1-5_piControl_r1i1p1f1_gn_010101-012012.nc
-# cmip5-picontrol-amon/cl_Amon_HadGEM2-ES_piControl_r1i1p1_185912-188411.nc
-# cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-MM_piControl_r1i1p1f1_gn_185001-185912.nc
-# cmip6-picontrol-amon/cl_Amon_HadGEM3-GC31-LL_piControl_r1i1p1f1_gn_185001-189912.nc
-# cmip6-picontrol-amon/cl_Amon_KACE-1-0-G_piControl_r1i1p1f1_gr_200001-209912.nc
-# cmip6-picontrol-amon/cl_Amon_UKESM1-0-LL_piControl_r1i1p1f2_gn_196001-199912.nc
-# NOTE: Some model data is erroneously interpreted as having pressure levels due to
-# missing CF standard name and formula terms. This includes all CESM2 models except
-# CESM2-WACCM-FV2, so can infer correct attributes for this (note the latter is also
-# messed up, since some have levels with positive descending magnitude and others with
-# negative ascending magnitude, so must manually flip axis before merging and let cdo
-# issue a level mismatch warning). It also includes IPSL models but no point of
-# reference, have to adjust manually. Finally, IITM-ESM and MCM-UA *actually do* provide
-# standard pressure level data when not required by the table protocol. Relevant files:
-# cmip6-picontrol-amon/cl_Amon_CESM2_piControl_r1i1p1f1_gn_000101-009912.nc
-# cmip6-picontrol-amon/cl_Amon_CESM2-FV2_piControl_r1i1p1f1_gn_000101-005012.nc
-# cmip6-picontrol-amon/cl_Amon_CESM2-WACCM_piControl_r1i1p1f1_gn_000101-009912.nc
-# cmip6-picontrol-amon/cl_Amon_CESM2-WACCM-FV2_piControl_r1i1p1f1_gn_000101-004912.nc
-# cmip6-picontrol-amon/cl_Amon_IPSL-CM6A-LR_piControl_r1i1p1f1_gr_185001-234912.nc
-# cmip6-picontrol-amon/clw_Amon_IPSL-CM5A2-INCA_piControl_r1i1p1f1_gr_185001-209912.nc
-# cmip6-picontrol-amon/cl_Amon_IITM-ESM_piControl_r1i1p1f1_gn_192601-193512.nc
-# cmip6-picontrol-amon/cl_Amon_MCM-UA-1-0_piControl_r1i1p1f1_gn_000101-010012.nc
 import builtins
 import copy
 import re
@@ -63,7 +18,7 @@ from icecream import ic  # noqa: F401
 from . import Atted, CDOException, Rename, cdo, nco
 from .facets import (
     FACETS_STORAGE,
-    FACETS_SUMMARIZE,
+    KEYS_SUMMARIZE,
     STANDARD_GRIDSPEC_CMIP,
     STANDARD_LEVELS_CMIP5,
     STANDARD_LEVELS_CMIP6,
@@ -1380,7 +1335,7 @@ def summarize_descrips(*paths, facets=None, **constraints):
     **constraints
         Passed to `Printer` and `Database`.
     """
-    facets = facets or FACETS_SUMMARIZE
+    facets = facets or KEYS_SUMMARIZE
     print = Printer('summary', 'descrips')
     print('Generating database.')
     files, *_ = glob_files(*paths, project=constraints.get('project'))
@@ -1422,7 +1377,7 @@ def summarize_processed(*paths, facets=None, **constraints):
         Passed to `Printer` and `Database`.
     """
     # Iterate over dates
-    facets = facets or FACETS_SUMMARIZE
+    facets = facets or KEYS_SUMMARIZE
     print = Printer('summary', 'processed', **constraints)
     glob, *_ = glob_files(*paths, project=constraints.get('project'))
     key = lambda pair: ('4xCO2' in pair[0], 'series' in pair[1], pair[1])
@@ -1489,7 +1444,7 @@ def summarize_ranges(*paths, facets=None, **constraints):
     **constraints
         Passed to `Printer` and `Database`.
     """
-    facets = facets or FACETS_SUMMARIZE
+    facets = facets or KEYS_SUMMARIZE
     print = Printer('summary', 'ranges', **constraints)
     print('Generating database.')
     files, *_ = glob_files(*paths, project=constraints.get('project'))

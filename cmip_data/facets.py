@@ -14,6 +14,28 @@ __all__ = [
     'Printer',
 ]
 
+# Facets used for folders and summarize logs. Used SearchContext(project='CMIP5]')
+# then .get_facet_options() to get all options shown below.
+# Experiments: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_experiment_id.html
+# Institutions: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_institution_id.html
+# Models/sources: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_source_id.html
+KEYS_STORAGE = ('project', 'experiment', 'table')
+KEYS_SUMMARIZE = ('project', 'experiment', 'table', 'variable')
+FACETS_CMIP5 = [
+    'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
+    'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
+    'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
+    'variable', 'variable_long_name', 'version'
+]
+FACETS_CMIP6 = [
+    'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
+    'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
+    'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
+    'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
+    'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
+    'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
+]
+
 # Corrupt files that have to be manually ignored after bulk downloads. Can test using
 # e.g. for file in ta*nc; do echo $file && ncvardump ta $file 1>/dev/null; done
 # since can get HDF5 errors during processing but header can be read without error.
@@ -74,6 +96,42 @@ CORRUPT_FILES = [
     'clwvi_Amon_IITM-ESM_piControl_r1i1p1f1_gn_207101-208012.nc',
 ]
 
+# Decode facets across projects or to internal 'coupled' standard
+# NOTE: Includes mappings between 'aliases' (used with databases and other internal
+# utilities) and standard names (used when searching with pyesgf), between cmip5 and
+# cmip6 experiment names (so that the same string can be specified in function calls),
+# and between cmip5 model identifiers (may differ between dataset ids and file names).
+DECODE_FACETS = {
+    ('CMIP5', 'cmor_table'): 'table',
+    ('CMIP5', 'institution'): 'institute',
+    ('CMIP5', 'time_frequency'): 'frequency',
+    ('CMIP6', 'variable_id'): 'variable',
+    ('CMIP6', 'table_id'): 'table',
+    ('CMIP6', 'source_id'): 'model',
+    ('CMIP6', 'experiment_id'): 'experiment',
+    ('CMIP6', 'variant_label'): 'ensemble',
+    ('CMIP6', 'institution_id'): 'institute',
+}
+DECODE_MODELS = {
+    ('CMIP5', 'ACCESS1.0'): 'ACCESS1-0',
+    ('CMIP5', 'ACCESS1.3'): 'ACCESS1-3',
+    ('CMIP5', 'CSIRO-Mk3.6.0'): 'CSIRO-Mk3-6-0',
+    ('CMIP5', 'BCC-CSM1.1'): 'bcc-csm1-1',
+    ('CMIP5', 'INM-CM4'): 'inmcm4',
+}
+DECODE_EXPERIMENTS = {
+    ('CMIP5', 'hist-nat'): 'historicalNat',
+    ('CMIP5', 'hist-GHG'): 'historicalGHG',
+    ('CMIP5', 'esm-hist'): 'esmHistorical',
+    ('CMIP5', 'esm-piControl'): 'esmControl',
+    ('CMIP5', 'abrupt-4xCO2'): 'abrupt4xCO2',
+    ('CMIP6', 'historicalNat'): 'hist-nat',
+    ('CMIP6', 'historicalGHG'): 'hist-GHG',
+    ('CMIP6', 'esmHistorical'): 'esm-hist',
+    ('CMIP6', 'esmControl'): 'esm-piControl',
+    ('CMIP6', 'abrupt4xCO2'): 'abrupt-4xCO2',
+}
+
 # Ensemble labels associated with flagship versions of the pre-industrial control
 # and abrupt 4xCO2 experiments. Note the CNRM, MIROC, and UKESM models run both their
 # control and abrupt experiments with 'f2' forcing, HadGEM runs the abrupt experiment
@@ -102,72 +160,6 @@ ENSEMBLES_FLAGSHIP = {
     ('CMIP6', 'abrupt-4xCO2', 'HadGEM3-GC31-MM'): 'r1i1p1f3',
     ('CMIP6', 'abrupt-4xCO2', 'EC-Earth3'): 'r8i1p1f1',
 }
-
-# ESGF facets obtained with get_facet_options() for SearchContext(project='CMIP5')
-# and SearchContext(project='CMIP6'). See: https://github.com/WCRP-CMIP/CMIP6_CVs
-# NOTE: Includes mappings between 'aliases' (used with databases and other internal
-# utilities) and standard names (used when searching with pyesgf), between cmip5 and
-# cmip6 experiment names (so that the same string can be specified in function calls),
-# and between cmip5 model identifiers (may differ between dataset ids and file names).
-# The 'storage' and 'summarize' are for storage folder names and summarize reports.
-# Experiments: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_experiment_id.html
-# Institutions: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_institution_id.html
-# Models/sources: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_source_id.html
-FACETS_CMIP5 = [
-    'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
-    'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
-    'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
-    'variable', 'variable_long_name', 'version'
-]
-FACETS_CMIP6 = [
-    'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
-    'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
-    'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
-    'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
-    'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
-    'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
-]
-FACETS_DOTNAMES = {
-    ('CMIP5', 'ACCESS1.0'): 'ACCESS1-0',
-    ('CMIP5', 'ACCESS1.3'): 'ACCESS1-3',
-    ('CMIP5', 'CSIRO-Mk3.6.0'): 'CSIRO-Mk3-6-0',
-    ('CMIP5', 'BCC-CSM1.1'): 'bcc-csm1-1',
-    ('CMIP5', 'INM-CM4'): 'inmcm4',
-}
-FACETS_ESGNAMES = {
-    ('CMIP5', 'cmor_table'): 'table',
-    ('CMIP5', 'institution'): 'institute',
-    ('CMIP5', 'time_frequency'): 'frequency',
-    ('CMIP6', 'variable_id'): 'variable',
-    ('CMIP6', 'table_id'): 'table',
-    ('CMIP6', 'source_id'): 'model',
-    ('CMIP6', 'experiment_id'): 'experiment',
-    ('CMIP6', 'variant_label'): 'ensemble',
-    ('CMIP6', 'institution_id'): 'institute',
-}
-FACETS_RENAMES = {
-    ('CMIP5', 'hist-nat'): 'historicalNat',
-    ('CMIP5', 'hist-GHG'): 'historicalGHG',
-    ('CMIP5', 'esm-hist'): 'esmHistorical',
-    ('CMIP5', 'esm-piControl'): 'esmControl',
-    ('CMIP5', 'abrupt-4xCO2'): 'abrupt4xCO2',
-    ('CMIP6', 'historicalNat'): 'hist-nat',
-    ('CMIP6', 'historicalGHG'): 'hist-GHG',
-    ('CMIP6', 'esmHistorical'): 'esm-hist',
-    ('CMIP6', 'esmControl'): 'esm-piControl',
-    ('CMIP6', 'abrupt4xCO2'): 'abrupt-4xCO2',
-}
-FACETS_STORAGE = (  # naming of storage folders
-    'project',
-    'experiment',
-    'table',
-)
-FACETS_SUMMARIZE = (  # grouping in summarize logs
-    'project',
-    'experiment',
-    'table',
-    'variable',
-)
 
 # Model institutes (flagship models come last)
 # NOTE: This was copied from the INSTITUTES.txt file produced by manual_info.py, used
@@ -522,7 +514,7 @@ _item_years = lambda file: tuple(
 )
 _item_facets = {
     'institute': lambda file: MODELS_INSTITUTES.get(_item_facets['model'](file), 'UNKNOWN'),  # noqa: E501
-    'model': lambda file: FACETS_DOTNAMES.get(part := _item_part(file, 2), part),
+    'model': lambda file: DECODE_MODELS.get(part := _item_part(file, 2), part),
     'experiment': lambda file: _item_part(file, 3),
     'ensemble': lambda file: _item_part(file, 4),
     'table': lambda file: _item_part(file, 1),
@@ -554,7 +546,7 @@ _sort_part = lambda item, facet: (
     str(item) if '_' not in getattr(item, 'name', item)
     else _item_node(item) if facet == 'node'
     else _item_dates(item) if facet == 'dates'
-    else FACETS_DOTNAMES.get(part := _item_facets[facet](item), part)
+    else DECODE_MODELS.get(part := _item_facets[facet](item), part)
 )
 _sort_label = lambda item, facet: (
     (opts := (*SORT_OPTIONS.get(facet, ()), (part := _sort_part(item, facet))))
@@ -599,29 +591,29 @@ def _parse_constraints(decode=True, restrict=True, **constraints):
         facet: list(set(opts.split(',') if isinstance(opts, str) else opts))
         for facet, opts in constraints.items()
     }
-    dotnames_decode = FACETS_DOTNAMES.copy()  # convert dash names to dot names
-    dotnames_encode = {(_, dotname): name for (_, name), dotname in dotnames_decode.items()}  # noqa: E501
-    esgnames_decode = FACETS_ESGNAMES.copy()  # convert short names to long names
-    esgnames_encode = {(_, long): short for (_, short), long in esgnames_decode.items()}  # noqa: E501
+    decode_models = DECODE_MODELS.copy()  # convert dash names to dot names
+    encode_models = {(_, dotname): name for (_, name), dotname in decode_models.items()}  # noqa: E501
+    decode_facets = DECODE_FACETS.copy()  # convert short names to long names
+    encode_esgnames = {(_, long): short for (_, short), long in decode_facets.items()}  # noqa: E501
     projects = constraints.setdefault('project', ['CMIP6'])
     if len(projects) != 1:
         raise NotImplementedError('Non-scalar projects are not supported.')
     projects[:] = [project := projects[0].upper()]
-    dotnames = dotnames_decode if decode else dotnames_encode
-    esgnames = esgnames_decode if decode else esgnames_encode
-    renames = FACETS_RENAMES.copy()
+    get_model = decode_models if decode else encode_models
+    get_facet = decode_facets if decode else encode_esgnames
+    get_experiment = DECODE_EXPERIMENTS.copy()
     facets = (
         *(facet for facet in SORT_FACETS if facet in constraints),  # impose order
         *(facet for facet in constraints if facet not in SORT_FACETS),  # retain order
     )
     constraints = {
-        esgnames.get((project, facet), facet):
+        get_facet.get((project, facet), facet):
         _sort_items(
             (
-                dotnames.get((project, opt), renames.get((project, opt), opt))
+                get_model.get((project, opt), get_experiment.get((project, opt), opt))
                 for opt in constraints[facet]
             ),
-            esgnames_decode.get((project, facet), facet)  # single facet
+            decode_facets.get((project, facet), facet)  # single facet
         )
         for facet in facets
     }
