@@ -21,13 +21,13 @@ __all__ = [
 # Models/sources: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_source_id.html
 KEYS_STORAGE = ('project', 'experiment', 'table')
 KEYS_SUMMARIZE = ('project', 'experiment', 'table', 'variable')
-FACETS_CMIP5 = [
+KEYS_CMIP5 = [
     'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
     'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
     'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
     'variable', 'variable_long_name', 'version'
 ]
-FACETS_CMIP6 = [
+KEYS_CMIP6 = [
     'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
     'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
     'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
@@ -101,6 +101,13 @@ CORRUPT_FILES = [
 # utilities) and standard names (used when searching with pyesgf), between cmip5 and
 # cmip6 experiment names (so that the same string can be specified in function calls),
 # and between cmip5 model identifiers (may differ between dataset ids and file names).
+DECODE_MODELS = {
+    ('CMIP5', 'ACCESS1.0'): 'ACCESS1-0',
+    ('CMIP5', 'ACCESS1.3'): 'ACCESS1-3',
+    ('CMIP5', 'BCC-CSM1.1'): 'bcc-csm1-1',
+    ('CMIP5', 'CSIRO-Mk3.6.0'): 'CSIRO-Mk3-6-0',
+    ('CMIP5', 'INM-CM4'): 'inmcm4',
+}
 DECODE_FACETS = {
     ('CMIP5', 'cmor_table'): 'table',
     ('CMIP5', 'institution'): 'institute',
@@ -112,24 +119,17 @@ DECODE_FACETS = {
     ('CMIP6', 'variant_label'): 'ensemble',
     ('CMIP6', 'institution_id'): 'institute',
 }
-DECODE_MODELS = {
-    ('CMIP5', 'ACCESS1.0'): 'ACCESS1-0',
-    ('CMIP5', 'ACCESS1.3'): 'ACCESS1-3',
-    ('CMIP5', 'CSIRO-Mk3.6.0'): 'CSIRO-Mk3-6-0',
-    ('CMIP5', 'BCC-CSM1.1'): 'bcc-csm1-1',
-    ('CMIP5', 'INM-CM4'): 'inmcm4',
-}
 DECODE_EXPERIMENTS = {
-    ('CMIP5', 'hist-nat'): 'historicalNat',
-    ('CMIP5', 'hist-GHG'): 'historicalGHG',
-    ('CMIP5', 'esm-hist'): 'esmHistorical',
-    ('CMIP5', 'esm-piControl'): 'esmControl',
     ('CMIP5', 'abrupt-4xCO2'): 'abrupt4xCO2',
-    ('CMIP6', 'historicalNat'): 'hist-nat',
-    ('CMIP6', 'historicalGHG'): 'hist-GHG',
-    ('CMIP6', 'esmHistorical'): 'esm-hist',
-    ('CMIP6', 'esmControl'): 'esm-piControl',
+    ('CMIP5', 'esm-piControl'): 'esmControl',
+    ('CMIP5', 'esm-hist'): 'esmHistorical',
+    ('CMIP5', 'hist-GHG'): 'historicalGHG',
+    ('CMIP5', 'hist-nat'): 'historicalNat',
     ('CMIP6', 'abrupt4xCO2'): 'abrupt-4xCO2',
+    ('CMIP6', 'esmControl'): 'esm-piControl',
+    ('CMIP6', 'esmHistorical'): 'esm-hist',
+    ('CMIP6', 'historicalGHG'): 'hist-GHG',
+    ('CMIP6', 'historicalNat'): 'hist-nat',
 }
 
 # Ensemble labels associated with flagship versions of the pre-industrial control
