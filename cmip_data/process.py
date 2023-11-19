@@ -17,7 +17,7 @@ from icecream import ic  # noqa: F401
 
 from . import Atted, CDOException, Rename, cdo, nco
 from .facets import (
-    FACETS_STORAGE,
+    KEYS_STORAGE,
     KEYS_SUMMARIZE,
     STANDARD_GRIDSPEC_CMIP,
     STANDARD_LEVELS_CMIP5,
@@ -278,7 +278,7 @@ def process_files(
     dates, kwargs, constraints = _parse_time(constraints=True, **kwargs)
     print = Printer('process', *dates, **constraints) if logging else builtins.print
     files, *_ = glob_files(*paths, project=constraints.get('project'))
-    facets = facets or FACETS_STORAGE
+    facets = facets or KEYS_STORAGE
     database = Database(files, facets, **constraints)
     constants = Path(constants).expanduser()
     output = Path(output).expanduser()

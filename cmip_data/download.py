@@ -12,7 +12,7 @@ from pyesgf.search import SearchConnection
 
 from .facets import (
     ENSEMBLES_FLAGSHIP,
-    FACETS_STORAGE,
+    KEYS_STORAGE,
     KEYS_SUMMARIZE,
     URLS_HOSTS,
     Database,
@@ -377,7 +377,7 @@ def filter_script(
     print()
     prefix, suffix = _parse_script(files[0], complement=True)
     source = [line for file in files for line in _parse_script(file, complement=False)]
-    facets_intersect = facets_intersect or FACETS_STORAGE
+    facets_intersect = facets_intersect or KEYS_STORAGE
     database = Database(source, facets_intersect, **constraints)
     database.summarize(message='Initial groups', printer=print)
     groups = tuple(database.values())  # the group dictionaries
@@ -391,7 +391,7 @@ def filter_script(
     # NOTE: Must use maxyears - 1 or else e.g. 50 years with 190001-194912
     # will not "satisfy" the range and result in the next file downloaded.
     dests = []
-    facets_folder = facets_folder or FACETS_STORAGE
+    facets_folder = facets_folder or KEYS_STORAGE
     source = [line for lines in database for line in lines]
     database = Database(source, facets_folder, **constraints)
     database.summarize(message='Folder groups', printer=print)
