@@ -216,7 +216,8 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
 
 
 def load_file(
-    path, variable=None, project=None, validate=True, demote=True, printer=None,
+    path, variable=None, project=None, validate=False,
+    lazy=False, demote=None, printer=None, **kwargs,
 ):
     """
     Load an output dataset and possibly standardize time and pressure coordinates.
@@ -225,16 +226,20 @@ def load_file(
     ----------
     path : path-like
         The path.
-    variable : str, optional
-        The variable. If passed a data array is returned.
+    variable : str or sequence, optional
+        The variable(s). If string a data array is returned.
     project : str, optional
         The project. If passed pressure levels are standardized.
-    validate : bool, optional
+    validate : bool, default: False
         Whether to validate against quality control ranges.
-    demote : bool, optional
+    lazy : bool, default: False
+        Whether to load the dataset into memory immediately.
+    demote : bool, default: ``not lazy``
         Whether to demote the precision to float32 for speed.
     printer : callable, optional
         The printer.
+    **kwargs
+        Passed to `xarray.load_dataset` or `xarray.open_dataset`
 
     Returns
     -------
@@ -257,15 +262,20 @@ def load_file(
     # (i.e. did not slice first) and remains as a session variable (e.g. not a function
     # variable) then may still cause memory issues. Should be lazy-loading aware in
     # all dataset manipulations. See: https://stackoverflow.com/a/45644654/4970632.
+    variable = variable if isinstance(variable, str) else list(variable or ())
+    demote = not lazy if demote is None else demote
     print = printer or builtins.print
-    dataset = xr.load_dataset(path, use_cftime=True)  # see above
-    dataset = dataset.drop_vars(dataset.coords.keys() - dataset.sizes.keys())
-    for coord in dataset.coords.values():  # remove missing bounds variables
+    kwargs.setdefault('use_cftime', True)
+    if lazy:  # open read-only view
+        data = xr.open_dataset(path, **kwargs)
+    else:  # open and load into memory
+        data = xr.load_dataset(path, **kwargs)
+    drop = data.coords.keys() - data.sizes.keys()
+    data = data.drop_vars(drop)
+    if variable:
+        data = data[variable]
+    for coord in data.coords.values():  # remove missing bounds variables
         coord.attrs.pop('bounds', None)
-    if variable is None:
-        data = dataset
-    else:
-        data = dataset[variable]
     if demote:  # also triggers lazy load so should remove if switching workflows
         data = data.astype(np.float32)
 

@@ -142,6 +142,7 @@ DECODE_EXPERIMENTS = {
 ENSEMBLES_FLAGSHIP = {
     ('CMIP5', None, None): 'r1i1p1',
     ('CMIP6', None, None): 'r1i1p1f1',
+    ('CERES', None, None): 'flagship',
     ('CMIP6', 'piControl', 'CNRM-CM6-1'): 'r1i1p1f2',
     ('CMIP6', 'piControl', 'CNRM-CM6-1-HR'): 'r1i1p1f2',
     ('CMIP6', 'piControl', 'CNRM-ESM2-1'): 'r1i1p1f2',
@@ -167,13 +168,12 @@ ENSEMBLES_FLAGSHIP = {
 # this was unreliable (e.g. ACCESS/CSIRO are CSIRO, MPI/ICON are MPI, and CESM/CCSM are
 # NCAR). Some institutes also changed ids between cmip5 and cmip6 (e.g. dash instead
 # of space or new collaborators appended with dashes) -- fixed this so institues can be
-# identified across projects (original ids are in comments below). Also include ISO
-# 3166 country codes from https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
+# identified across projects (original ids are in comments below).
 # NOTE: Preferred model variants from the same institute are last (see _parse_projects
-# in reduce.py). In general prefer earth system, high resolution, recent versions.
-# Prefer ACCESS to CSIRO becase former is more complex.
-# See: https://www.researchgate.net/publication/258763480_The_ACCESS_coupled_model_Description_control_climate_and_evaluation  # noqa: E501
-# Prefer ESM2M to ESM2G since it simulates surface climate better.
+# in reduce.py). in general prefer earth system, high resolution, recent versions.
+# prefer access to csiro becase former is more complex.
+# # See: https://www.researchgate.net/publication/258763480_The_ACCESS_coupled_model_Description_control_climate_and_evaluation  # noqa: E501
+# # Prefer ESM2M to ESM2G since it simulates surface climate better.
 # See: https://journals.ametsoc.org/view/journals/clim/25/19/jcli-d-11-00560.1.xml
 # Prefer more updated GISS-E2-H ocean model to GISS-E2-R ocean model.
 # See: https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2013MS000265
@@ -675,7 +675,7 @@ def glob_files(*paths, pattern='*', project=None):
         (
             file for ext in ('.nc', '.nc[0-9]') for path in paths
             for folder in (
-                (path,) if 'ceres' in Path(path).name  # observations special case
+                (Path(path).expanduser(),) if project in ('ceres',)
                 else Path(path).expanduser().glob(f'{project}*')
             )
             for file in folder.glob(pattern + ext)

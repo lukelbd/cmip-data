@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 
-# Global constants
+# Feedback constants
 # WARNING: Previously skipped rsdt since it is 'constant' but found with CERES data
 # that since seasonal cycle so much larger than global trends (plus possibly due to
 # solar trends) it can then show up in monthly regressions. Critical to include.
@@ -684,7 +684,8 @@ def _fluxes_from_anomalies(
 
 
 def _feedbacks_from_fluxes(
-    fluxes, style=None, forcing=None, pattern=True, components=None, boundaries=None, verbose=True, printer=None, **kwargs  # noqa: E501
+    fluxes, style=None, forcing=None,
+    pattern=True, components=None, boundaries=None, verbose=True, printer=None, **kwargs  # noqa: E501
 ):
     """
     Return a dataset with feedbacks calculated along different surface temperature
