@@ -88,14 +88,14 @@ VARIABLE_DEPENDENCIES = {
 }
 
 
-def _regress_monthly(numer, denom, proj=False):
+def _regress_monthly(denom, numer, proj=False):
     """
     Return a monthly-style weighted feedback regression.
 
     Parameters
     ----------
-    numer, denom : xarray.DataArray
-        The numerator and denominator.
+    denom, numer : xarray.DataArray
+        The denominator and numerator for the regression.
     proj : bool, optional
         Whether to return the slope scaled by standard deviation or the y-intercept.
     """
@@ -118,14 +118,14 @@ def _regress_monthly(numer, denom, proj=False):
     return slope, extra
 
 
-def _regress_annual(numer, denom, proj=False):
+def _regress_annual(denom, numer, proj=False):
     """
     Return an annual average-style feedback regression.
 
     Parameters
     ----------
-    numer, denom : xarray.DataArray
-        The numerator and denominator.
+    denom, numer : xarray.DataArray
+        The denominator and numerator for the regression.
     proj : bool, optional
         Whether to return the slope scaled by standard deviation or the y-intercept.
     """
@@ -825,10 +825,10 @@ def _feedbacks_from_fluxes(
         # but piControl regressions are *always* centered on origin because they
         # are deviations from the average by *construction*. So unnecessary.
         if style == 'monthly':  # simple weighted monthly regressions
-            lam, erf = _regress_monthly(flux, temp)
+            lam, erf = _regress_monthly(temp, flux)
             erf = 0.5 * erf  # double CO2
         elif style == 'annual':  # denominator filled with annual averages
-            lam, erf = _regress_annual(flux, temp)
+            lam, erf = _regress_annual(temp, flux)
             erf = 0.5 * erf  # double CO2
         else:
             erf = forcing.climo.get(f'{name}_erf', quantify=True).assign_coords(time=temp.time)  # noqa: E501
@@ -879,15 +879,14 @@ def _feedbacks_from_fluxes(
             data = data.mean(dim='time', keep_attrs=True)
         output[key] = data.climo.dequantify()
     if pattern:
-        numer = temp.sel(region='point')  # original monthly data
         denom = temp.sel(region='globe')  # annual-averaged data
+        numer = temp.sel(region='point')  # original monthly data
         if style == 'monthly':
-            slope, proj = _regress_monthly(numer, denom, proj=True)
+            slope, proj = _regress_monthly(denom, numer, proj=True)
         elif style == 'annual':
-            slope, proj = _regress_annual(numer, denom, proj=True)
-        else:
-            proj = numer  # simply the actual warming
-            slope = numer / denom  # simply the ratio of differences
+            slope, proj = _regress_annual(denom, numer, proj=True)
+        else:  # ratio-feedback 'slope' is ratio of changes, 'proj' is absolute change
+            slope, proj = numer / denom, numer
         proj = proj.climo.dequantify()
         proj = proj.assign_coords(region='globe').expand_dims('region')
         proj.attrs.update(units='K', long_name='regional warming')
