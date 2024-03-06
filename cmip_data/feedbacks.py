@@ -1037,11 +1037,9 @@ def get_feedbacks(
         (feedbacks, 'feedbacks', style, early),  # ratio forcing file
     )
     for folder, prefix, suffix, times in tuples:
-        file = _item_label(
-            prefix, table, model, experiment, ensemble,
-            (*(format(int(t), '04d') for t in times), source, suffix, nodrift),
-            modify=False
-        ) + '.nc'
+        version = (*(format(int(t), '04d') for t in times), source, suffix, nodrift)
+        parts = (prefix, table, model, experiment, ensemble, version)
+        file = _item_label(*parts, modify=False) + '.nc'
         path = Path(folder).expanduser() / subfolder / file
         path.parent.mkdir(exist_ok=True)
         outputs.append(path)
@@ -1252,12 +1250,13 @@ def process_feedbacks(
             response_suffix,
             printer=print,
         )
+        item = tuple(files.values())[0][1]
         try:
             datasets = get_feedbacks(
                 project=group['project'],
-                experiment=_item_facets['experiment'](tuple(files.values())[0][1]),
-                ensemble=_item_facets['ensemble'](tuple(files.values())[0][1]),
-                table=_item_facets['table'](tuple(files.values())[0][1]),
+                experiment=_item_facets['experiment'](item),
+                ensemble=_item_facets['ensemble'](item),
+                table=_item_facets['table'](item),
                 model=group['model'],
                 select=select,
                 entire=entire,

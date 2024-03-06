@@ -586,6 +586,8 @@ def get_climate(output=None, project=None, **inputs):
         each variable. The variables computed will depend on the variables passed.
     """
     # Load the data
+    # TODO: Support automatically saving and loading with pre-computed derived
+    # variables e.g. transport. Similar to feedbacks.py flux and feedback files.
     # NOTE: Critical to overwrite the time coordinates after loading or else xarray
     # coordinate matching will apply all-NaN values for climatolgoies with different
     # base years (e.g. due to control data availability or response calendar diffs).
@@ -602,12 +604,12 @@ def get_climate(output=None, project=None, **inputs):
             output[variable] = array
 
     # Standardize the data
-    # NOTE: Empirical testing revealed limiting integration to troposphere
-    # often prevented strong transient heat transport showing up in overturning
-    # cells due to aliasing of overemphasized stratospheric geopotential transport.
     # WARNING: Critical to place time averaging after transport calculations so that
     # time-covariance of surface pressure and near-surface flux terms is factored
     # in (otherwise would need to include cell heights before averaging).
+    # NOTE: Empirical testing revealed limiting integration to troposphere
+    # often prevented strong transient heat transport showing up in overturning
+    # cells due to aliasing of overemphasized stratospheric geopotential transport.
     from coupled.climate import _add_energetics, _add_hydrology, _add_transport
     dataset = xr.Dataset(output)
     if 'ps' not in dataset:
@@ -722,12 +724,13 @@ def process_climate(
             series_suffix,
             printer=print,
         )
+        item = tuple(files.values())[0][1]
         try:
             datasets = get_climate(
                 project=group['project'],
-                experiment=_item_facets['experiment'](tuple(files.values())[0][1]),
-                ensemble=_item_facets['ensemble'](tuple(files.values())[0][1]),
-                table=_item_facets['table'](tuple(files.values())[0][1]),
+                experiment=_item_facets['experiment'](item),
+                ensemble=_item_facets['ensemble'](item),
+                table=_item_facets['table'](item),
                 model=group['model'],
                 printer=print,
                 dryrun=dryrun,

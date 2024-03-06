@@ -14,8 +14,15 @@ __all__ = [
     'Printer',
 ]
 
-# Facets used for folders and summarize logs. Used SearchContext(project='CMIP5]')
-# then .get_facet_options() to get all options shown below.
+# Regular expressions
+# NOTE: This is used to sort ensembles before loading into databases or datasets
+# so that we can rename them with consistent 'ensemble01' 'ensemble02' increments
+# under the same 'ensemble' coordinate across multiple projects and models.
+REGEX_ENSEMBLE = re.compile(r'\Ar(\d+)?i(\d+)p(\d+)(?:f(\d+))?\Z')
+
+# Facets used for folders and summarize logs
+# NOTE: To generate options shown below used SearchContext(project='CMIP5]') then
+# .get_facet_options(). See also 'DECODE_FACETS' below.
 # Experiments: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_experiment_id.html
 # Institutions: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_institution_id.html
 # Models/sources: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_source_id.html
@@ -512,11 +519,18 @@ _item_dates = lambda file: (
 _item_years = lambda file: tuple(
     int(s[:4]) for s in _item_dates(file).split('-')[:2]
 )
+_item_member = lambda item: '-'.join(
+    (format(int(n or 0), '02d') for n in m.groups()) if (m := REGEX_ENSEMBLE.match(item)) else ()  # noqa: E501
+)
+_item_decodes = {
+    'institute': lambda item: MODELS_INSTITUTES.get(item, 'UNKNOWN'),
+    'model': lambda item: {i: j for (_, i), j in DECODE_MODELS.items()}.get(item, item),
+}
 _item_facets = {
-    'institute': lambda file: MODELS_INSTITUTES.get(_item_facets['model'](file), 'UNKNOWN'),  # noqa: E501
-    'model': lambda file: DECODE_MODELS.get(part := _item_part(file, 2), part),
-    'experiment': lambda file: _item_part(file, 3),
-    'ensemble': lambda file: _item_part(file, 4),
+    'institute': lambda file: _item_decodes['institute'](_item_part(file, 2)),
+    'model': lambda file: _item_decodes['model'](_item_part(file, 2)),
+    'experiment': lambda file: _item_part(file, 3),  # no decode
+    'ensemble': lambda file: _item_part(file, 4),  # no decode
     'table': lambda file: _item_part(file, 1),
     'variable': lambda file: _item_part(file, 0),
     'grid': lambda file: g if (g := _item_part(file, -2))[0] == 'g' else 'g',
@@ -546,18 +560,18 @@ _sort_part = lambda item, facet: (
     str(item) if '_' not in getattr(item, 'name', item)
     else _item_node(item) if facet == 'node'
     else _item_dates(item) if facet == 'dates'
-    else DECODE_MODELS.get(part := _item_facets[facet](item), part)
+    else _item_member(_item_facets[facet](item)) if facet == 'ensemble'
+    else _item_facets[facet](item)
 )
-_sort_label = lambda item, facet: (
-    (opts := (*SORT_OPTIONS.get(facet, ()), (part := _sort_part(item, facet))))
-    and (
+_sort_label = lambda part, facet: (
+    (opts := (*SORT_OPTIONS.get(facet, ()), part)) and (
         f'{opts.index(part):02d}_{part}' if facet not in ('node', 'experiment')
         else min(f'{idx:02d}_{opt}' for idx, opt in enumerate(opts) if opt.lower() in part.lower())  # noqa: E501
     )
 )
 _sort_items = lambda items, facets: sorted(
     items, key=lambda item: tuple(
-        _sort_label(item, facet)
+        _sort_label(_sort_part(item, facet), facet)
         for facet in ((facets,) if isinstance(facets, str) else tuple(facets))
     )
 )
@@ -826,18 +840,21 @@ class Database(object):
         facets_key = tuple(facet for facet in _item_facets if facet not in facets)
 
         # Add lists to sub-dictionaries
-        # NOTE: Institute translating utilities
         # NOTE: Have special handling for feedback files -- only include when
         # users explicitly pass variable='feedbacks', exclude otherwise.
+        ensembles = {}
         self.database = {}
         for value in _sort_items(source, facets=(*facets_group[1:], *facets_key)):
             parts = {'project': project}
             parts.update({facet: func(value) for facet, func in _item_facets.items()})
-            key_flagship = (project, parts['experiment'], parts['model'])
-            ens_default = ENSEMBLES_FLAGSHIP[project, None, None]
-            ens_flagship = ENSEMBLES_FLAGSHIP.get(key_flagship, ens_default)
-            if flagship_translate and parts['ensemble'] == ens_flagship:
-                parts['ensemble'] = 'flagship'  # otherwise retain ensemble
+            model, exp, ens = (parts[key] for key in ('model', 'experiment', 'ensemble'))  # noqa: E501
+            flagship = ENSEMBLES_FLAGSHIP[project, None, None]
+            flagship = ENSEMBLES_FLAGSHIP.get((project, model, exp), flagship)
+            members = ensembles.setdefault(model, [])  # ensemble members
+            members.extend(() if ens == flagship or ens in members else (ens,))
+            number = 0 if ens == flagship else 1 + members.index(ens)
+            if flagship_translate:  # translated ensemble member
+                parts['ensemble'] = 'flagship' if flagship else f'ensemble{number:02d}'
             if any(opt not in constraints.get(facet, (opt,)) for facet, opt in parts.items()):  # noqa: E501
                 continue  # item not in constraints
             if parts['variable'] == 'feedbacks' and 'feedbacks' not in constraints.get('variable', ()):  # noqa: E501
