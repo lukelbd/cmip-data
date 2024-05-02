@@ -478,10 +478,7 @@ URLS_NODES = [
 # model=$(echo $f | cut -d_ -f3); [[ " ${models[*]} " =~ " $model " ]] && continue
 # models+=("$model"); echo "$model:" && ncdims $f | grep -E 'lat|lon' | tr -s ' ' | xargs; done  # noqa: E501
 # 'r360x180'  # 1.0 deg, 'r180x90'  # 2.0 deg, 'r144x72'  # 2.5 deg
-STANDARD_GRIDSPEC_CMIP = (
-    'r72x36'  # 5.0 degree resolution
-    # 'r144x72'  # 2.5 degree resolution
-)
+STANDARD_GRIDSPEC = 'r72x36'  # 5.0 degree resolution
 STANDARD_LEVELS_CMIP5 = 100 * np.array(
     [
         1000, 925, 850, 700, 600, 500, 400, 300, 250,  # tropospheric
