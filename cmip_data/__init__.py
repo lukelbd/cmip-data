@@ -25,8 +25,11 @@ import os
 from cdo import Cdo, CDOException  # noqa: F401
 from nco import Nco, NCOException  # noqa: F401
 from nco.custom import Atted, Rename  # noqa: F401
-from icecream import ic, colorize
-ic.configureOutput(outputFunction=lambda *args: print(colorize(*args)))
+from icecream import ic, colorize, pprint
+ic.configureOutput(
+    outputFunction=lambda *args: print(colorize(*args)),
+    argToStringFunction=lambda x: pprint.pformat(x, sort_dicts=False),
+)
 os.environ['CDO_TIMESTAT_DATE'] = 'first'
 cdo = Cdo(options=['-s'])
 nco = Nco()  # overwrite is default, and see https://github.com/nco/pynco/issues/56

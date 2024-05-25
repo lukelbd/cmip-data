@@ -19,7 +19,7 @@ from . import Atted, CDOException, Rename, cdo, nco
 from .facets import (
     KEYS_STORAGE,
     KEYS_SUMMARIZE,
-    STANDARD_GRIDSPEC_CMIP,
+    STANDARD_GRIDSPEC,
     STANDARD_LEVELS_CMIP5,
     STANDARD_LEVELS_CMIP6,
     Database,
@@ -1262,7 +1262,7 @@ def standardize_horizontal(
     output = _output_path(output or path.parent, path.stem, 'standard-horizontal')
     method = method or 'con'
     method = method if method[:3] == 'gen' else 'gen' + method
-    gridspec = STANDARD_GRIDSPEC_CMIP if gridspec is None else gridspec
+    gridspec = STANDARD_GRIDSPEC if gridspec is None else gridspec
     if not overwrite and output.is_file() and output.stat().st_size > 0:
         print(f'Output file already exists: {output.name!r}.')
         return output

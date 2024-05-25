@@ -75,7 +75,6 @@ if starts:
         debug.write(f'Model: {model} ')
         debug.write(f'Experiment: {experiment}\n')
         attrs = _parse_dump(file)[2]
-
         # Time information
         info, time = attrs[''], attrs['time']
         start = file.name.split('_')[-1].split('-')[0][:6]
