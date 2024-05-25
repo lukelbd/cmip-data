@@ -2,7 +2,7 @@
 """
 Create files containing combined time-mean and time-variance quantities.
 """
-# TODO: Add coupled/climate.py utilities here and support feedback-style
+# Todo: Add coupled/climate.py utilities here and support feedback-style
 # regressions of circulation variables against surface temperature.
 import builtins
 import itertools
@@ -26,17 +26,17 @@ __all__ = [
 ]
 
 # Regular expressions
-# NOTE: Period keys are outdated, currently only used with previous 'slope'
+# Note: Period keys are outdated, currently only used with previous 'slope'
 # feedback files but for climate data simply load monthly data, average later.
 REGEX_DIRECTION = re.compile(r'(upwelling|downwelling|outgoing|incident)')
 REGEX_EXPONENT = re.compile(r'([a-df-zA-DF-Z]+)([-+]?[0-9]+)')
 
 # Energetics constants
-# NOTE: Here the flux components table was copied from feedbacks.py. Critical
+# Note: Here the flux components table was copied from feedbacks.py. Critical
 # to get net fluxes and execute renames before running transport derivations.
-# NOTE: Here the %s is filled in with water, liquid, or ice depending on the
+# Note: Here the %s is filled in with water, liquid, or ice depending on the
 # component of the particular variable category.
-# NOTE: Rename native surface budget terms to look more like cloud water and
+# Note: Rename native surface budget terms to look more like cloud water and
 # ice terms. Then use 'prl'/'prp' and 'evl'/'evp' for ice components.
 HYDRO_DEPENDENCIES = {
     'hur': ('plev', 'ta', 'hus'),
@@ -66,10 +66,10 @@ ENERGY_COMPONENTS = {
 }
 
 # Transport constants
-# NOTE: See Donohoe et al. (2020) for details on transport terms. Precipitation appears
+# Note: See Donohoe et al. (2020) for details on transport terms. Precipitation appears
 # in the dry static energy formula because unlike surface evaporation, it deposits heat
 # inside the atmosphere, i.e. it remains after subtracting surface and TOA loss terms.
-# NOTE: Duffy et al. (2018) and Mayer et al. (2020) suggest a snow correction of
+# Note: Duffy et al. (2018) and Mayer et al. (2020) suggest a snow correction of
 # energy budget is necessary, and Armour et al. (2019) suggests correcting for
 # "latent heat associated with falling snow", but this is relative to estimate of
 # hfls from idealized expression for *evaporation over ocean* based on temperature
@@ -168,7 +168,7 @@ def _add_energetics(
     correct_solar : bool, optional
         Whether to correct zonal variations in insolation by replacing with averages.
     """
-    # NOTE: Here also add 'albedo' term and generate long name by replacing directional
+    # Note: Here also add 'albedo' term and generate long name by replacing directional
     # terms in existing long name. Remove the directional components when finished.
     for key, name in ENERGY_RENAMES.items():
         if key in dataset:
@@ -222,7 +222,7 @@ def _add_hydrology(
         Whether to keep separate liquid and ice parts in addition to ice ratio.
     """
     # Add humidity terms
-    # NOTE: Generally forego downloading relative humidity variables... true that
+    # Note: Generally forego downloading relative humidity variables... true that
     # operation is non-linear so relative humidity of climate is not climate of
     # relative humiditiy, but we already use this approach with feedback kernels.
     for name, keys in HYDRO_DEPENDENCIES.items():
@@ -242,7 +242,7 @@ def _add_hydrology(
             dataset[name] = data
 
     # Add cloud terms
-    # NOTE: Unlike related variables (including, confusingly, clwvi), 'clw' includes
+    # Note: Unlike related variables (including, confusingly, clwvi), 'clw' includes
     # only liquid component rather than combined liquid plus ice. Adjust it to match
     # convention from other variables and add other component terms.
     if 'clw' in dataset:
@@ -312,7 +312,7 @@ def _add_transport(
         Whether to compute additional flux estimates.
     """
     # Get implicit ocean, dry, and latent transport
-    # WARNING: This must come after _add_energetics introduces 'net'
+    # Warning: This must come after _add_energetics introduces 'net'
     # components. Also previously removed contributors to implicit calculations
     # but not anymore... might consider adding back.
     idxs, ends = (0,), ('',)
@@ -342,7 +342,7 @@ def _add_transport(
         dataset = dataset.drop_vars(drop)
 
     # Get explicit dry, latent, and moist transport
-    # NOTE: The below regex prefixes exponents expressed by numbers adjacent to units
+    # Note: The below regex prefixes exponents expressed by numbers adjacent to units
     # with the carat ^, but ignores the scientific notation 1.e6 in scaling factors,
     # so dry static energy convergence units can be parsed as quantities.
     keys_explicit = set()
@@ -367,13 +367,13 @@ def _add_transport(
         dataset = dataset.drop_vars(drop)
 
     # Get mean transport, stationary transport, and stationary convergence
-    # TODO: Stop storing these. Instead implement in loading func or as climopy
+    # Todo: Stop storing these. Instead implement in loading func or as climopy
     # derivations. Currently get simple summation, product, and difference terms
     # on-the-fly (e.g. mse and total transport) but need to support more complex stuff.
     iter_ = tuple(TRANSPORT_INDIVIDUAL.items())
     for name, (quant, scale, _) in iter_:
         descrip = TRANSPORT_DESCRIPTIONS[name]
-        if (parts_eddies or parts_static) and (  # TODO: then remove after adding?
+        if (parts_eddies or parts_static) and (  # Todo: then remove after adding?
             'ps' in dataset and 'va' in dataset and quant in dataset
         ):
             qdata = scale * dataset.climo.vars[quant]
@@ -384,7 +384,7 @@ def _add_transport(
             dataset[f'm{name}t'] = mdata  # mean component of meridional transport
 
     # Get missing transient components and total sensible and geopotential terms
-    # NOTE: Transient sensible transport is calculated from the residual of the dry
+    # Note: Transient sensible transport is calculated from the residual of the dry
     # static energy minus both the sensible and geopotential stationary components. The
     # all-zero transient geopotential is stored for consistency if sensible is present.
     iter_ = itertools.product(TRANSPORT_INDIVIDUAL, ('cs', 'tsm'), ends)
@@ -411,7 +411,7 @@ def _add_transport(
                 dataset[f'{name}{suffix}{end}'] = data
 
     # Get average flux terms from the integrated terms
-    # NOTE: Flux values will have units K/s, m2/s2, and g/kg m/s and are more relevant
+    # Note: Flux values will have units K/s, m2/s2, and g/kg m/s and are more relevant
     # to local conditions on a given latitude band. Could get vertically resolved values
     # for stationary components, but impossible for residual transient component, so
     # decided to only store this 'vertical average' for consistency.
@@ -431,7 +431,7 @@ def _add_transport(
                 dataset[f'{prefix}{name}f{end}'] = data.climo.dequantify()
 
     # Get dry static energy components from sensible and geopotential components
-    # NOTE: Here a residual between total and storage + ocean would also suffice
+    # Note: Here a residual between total and storage + ocean would also suffice
     # but this also gets total transient and stationary static energy terms. Also
     # have support for adding geopotential plus
     prefixes = ('', 'm', 's', 't')  # total, zonal-mean, stationary, transient
@@ -476,7 +476,7 @@ def _infer_transport(data, descrip=None, prefix=None, residual=True):
         The meridional transport.
     """
     # Get convergence and residual
-    # NOTE: This requires cell measures are already present for consistency with the
+    # Note: This requires cell measures are already present for consistency with the
     # explicit transport function, which requires a surface pressure dependence.
     data = data.climo.quantify()
     descrip = f'{descrip} ' if descrip else ''
@@ -486,7 +486,7 @@ def _infer_transport(data, descrip=None, prefix=None, residual=True):
     rdata = cdata.climo.average('area').drop_vars(('lon', 'lat'))
     rdata.attrs['long_name'] = f'{prefix}{descrip}energy residual'
     # Get meridional transport
-    # WARNING: Cumulative integration in forward or reverse direction will produce
+    # Warning: Cumulative integration in forward or reverse direction will produce
     # estimates respectively offset-by-one, so compensate by taking average of both.
     tdata = cdata - rdata if residual else cdata
     tdata = tdata.climo.integral('lon')
@@ -528,7 +528,7 @@ def _process_transport(udata, vdata, qdata, descrip=None, prefix=None):
         The zonal-mean transport.
     """
     # Get convergence
-    # NOTE: This requires cell measures are already present rather than auto-adding
+    # Note: This requires cell measures are already present rather than auto-adding
     # them, since we want to include surface pressure dependence supplied by dataset.
     descrip = descrip and f'{descrip} ' or ''
     qdata = qdata.climo.quantify()
@@ -546,7 +546,7 @@ def _process_transport(udata, vdata, qdata, descrip=None, prefix=None):
     cdata.attrs['long_name'] = f'{string}{descrip}energy convergence'
     cdata.attrs['standard_units'] = 'W m^-2'  # prevent cfvariable auto-inference
     # Get transport components
-    # NOTE: This depends on the implicit weight cell_height getting converted to its
+    # Note: This depends on the implicit weight cell_height getting converted to its
     # longitude-average value during the longitude-integral (see _integral_or_average).
     vmean, qmean = vdata.climo.average('lon'), qdata.climo.average('lon')
     sdata = (vdata - vmean) * (qdata - qmean)  # width and height measures removed
@@ -586,9 +586,9 @@ def get_climate(output=None, project=None, **inputs):
         each variable. The variables computed will depend on the variables passed.
     """
     # Load the data
-    # TODO: Support automatically saving and loading with pre-computed derived
+    # Todo: Support automatically saving and loading with pre-computed derived
     # variables e.g. transport. Similar to feedbacks.py flux and feedback files.
-    # NOTE: Critical to overwrite the time coordinates after loading or else xarray
+    # Note: Critical to overwrite the time coordinates after loading or else xarray
     # coordinate matching will apply all-NaN values for climatolgoies with different
     # base years (e.g. due to control data availability or response calendar diffs).
     climate, series = {}, {}
@@ -604,10 +604,10 @@ def get_climate(output=None, project=None, **inputs):
             output[variable] = array
 
     # Standardize the data
-    # WARNING: Critical to place time averaging after transport calculations so that
+    # Warning: Critical to place time averaging after transport calculations so that
     # time-covariance of surface pressure and near-surface flux terms is factored
     # in (otherwise would need to include cell heights before averaging).
-    # NOTE: Empirical testing revealed limiting integration to troposphere
+    # Note: Empirical testing revealed limiting integration to troposphere
     # often prevented strong transient heat transport showing up in overturning
     # cells due to aliasing of overemphasized stratospheric geopotential transport.
     from coupled.climate import _add_energetics, _add_hydrology, _add_transport
@@ -670,10 +670,10 @@ def process_climate(
         Passed to `compute_feedbacks`.
     """
     # Find files and restrict to unique constraints
-    # NOTE: This requires flagship translation or else models with different control
+    # Note: This requires flagship translation or else models with different control
     # and abrupt runs are not grouped together. Not sure how to handle e.g. non-flagship
     # abrupt runs from flagship control runs but cross that bridge when we come to it.
-    # NOTE: Paradigm is to use climate monthly mean surface pressure when interpolating
+    # Note: Paradigm is to use climate monthly mean surface pressure when interpolating
     # to model levels and keep surface pressure time series when getting feedback
     # kernel integrals. Helps improve accuracy since so much stuff depends on kernels.
     logging = logging and not dryrun
@@ -700,7 +700,7 @@ def process_climate(
     database = Database(files, facets, **constraints)
 
     # Calculate clear and all-sky feedbacks surface and TOA files
-    # NOTE: Unlike the method that uses a fixed SST experiment to deduce forcing and
+    # Note: Unlike the method that uses a fixed SST experiment to deduce forcing and
     # takes the ratio of local radiative flux change to global temperature change as
     # the feedback, the average of a regression of radiative flux change against global
     # temperature change will not necessarily equal the regression of average radiative

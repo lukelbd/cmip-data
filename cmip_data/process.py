@@ -57,7 +57,7 @@ def _parse_time(
     **kwargs
         See `standardize_time` for details.
     """
-    # NOTE: File format is e.g. 'file_0000-1000-climate-nodrift.nc'. Each modeling
+    # Note: File format is e.g. 'file_0000-1000-climate-nodrift.nc'. Each modeling
     # center uses different date schemes for experiments so years must be relative.
     # Similar to 'file_standard-grid.nc' and 'file_standard-levs.nc' used below.
     if not np.iterable(years):
@@ -94,11 +94,11 @@ def _parse_dump(path):
     path : path-like
         The input path.
     """
-    # NOTE: This approach is recommended by nco manual (ncks --cdl -m is ncdump -h
+    # Note: This approach is recommended by nco manual (ncks --cdl -m is ncdump -h
     # without global attributes, and ncks --cdl -M is ncdump -h without variable
     # attributes). Use this instead of e.g. netCDF4 for consistency with the rest
     # of workflow. See: http://nco.sourceforge.net/nco.html#Filters-for-ncks
-    # NOTE: Here use unique type identifiers to consistently identify variables.
+    # Note: Here use unique type identifiers to consistently identify variables.
     # Otherwise common to match e.g. variable appearences in 'formula' attributes.
     # Also try to match e.g. 'time = UNLIMITED // (100 currently)' dimension sizes
     # and trim e.g. '1.e+20f' numeric type indicator suffixes in attribute values.
@@ -136,7 +136,7 @@ def _parse_descrips(data):
     data : str or list
         The cdo grid or zaxis data file (or result of `cdo.griddes` or `cdo.zaxisdes`).
     """
-    # NOTE: All cdo descriptions are formatted with block comment headers i.e.
+    # Note: All cdo descriptions are formatted with block comment headers i.e.
     # '#\n# [Axis|Grid] 1\n#\n...', then scalar items appearing after the equal sign
     # on the same line and only arrays formatted on multiple lines.
     grids = []
@@ -269,7 +269,7 @@ def process_files(
         Passed to `Printer` and `Database`.
     """
     # Find files and restrict to unique constraints
-    # NOTE: Here we only constrain search to the project, which is otherwise not
+    # Note: Here we only constrain search to the project, which is otherwise not
     # indicated in native netcdf filenames. Similar approach to filter_script().
     logging = logging and not dryrun
     levels, search = kwargs.pop('levels', None), kwargs.pop('search', None)
@@ -284,9 +284,9 @@ def process_files(
     output = Path(output).expanduser()
 
     # Initialize cdo and process files.
-    # NOTE: Here perform horizontal interpolation before vertical interpolation because
+    # Note: Here perform horizontal interpolation before vertical interpolation because
     # latter adds NaNs and extrapolated data so should delay that step until very end.
-    # NOTE: Currently 'pfull' data is stored in separate 'data-dependencies' folder
+    # Note: Currently 'pfull' data is stored in separate 'data-dependencies' folder
     # but 'ps' data is stored in normal folders since it is used for time-varying
     # vertical integration of kernels and is always available.
     kw = {'overwrite': overwrite, 'printer': print}
@@ -299,7 +299,7 @@ def process_files(
     )
     for files in database:
         # Initial stuff
-        folder = output / files[0].parent.name  # TODO: use explicit components?
+        folder = output / files[0].parent.name  # Todo: use explicit components?
         folder.mkdir(exist_ok=True)
         model = _item_facets['model'](files[0])
         variable = _item_facets['variable'](files[0])
@@ -410,7 +410,7 @@ def repair_files(*paths, dryrun=False, printer=None):
     """
     # Declare attribute edits for converting pure sigma coordinates to hybrid and for
     # handling non-standard hybrid pressure coordinates using 'ap' instead of 'a * p0'.
-    # NOTE: For cdo to successfully parse hybrid coordinates need so-called "vertices".
+    # Note: For cdo to successfully parse hybrid coordinates need so-called "vertices".
     # So critical to include 'lev:bounds = "lev_bnds"' and have "lev_bnds" attrs
     # that point to the "a_bnds" and "b_bnds" hybrid level interfaces.
     print = printer or builtins.print
@@ -439,10 +439,10 @@ def repair_files(*paths, dryrun=False, printer=None):
 
     # Declare attribute removals for interpreting hybrid height coordinates as a
     # generalized height coordinate in preparation for cdo ap2pl pressure interpolation.
-    # NOTE: The cdo ap2pl operator also requires long_name="generalized height" but
+    # Note: The cdo ap2pl operator also requires long_name="generalized height" but
     # this causes issues when applying setzaxis so currently delay this attribute
     # edit until standardize_vertical. See: https://code.mpimet.mpg.de/issues/10692
-    # NOTE: Using -mergetime with files with different time 'bounds' or 'climatology'
+    # Note: Using -mergetime with files with different time 'bounds' or 'climatology'
     # can create duplicate 'time_bnds' and 'climatolog_bnds' variables, and using
     # -merge can trigger bizarre incorrect 'reserved variable zaxistype' errors. So
     # delete these attributes when detected on candidate 'pfull' data.
@@ -466,9 +466,9 @@ def repair_files(*paths, dryrun=False, printer=None):
     print(f'Checking {len(paths)} files for required repairs.')
     for path in paths:
         # Make the simplest generalized attribute and variable repairs
-        # NOTE: The leading 'dot' tells ncrename to look for attributes on
+        # Note: The leading 'dot' tells ncrename to look for attributes on
         # all variables and only apply the rename if the attribute is found.
-        # NOTE: Missing vertical level axis and formula terms attributes cause cdo to
+        # Note: Missing vertical level axis and formula terms attributes cause cdo to
         # detect vertical coordinates as separate grids, resulting in nebulous sounding
         # error message before vertical interpolation methods can get farther along.
         path = Path(path).expanduser()
@@ -518,10 +518,10 @@ def repair_files(*paths, dryrun=False, printer=None):
 
         # Handle IPSL models with weird extra dimension on level coordinates. This has
         # to come first or else the CNRM block will be triggered for IPSL files.
-        # NOTE: Here only the hybrid coordinates used 'klevp1' so can delete it. Also
+        # Note: Here only the hybrid coordinates used 'klevp1' so can delete it. Also
         # probably would cause issues with remapping functions. For manual alternative
         # to make_bounds see: https://stackoverflow.com/a/36680196/4970632
-        # NOTE: Critical that lev_bnds bounds dimension order matches hybrid vertical
+        # Note: Critical that lev_bnds bounds dimension order matches hybrid vertical
         # coordinate bounds order (although dummy bounds variable names can differ).
         # Verified this is only an issue for IPSL-CM6A using following:
         # for f in cmip[56]-picontrol-amon/cl_Amon*; do m=$(echo $f | cut -d_ -f3);
@@ -568,9 +568,9 @@ def repair_files(*paths, dryrun=False, printer=None):
                 nco.ncks(input=str(path), output=str(path), options=['-x', '-v', 'ptop'])  # noqa: E501
 
         # Handle CMIP5 FGOALS models with incorrect coordinate encoding
-        # NOTE: These show 'a' normalized by 'p0' in formula terms but the
+        # Note: These show 'a' normalized by 'p0' in formula terms but the
         # values are obviously absolute pressure. So manually normalize.
-        # NOTE: If reading into cdo using e.g. 'seltimestep' it will automatically
+        # Note: If reading into cdo using e.g. 'seltimestep' it will automatically
         # rename 'a' to 'ap' and update formula_terms but keep 'formula' the same
         # i.e. it sort of seems to correct the normalization but it does not.
         if (
@@ -591,7 +591,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 nco.ncap2(input=str(path), output=str(path), options=['-s', math])
 
         # Handle CMIP6 FGOALS models with messed up hybrid coordinates.
-        # NOTE: These models have a/b coordinate bounds of e.g. 1e+23, 1.6, etc. that
+        # Note: These models have a/b coordinate bounds of e.g. 1e+23, 1.6, etc. that
         # don't correspond to centers so we totally disregard them with a half-way
         # ncap2 estimate (with adjustments to satisfy boundary conditions).
         if (
@@ -615,7 +615,7 @@ def repair_files(*paths, dryrun=False, printer=None):
 
         # Handle CNRM models with hybrid coordinate boundaries permuted and lev_bounds
         # formula_terms attribute pointing incorrectly to the actual variables.
-        # NOTE: Previously tried ncpdq for permutations but was insanely slow
+        # Note: Previously tried ncpdq for permutations but was insanely slow
         # and would eventualy fail due to some memory allocation error. For
         # some reason ncap2 permute (while slow) does not implode this way.
         if all(
@@ -635,7 +635,7 @@ def repair_files(*paths, dryrun=False, printer=None):
 
         # Handle CESM models with necessary attributes on only
         # coordinate bounds variables rather than coordinate centers.
-        # NOTE: These models also sometimes have issues where levels are
+        # Note: These models also sometimes have issues where levels are
         # inverted. That is handled with an ncap2 block below.
         if lev_std != hybrid_pressure and lev_bnds_std == hybrid_pressure:
             atted = [
@@ -651,7 +651,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 nco.ncatted(input=str(path), output=str(path), options=atted)
 
         # Handle CESM files that have negative levels
-        # NOTE: Testing showed that level bounds in non-WACCM files need to be
+        # Note: Testing showed that level bounds in non-WACCM files need to be
         # inverted whenever level centers are inverted, but level bounds in WAACM
         # files are always correct (also hybrid coordinate bounds always seem to
         # follow level bounds). Carefully account for this below. Also enforce that
@@ -708,7 +708,7 @@ def repair_files(*paths, dryrun=False, printer=None):
 
         # Handle hybrid height coordinates for cdo compatibility. Must remove
         # coordinate information and rely on pressure levels intsead.
-        # NOTE: For consistency, could stop deleting orography and delay until after
+        # Note: For consistency, could stop deleting orography and delay until after
         # interpolating as with hybrid pressure file surface pressure. ...or maybe this
         # makes sense as way to signify that these files are modified and intended
         # for interpolation to pressure levels rather than height levels.
@@ -731,7 +731,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         # Also remove unneeded 'areacella' that most likely contains incorrect weights
         # (seems all other files reference this in cell_measures but exclude variable).
         # This is the only horizontal interpolation-related correction required.
-        # NOTE: Verified only MCM-UA uses 'longitude' and 'latitude' (although can
+        # Note: Verified only MCM-UA uses 'longitude' and 'latitude' (although can
         # use either full name or abbreviated for matching bounds). Try the following:
         # for f in cmip[56]-picontrol-amon/cl_Amon*; do m=$(echo $f | cut -d_ -f3);
         # [[ " ${models[*]} " =~ " $m "  ]] && continue || models+=("$m");
@@ -760,7 +760,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         # Handle ACCESS1-0 and ACCESS1-3 pfull files that all have 12 timesteps
         # but have the same time value (obviously intended to be a monthly series).
         # This is the only time coordinate related correction required.
-        # NOTE: The year in these files is 444 which is a leap year in proleptic
+        # Note: The year in these files is 444 which is a leap year in proleptic
         # gregorian calendar, so use 29 days for offsetting month of february.
         if (
             'pfull' in attrs and sizes.get('time', 1) == '12'
@@ -783,9 +783,9 @@ def repair_files(*paths, dryrun=False, printer=None):
         # Handle GISS-E2-1-G and GISS-E2-1-H hus files that have missing value set
         # to 1e+20 but then impossible values of -1.000000062271131e+27 coinciding
         # with topography that are obviously meant to be missing.
-        # NOTE: Cannot write to same file with cdo so have to work with a temporary
+        # Note: Cannot write to same file with cdo so have to work with a temporary
         # file. Use cdo rather than nco for speed since have to scan all values.
-        # NOTE: Initially worried that this value might vary between models or
+        # Note: Initially worried that this value might vary between models or
         # experiments but checked across files and it is always the same... weird.
         if (
             ('_GISS-E2-1' in path.stem or '_GISS-E2-2' in path.stem)  # avoid cmip5
@@ -856,7 +856,7 @@ def standardize_time(
         The print function.
     """
     # Initial stuff
-    # NOTE: Some models use e.g. file_200012-201011.nc instead of file_200001-200912.nc
+    # Note: Some models use e.g. file_200012-201011.nc instead of file_200001-200912.nc
     # so 'selyear' could end up removing a year... but not worth worrying about. There
     # is also endpoint inclusive file_200001-201001.nc but seems only for HadGEM3 pfull.
     print = printer or builtins.print
@@ -870,7 +870,7 @@ def standardize_time(
         return output
 
     # Filter input files for requested year range
-    # NOTE: Previously included kludge here for CESM2 files with incorrect (negative)
+    # Note: Previously included kludge here for CESM2 files with incorrect (negative)
     # levels. Without kludge cdo will average upper with lower levels. However have
     # moved this to repair_files. Super slow but needs to be done that way.
     years = tuple(map(_item_years, paths))
@@ -894,7 +894,7 @@ def standardize_time(
             raise RuntimeError(message)
 
     # Fitler intersecting ranges and print warning for incomplete range
-    # NOTE: FIO-ESM-2-0 control psl returned 300-399 and 400-499 in addition to 301-400
+    # Note: FIO-ESM-2-0 control psl returned 300-399 and 400-499 in addition to 301-400
     # and 401-500, CAS-ESM2-0 rsus returned 001-600 control and 001-167 abrupt in
     # addition to standard 001-550 and 001-150, and GFDL-CM4 abrupt returned 000-010
     # in addition to 000-100. The below should handle these situations... although
@@ -932,7 +932,7 @@ def standardize_time(
         return  # only print time information
 
     # Generate trend files for drift correction
-    # NOTE: Important to use (1) annual averages rather than monthly averages to help
+    # Note: Important to use (1) annual averages rather than monthly averages to help
     # reduce probability of spurious trends (e.g. starting in december and ending in
     # november might trigger a warming signal), (2) local values rather than global
     # values to prevent imposing large trends associated with large climatological
@@ -941,7 +941,7 @@ def standardize_time(
     # seasonal cycle elements in -- noticed huge trends in air temperature near surface
     # on first run). Slopes are then scaled by 12 (see python notebook; note monthly
     # trends are also different from annual trends in general).
-    # NOTE: Cannot simply use 'detrend' for drift corrections because that also
+    # Note: Cannot simply use 'detrend' for drift corrections because that also
     # removes mean and we want to *add* trends from the starting point (i.e. instead
     # of data(i) - (a + b * t(i)) want data(i) - ((a + b * t(i)) - (a + b * t(0)).
     # Testing revealed that cdo uses time step indices rather than actual time
@@ -958,10 +958,10 @@ def standardize_time(
         if kwtime.pop('climate'):
             method = average
             prefix, suffix = '-mergetime ', ''
-        elif kwtime.pop('seasonal', None):  # TODO: remove?
+        elif kwtime.pop('seasonal', None):  # Todo: remove?
             method = 'timstd'
             prefix, suffix = f'{average} -mergetime ', ''
-        elif kwtime.pop('interannual', None):  # TODO: remove?
+        elif kwtime.pop('interannual', None):  # Todo: remove?
             method = 'timstd'
             prefix, suffix = '-ymonsub -mergetime ', f' {average} -mergetime {input}'
         else:
@@ -996,7 +996,7 @@ def standardize_time(
             _output_check(slope, print)
 
     # Consolidate times and apply drift corrections
-    # NOTE: Remove only the source file directory components (i.e. not trend files)
+    # Note: Remove only the source file directory components (i.e. not trend files)
     # so that if something goes wrong can try things out by navigating to directory
     # and pasting the code. Could keep everything but that makes enormous log files.
     descrip = f'{method} {prefix}{input}{suffix}'.replace(f'{paths[0].parent}/', '')
@@ -1073,16 +1073,16 @@ def standardize_vertical(
         return output
 
     # Parse input vertical levels
-    # NOTE: Using 'generic' for height levels triggers lots of false positives for
+    # Note: Using 'generic' for height levels triggers lots of false positives for
     # files with incorrectly formatted level attributes but required since we cannot
     # apply 'generalized height' long name without setzaxis erroring out.
-    # NOTE: For some reason long_name='generalized height' required for ap2pl detection
+    # Note: For some reason long_name='generalized height' required for ap2pl detection
     # but fails with setzaxis and trying to modify the zaxistype causes subsequent
     # merges to fail. See: https://code.mpimet.mpg.de/issues/10692
-    # NOTE: For some reason ap2pl requires top-to-bottom (i.e. low-to-high) 3D pressure
+    # Note: For some reason ap2pl requires top-to-bottom (i.e. low-to-high) 3D pressure
     # array orientation, so prepend command with -invertlev. This weird limitation is
     # undocumented and error is silent. See: https://code.mpimet.mpg.de/issues/10692
-    # NOTE: Had all-NaN upper levels 'cli' and 'clw' KACE files, and NaNs are not
+    # Note: Had all-NaN upper levels 'cli' and 'clw' KACE files, and NaNs are not
     # supported by ap2pl (possibly also for ml2pl but have not yet encountered error).
     # Checked pfull files and occurs around 40hPa for 'cli' and 20hPa for 'clw' (max
     # values in level right above drop off), also have lots of center levels with NaNs
@@ -1111,11 +1111,11 @@ def standardize_vertical(
     print('Destination vertical levels:', ', '.join(map(str, levels.flat)))
 
     # Generate the dependencies
-    # NOTE: Here -setzaxis is required to prevent merge conflicts due to 'lev' differing
+    # Note: Here -setzaxis is required to prevent merge conflicts due to 'lev' differing
     # between files (it is calculated as average level pressures at given timesteps).
     # Note the -merge or e.g. -ap2pl commands could fail when trying to combine climate
     # pfull data with time series of model level data... but so far no need for that.
-    # NOTE: This adds 'ps' and 'pfull' to hybrid height coordinate variables and adds
+    # Note: This adds 'ps' and 'pfull' to hybrid height coordinate variables and adds
     # 'ps' to hybrid sigma pressure coordinate variables that don't already include
     # surface pressure data in the files (so far this is just GFDL-ESM4). When searching
     # for data we ignore table, experiment, and ensemble because we only download
@@ -1158,10 +1158,10 @@ def standardize_vertical(
             atted = [format(Atted('overwrite', 'long_name', 'lev', 'generalized height'))]  # noqa: E501
 
     # Add dependencies and interpolate
-    # NOTE: Removing unneeded variables by leading chain with -delname,ps,orog,pfull
+    # Note: Removing unneeded variables by leading chain with -delname,ps,orog,pfull
     # seemed to cause cdo > 1.9.1 and cdo < 2.0.0 to hang indefinitely. Not sure
     # why and not worth issuing bug report but make sure cdo is up to date.
-    # NOTE: Here 'long_name="generalized height"' is required for ap2pl to detect
+    # Note: Here 'long_name="generalized height"' is required for ap2pl to detect
     # variables, but this triggers error when applying -setzaxis using the resulting
     # zaxisdes because 'generalized_height' is an invalid type (note applying
     # -setzaxis,axis to pfull instead of the data variable, whether or not the
@@ -1198,7 +1198,7 @@ def standardize_vertical(
         _output_check(output, print)
 
     # Verify that interpolation was successful
-    # NOTE: Some models use floats and have slight offsets for standard pressure levels
+    # Note: Some models use floats and have slight offsets for standard pressure levels
     # while others use integer, so important to use np.isclose() when comparing. Note
     # all pressure level models use Pa and are ordered with decreasing pressure.
     grids = _parse_descrips(cdo.zaxisdes(input=str(output)))
@@ -1268,7 +1268,7 @@ def standardize_horizontal(
         return output
 
     # Parse input horizontal grid
-    # NOTE: Sometimes cdo detects dummy 'generic' grids of size 1 or 2 indicating
+    # Note: Sometimes cdo detects dummy 'generic' grids of size 1 or 2 indicating
     # scalar quantities or bounds. Try to ignore these grids.
     result = cdo.griddes(input=str(path))
     grids = [kw for kw in _parse_descrips(result) if kw['gridsize'] > 2]
@@ -1282,7 +1282,7 @@ def standardize_horizontal(
     print('Destination horizontal grid:', gridspec)
 
     # Generate weights
-    # NOTE: Grids for same model but different variables are sometimes different
+    # Note: Grids for same model but different variables are sometimes different
     # most likely due to underlying staggered grids. Account for this by including
     # the grid spec of the source file in the default weight file name.
     grid_current = grid.get('gridtype', 'unknown')[:1] or 'u'
@@ -1302,7 +1302,7 @@ def standardize_horizontal(
         _output_check(weights, print)
 
     # Interpolate to horizontal grid
-    # NOTE: Unlike vertical standardization there are fewer pitfalls here (e.g.
+    # Note: Unlike vertical standardization there are fewer pitfalls here (e.g.
     # variables getting silently skipped). So testing output griddes not necessary.
     opts = ('gridtype', 'xstart', 'ystart', 'xsize', 'ysize')
     key_current = tuple(grid.get(key, None) for key in opts)
@@ -1397,7 +1397,7 @@ def summarize_processed(*paths, facets=None, **constraints):
         database_date.summarize(missing=True, printer=print)
 
         # Print the files with missing inputs
-        # NOTE: Skip groups where we did not attempt to get output e.g.
+        # Note: Skip groups where we did not attempt to get output e.g.
         # time series of non-feedback variables.
         print(f'Missing inputs for {experiment} {date}.')
         missing_inputs = copy.deepcopy(database)
@@ -1413,7 +1413,7 @@ def summarize_processed(*paths, facets=None, **constraints):
         missing_inputs.summarize(missing=False, printer=print)
 
         # Print the files with missing outputs
-        # NOTE: Skip groups where we did not attempt to get output e.g.
+        # Note: Skip groups where we did not attempt to get output e.g.
         # time series of non-feedback variables.
         print(f'Missing output for {experiment} {date}.')
         missing_outputs = copy.deepcopy(database)
@@ -1471,7 +1471,7 @@ def summarize_ranges(*paths, facets=None, **constraints):
         skip_identical = variable == 'rsdt' and 'MCM-UA-1-0' in path.stem
 
         # Pointwise check
-        # NOTE: Previously screwed up the drift correction step so files had uniform
+        # Note: Previously screwed up the drift correction step so files had uniform
         # values everywhere. However some downloaded files also have this issue.
         if not skip_identical:
             if b := test.size > 1 and np.isclose(min_, max_) and variable != 'rsdt':
@@ -1495,7 +1495,7 @@ def summarize_ranges(*paths, facets=None, **constraints):
             invalids['pointwise'] = b
 
         # Absolute global average check
-        # NOTE: Sometimes get temperature outside of this range for models with
+        # Note: Sometimes get temperature outside of this range for models with
         # different stratospheres so use annual mean for more conservative result.
         if not skip_range and (amin is not None or amax is not None):
             mean = test.mean('lon')  # zonal mean data

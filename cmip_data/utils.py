@@ -36,7 +36,7 @@ def assign_dates(data, year=None):
     output : xarray.Dataset or xarray.DataArray
         The data with updated time coordinates.
     """
-    # NOTE: This is used when *loading* datasets and combining along models. Should
+    # Note: This is used when *loading* datasets and combining along models. Should
     # not put this into per-model climate and feedback processing code.
     if 'time' in data.sizes and 'month' not in data.sizes:
         ntime = len(data.time)
@@ -81,11 +81,11 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
     output : xarray.Dataset
         The standardized data.
     """
-    # NOTE: This is no longer used in feedacks.py. Instead regress monthly flux against
+    # Note: This is no longer used in feedacks.py. Instead regress monthly flux against
     # annual average temperature anomalies rebuild annual feedbacks when loading.
-    # NOTE: The new climopy cell duration calculation will auto-detect monthly and
+    # Note: The new climopy cell duration calculation will auto-detect monthly and
     # yearly data, but not yet done, so use explicit days-per-month weights for now.
-    # NOTE: Here resample(time='AS') and groupby('time.year') yield identical results,
+    # Note: Here resample(time='AS') and groupby('time.year') yield identical results,
     # except latter creates an integer 'year' axis while former resamples the existing
     # time axis and preserves the datetime64 format. Test with the following code:
     # t = np.arange('2000-01-01', '2003-01-01', dtype='datetime64[M]')
@@ -156,10 +156,10 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
     output : xarray.Dataset
         The standardized data.
     """
-    # NOTE: Previously stored separate 'numerator' and 'denominator' averaging
+    # Note: Previously stored separate 'numerator' and 'denominator' averaging
     # methods with numerator='globe' and denominator='globe' corresponding to global
     # feedbacks. Now just take global average of pointwise global feedback.
-    # NOTE: Previously used a 2D array for storing (rows) the global average, sh
+    # Note: Previously used a 2D array for storing (rows) the global average, sh
     # average, nh average, and fully-resolved latitude data, plus (cols) the global
     # average and fully-resolved longitude data. This was built as a nested 4x2 list
     # with longitude and latitude coordinates of NaN, ... and NaN, -Inf, Inf, ..., and
@@ -247,13 +247,13 @@ def load_file(
         The resulting data.
     """
     # Load the dataset
-    # TODO: Currently ensembles are made with xr.concat() which requires loading into
+    # Todo: Currently ensembles are made with xr.concat() which requires loading into
     # memory. In future should make open_files() function that uses open_mfdataset()
     # and refactor open_dataset() utility in coupled/results.py (remove averaging
     # utility, standardize after concatenating). For now since loading required anyway
     # below uses load_dataset() and demotes float64 to float32 by default to help
     # reduce memory usage. See: https://github.com/pydata/xarray/issues/4628
-    # NOTE: Use dataset[name].variable._data to check whether data is loaded (tried
+    # Note: Use dataset[name].variable._data to check whether data is loaded (tried
     # ic() on dataset[name] and reading the array output but this seems to sometimes
     # / inconsistently trigger loading itself). In future along with open_mfdataset()
     # may use dask for its lazy loading / lazy operations even if chunking not needed.
@@ -280,13 +280,13 @@ def load_file(
         data = data.astype(np.float32)
 
     # Validate pressure coordinates
-    # WARNING: Merging files with ostensibly the same pressure levels can result in
+    # Warning: Merging files with ostensibly the same pressure levels can result in
     # new staggered levels due to inexact float pressure coordinates. Fix this when
     # building multi-model datasets by using the standard level array for coordinates.
-    # NOTE: CMIP6 has two more levels than CMIP5. Have to drop them to avoid issues
+    # Note: CMIP6 has two more levels than CMIP5. Have to drop them to avoid issues
     # with concatenation issues or kernel integration e.g. due to improper weights or
     # NaN results from NaN data levels (see also _fluxes_from_anomalies() kernel data).
-    # NOTE: Some datasets have a pressure 'bounds' variable but appears calculated
+    # Note: Some datasets have a pressure 'bounds' variable but appears calculated
     # naively as halfway points between levels. Since inconsistent between files
     # just strip all bounds attribute and rely on climopy calculations.
     if project and 'plev' in data.coords and data.plev.size > 1:
@@ -311,12 +311,12 @@ def load_file(
             )
 
     # Validate time coordinates
-    # NOTE: Some files will have duplicate times (i.e. due to using cdo mergetime on
+    # Note: Some files will have duplicate times (i.e. due to using cdo mergetime on
     # files with overlapping time coordinates) and drop_duplicates(time, keep='first')
     # does not work since it is only available on DataArrays, so use manual method.
     # See: https://github.com/pydata/xarray/issues/1072
     # See: https://github.com/pydata/xarray/discussions/6297
-    # NOTE: Testing reveals that calling 'cdo ymonmean' on files that extend from
+    # Note: Testing reveals that calling 'cdo ymonmean' on files that extend from
     # december-november instead of january-december will result in january-december
     # climate files with non-monotonic time steps. This will mess up the .groupby()
     # operations in average_periods, so we auto-convert time array to be monotonic
@@ -326,7 +326,7 @@ def load_file(
         time = data.time.values
         mask = data.get_index('time').duplicated(keep='first')
         if message := ', '.join(str(t) for t in time[mask]):
-            data = data.isel(time=~mask)  # WARNING: drop_isel fails here
+            data = data.isel(time=~mask)  # Warning: drop_isel fails here
             print(
                 f'Warning: File {path.name!r} has {mask.sum().item()} duplicate '
                 f'time values: {message}. Kept only the first values.'
@@ -340,11 +340,11 @@ def load_file(
             data = data.sortby('time')  # sort in case months are non-monotonic
 
     # Validate variable data
-    # NOTE: Here the model id recorded under 'source_id' or 'model_id' often differs
+    # Note: Here the model id recorded under 'source_id' or 'model_id' often differs
     # from the model id in the file name. Annoying but have to use the file version.
-    # NOTE: Found negative radiative flux values for rldscs in IITM-ESM model. For
+    # Note: Found negative radiative flux values for rldscs in IITM-ESM model. For
     # now just automatically invert these values but should contact developer.
-    # NOTE: Found negative specific humidity values in IITM-ESM model. Add constant
+    # Note: Found negative specific humidity values in IITM-ESM model. Add constant
     # offset to avoid insane humidity kernels (inspection of abrupt time series with
     # cdo -infon -timmin -selname,hus revealed pretty large anomalies up to -5e-4
     # at the surface so use dynamic adjustment with floor offset of 1e-6).
@@ -367,7 +367,7 @@ def load_file(
         sample = array  # default
         if 'bnds' in array.sizes or 'bounds' in array.sizes:
             continue
-        if 'time' in array.sizes:  # TODO: ensure robust to individual timesteps
+        if 'time' in array.sizes:  # Todo: ensure robust to individual timesteps
             sample = array.isel(time=0)
         min_, max_ = sample.min().item(), sample.max().item()
         pmin, pmax, *_ = ranges[name]

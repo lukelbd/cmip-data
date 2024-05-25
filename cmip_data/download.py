@@ -85,10 +85,10 @@ def _write_script(
     **constraints
         The constraints.
     """
-    # NOTE: The download status logs list files only once because the script code
+    # Note: The download status logs list files only once because the script code
     # replaces existing file lines. Try: for f in ./*/.wget*; do echo "File: $f"
     # cat $f | cut -d' '| wc -l && cat $f | cut -d' ' -f1 | sort | uniq | wc -l; done
-    # NOTE: This repairs the script to skip the modification time check and modify
+    # Note: This repairs the script to skip the modification time check and modify
     # the checksum comparison to auto-redownload available SHA256 files over MD5. This
     # lets us update files with ./wget.sh -U that have been filtered to latest versions
     # by download_script() while preventing oscillatory downloads between identical
@@ -182,9 +182,9 @@ def download_script(
         Passed to `~pyesgf.search.SearchContext`.
     """
     # Translate constraints and possibly apply flagship filter
-    # NOTE: The datasets returned by .search() will often be 'empty' but this usually
+    # Note: The datasets returned by .search() will often be 'empty' but this usually
     # means it is not available from a particular node and available at another node.
-    # NOTE: Thousands of these scripts can take up significant space... so instead we
+    # Note: Thousands of these scripts can take up significant space... so instead we
     # consolidate results into a single script. Also increase the batch size from the
     # default of only 50 results to reduce the number of http requests.
     kw = dict(decode=False, restrict=False)
@@ -207,13 +207,13 @@ def download_script(
                 return ENSEMBLES_FLAGSHIP[project, None, None] in identifiers
 
     # Search and parse wget scripts
-    # NOTE: This uses the 'dataset' search context to find individual simulations
+    # Note: This uses the 'dataset' search context to find individual simulations
     # (i.e. 'datasets' in ESGF parlance) then creates a 'file' search context within
     # the individual dataset and generates files form each list.
-    # NOTE: Since cmip5 'datasets' contain multiple variables, it is common for
+    # Note: Since cmip5 'datasets' contain multiple variables, it is common for
     # newer versions of the same dataset to exlude variables. Therefore we create
     # pseudo-dataset ids for cmip5 data on a per-variable basis.
-    # NOTE: Since cmip5 'datasets' contain multiple variables, calling search() on
+    # Note: Since cmip5 'datasets' contain multiple variables, calling search() on
     # the DatasetSearchContext returned by new_context() then get_download_script()
     # on the resulting DatasetResult could include unwanted files. Therefore use
     # FileContext.constrain() to re-apply constraints to files within each dataset
@@ -238,7 +238,7 @@ def download_script(
     for num, ds in enumerate(ctx.search(batch_size=200)):
         num += 1
         fc = ds.file_context()
-        fc.facets = ctx.facets  # TODO: report bug and remove?
+        fc.facets = ctx.facets  # Todo: report bug and remove?
         message = f'Dataset {num} (%s): {ds.dataset_id}'
         dataset, node = ds.dataset_id.split('|')
         dataset, version = dataset.rsplit('.', 1)
@@ -275,13 +275,13 @@ def download_script(
                 nodes[num, node] = ilines
 
     # Create the script from latest versions
-    # NOTE: Can run into issues where the same version of a given file uses different
+    # Note: Can run into issues where the same version of a given file uses different
     # MD5 and SHA256 checksums on different nodes, causing differences between the
     # status log checksum and the download checksum, so the wget script thinks a file
     # has been "updated" and should be re-downloaded. Could account for this here by
     # manually syncing file checksums, but instead simply make _wget_script prefer
     # SHA256 hashes when considering whether to update files and skip otherwise.
-    # NOTE: Using latest=True with replica=None seems to show older versions that were
+    # Note: Using latest=True with replica=None seems to show older versions that were
     # replicated onto other nodes without an updated newer version. Can account for
     # this using replica=False, but this keeps us from downloading e.g. replicas of
     # a Chinese or Japanese model in North America. Instead manually filter to the
@@ -366,7 +366,7 @@ def filter_script(
     # Read the file and group lines into dictionaries indexed by the facets we
     # want to intersect and whose keys indicate the remaining facets, then find the
     # intersection of these facets (e.g., 'ts_Amon_MODEL' for two experiment ids).
-    # NOTE: Since _parse_constraints imposes a default project this will enforce that
+    # Note: Since _parse_constraints imposes a default project this will enforce that
     # we never try to intersect projects and minimum folder id is the project name.
     path = Path(path).expanduser() / 'unfiltered'
     print = Printer('filter', **constraints) if logging else builtins.print
@@ -388,7 +388,7 @@ def filter_script(
     # Collect the facets into a dictionary whose keys are the facets unique to each
     # folder and whose values are dictionaries of the remaining facets and script lines.
     # facets and values containing the associated script lines for subsequent filtering.
-    # NOTE: Must use maxyears - 1 or else e.g. 50 years with 190001-194912
+    # Note: Must use maxyears - 1 or else e.g. 50 years with 190001-194912
     # will not "satisfy" the range and result in the next file downloaded.
     dests = []
     facets_folder = facets_folder or KEYS_STORAGE
@@ -465,7 +465,7 @@ def summarize_downloads(
         Passed to `Printer` and `Database`.
     """
     # Generate script and file databases
-    # NOTE: This is generally used to remove unnecessarily downloaded files as
+    # Note: This is generally used to remove unnecessarily downloaded files as
     # users refine their filtering or downloading steps.
     facets = facets or KEYS_SUMMARIZE
     print = Printer('summary', 'downloads', **constraints)
@@ -490,7 +490,7 @@ def summarize_downloads(
     database_status = Database(names_status, facets, **constraints)
 
     # Partition into separate databases
-    # NOTE: Critical to retain only files listed in 'status' logs or else cannot
+    # Note: Critical to retain only files listed in 'status' logs or else cannot
     # use wget scripts to automatically update.
     print('Finished downloads.')
     database_downloads.summarize(missing=True, rawdata=False, printer=print)

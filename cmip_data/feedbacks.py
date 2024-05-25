@@ -31,14 +31,14 @@ __all__ = [
 
 
 # Feedback constants
-# WARNING: Previously skipped rsdt since it is 'constant' but found with CERES data
+# Warning: Previously skipped rsdt since it is 'constant' but found with CERES data
 # that since seasonal cycle so much larger than global trends (plus possibly due to
 # solar trends) it can then show up in monthly regressions. Critical to include.
-# NOTE: Here 'n' stands for net (follows Angie convention). These variables are built
+# Note: Here 'n' stands for net (follows Angie convention). These variables are built
 # from the 'u' and 'd' components of cmip fluxes and to prefix the kernel-implied net
 # fluxes 'alb', 'pl', 'lr', 'hu', 'cl', and 'resid' in _fluxes_from_anomalies. Also
 # use convention that 'positive' is into the atmosphere, negative out of atmosphere.
-# NOTE: Here all-sky fluxes are used for albedo (follows Angie convention). This is
+# Note: Here all-sky fluxes are used for albedo (follows Angie convention). This is
 # because several models are missing clear-sky surface shortwave fluxes and ratio
 # of upwelling to downwelling should be identical between components (although for some
 # reason Yi uses "all-sky" vs. "clear-sky" albedo with all-sky vs. clear-sky kernels).
@@ -89,67 +89,67 @@ VARIABLE_DEPENDENCIES = {
 }
 
 
-def _regress_monthly(denom, numer, proj=False):
+def _regress_monthly(data1, data2, proj=False):
     """
     Return a monthly-style weighted feedback regression.
 
     Parameters
     ----------
-    denom, numer : xarray.DataArray
+    data1, data2 : xarray.DataArray
         The denominator and numerator for the regression.
     proj : bool, optional
         Whether to return the slope scaled by standard deviation or the y-intercept.
     """
-    # NOTE: Critical to use actual variance and covariance here (scaled by sum of
+    # Note: Critical to use actual variance and covariance here (scaled by sum of
     # weights) instead of raw sums so that sqrt(var) represents the actual standard
     # deviation. Otherwise the 'projection' is scaled by erroneous sqrt(wgts) term.
-    days = denom.time.dt.days_in_month
+    days = data1.time.dt.days_in_month
     wgts = days / days.sum('time')
-    navg = (wgts * numer).sum('time', skipna=False)
-    davg = (wgts * denom).sum('time', skipna=False)
-    covar = wgts * (denom - davg) * (numer - navg)
-    dvar = wgts * (denom - davg) ** 2
+    avg2 = (wgts * data2).sum('time', skipna=False)
+    avg1 = (wgts * data1).sum('time', skipna=False)
+    covar = wgts * (data1 - avg1) * (data2 - avg2)
+    var1 = wgts * (data1 - avg1) ** 2
     covar = covar.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
-    dvar = dvar.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
-    slope = covar / dvar
+    var1 = var1.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
+    slope = covar / var1
     if proj:  # scaled pattern
-        extra = covar / np.sqrt(dvar)
+        extra = covar / np.sqrt(var1)
     else:  # regression intercept
-        extra = navg - slope * davg  # still linear since 'davg' is annual averages
+        extra = avg2 - slope * avg1  # still linear since 'avg1' is annual averages
     return slope, extra
 
 
-def _regress_annual(denom, numer, proj=False):
+def _regress_annual(data1, data2, proj=False):
     """
     Return an annual average-style feedback regression.
 
     Parameters
     ----------
-    denom, numer : xarray.DataArray
+    data1, data2 : xarray.DataArray
         The denominator and numerator for the regression.
     proj : bool, optional
         Whether to return the slope scaled by standard deviation or the y-intercept.
     """
-    # NOTE: The denominator should have 'time' coordinate with each slot filled
+    # Note: The denominator should have 'time' coordinate with each slot filled
     # by annual average. This makes both the slope estimator and y intercept linearly
     # additive so that averages can be obtained afterward. See _feedbacks_from_fluxes()
-    # NOTE: Assign a standardized time array so that subsequently loading into
+    # Note: Assign a standardized time array so that subsequently loading into
     # ensembles with results.py can concatenate more easily. Pick 1800 because it
     # has 28 days on February (for weighted average) and is sort of pre-industrial.
     # Tested calendars in 'cmip-fluxes' and most are 'noleap' or 'standard'/'gregorian'
     # however HadGEM and UK-ESM are '360_day' so there may be slight errors there.
     # Try: for f in *.nc; do echo "$f: $(ncvarinfo time $f | grep calendar)"; done
-    navg = numer.groupby('time.month').mean('time', skipna=False)  # 'month' coordinates
-    davg = denom.groupby('time.month').mean('time', skipna=False)
-    danom = denom.groupby('time.month') - davg  # each 'month' coordinate
-    nanom = numer.groupby('time.month') - navg
-    covar = (danom * nanom).groupby('time.month').mean('time', skipna=False)
-    dvar = (danom ** 2).groupby('time.month').mean('time', skipna=False)
-    slope = covar / dvar
+    avg2 = data2.groupby('time.month').mean('time', skipna=False)  # 'month' coordinates
+    avg1 = data1.groupby('time.month').mean('time', skipna=False)
+    anom1 = data1.groupby('time.month') - avg1  # each 'month' coordinate
+    anom2 = data2.groupby('time.month') - avg2
+    covar = (anom1 * anom2).groupby('time.month').mean('time', skipna=False)
+    var1 = (anom1 ** 2).groupby('time.month').mean('time', skipna=False)
+    slope = covar / var1
     if proj:  # scaled pattern
-        extra = covar / np.sqrt(dvar)
+        extra = covar / np.sqrt(var1)
     else:  # regression intercept
-        extra = navg - slope * davg  # still linear since 'davg' is annual averages
+        extra = avg2 - slope * avg1  # still linear since 'avg1' is annual averages
     slope = assign_dates(slope, year=1800)
     extra = assign_dates(extra, year=1800)
     return slope, extra
@@ -231,7 +231,7 @@ def _get_clausius_scaling(ta, pa=None, liquid=True):
     space. See written notes for details on approximation and replacing `q` with `e`.
     """
     # Add helper functions
-    # NOTE: In example NCL script Angie uses ta and hus from 'basefields.nc' for dq/dt
+    # Note: In example NCL script Angie uses ta and hus from 'basefields.nc' for dq/dt
     # (metadata indicates these were fields from kernel calculations) while Yi uses
     # temperature from the picontrol climatology. Here we use latter methodology.
     ta = ta.climo.to_units('K')
@@ -256,7 +256,7 @@ def _get_clausius_scaling(ta, pa=None, liquid=True):
     )
 
     # Get scaling
-    # WARNING: If using metpy, critical to replace climopy units with metpy units, or
+    # Warning: If using metpy, critical to replace climopy units with metpy units, or
     # else get hard-to-debug errors, e.g. temperature units mysteriously stripped. In
     # the end decided to go manual since metpy uses inaccurate Bolton (1980) method.
     # from metpy.units import units as mreg  # noqa: F401
@@ -311,7 +311,7 @@ def _anomalies_from_files(  # test
         The print function.
     """
     # Iterate over dependencies
-    # NOTE: Since incoming solar is constant, and since all our regressions are
+    # Note: Since incoming solar is constant, and since all our regressions are
     # with anomalies with respect to base climate, the incoming solar terms cancel
     # out and we can just consider upwelling solar at the top-of-atmosphere.
     print = printer or builtins.print
@@ -325,9 +325,9 @@ def _anomalies_from_files(  # test
     print('Calculating response minus control anomalies.')
     for variable, dependencies in VARIABLE_DEPENDENCIES.items():
         # Load datasets and prepare the variables
-        # NOTE: Critical to simply ignore 'start' and 'stop' for e.g. ratio
+        # Note: Critical to simply ignore 'start' and 'stop' for e.g. ratio
         # feedbacks as here times were just used to directly pick climate files.
-        # NOTE: The signs of the kernels are matched so that negative always means
+        # Note: The signs of the kernels are matched so that negative always means
         # tending to cool the atmosphere and positive means tending to warm the
         # atmosphere. We scale the positive-definite upwelling and dowwelling
         # components by sorting dependency fluxes in the format (out,) or (out, in).
@@ -355,7 +355,7 @@ def _anomalies_from_files(  # test
                 datas.append(data)
 
         # Calculate variable anomalies using dependencies
-        # NOTE: Here subtraction from 'groupby' objects can only be used if the array
+        # Note: Here subtraction from 'groupby' objects can only be used if the array
         # has a coordinate with the corresponding indices, i.e. in this case 'month'
         # instead of 'time'. Use .groupby('time.month').mean() to turn time indices
         # into month indices (works for both time series and pre-averaged data). Then
@@ -392,9 +392,9 @@ def _anomalies_from_files(  # test
                 response = response_in - response_out
 
         # Add attributes and update dataset
-        # NOTE: Albedo is taken above from ratio of upwelling to downwelling all-sky
+        # Note: Albedo is taken above from ratio of upwelling to downwelling all-sky
         # surface shortwave radiation. Feedback is simply (rsus - rsds) / (rsus / rsds)
-        # WARNING: Weird error can happen where NESM3 time coords disagree between
+        # Warning: Weird error can happen where NESM3 time coords disagree between
         # variables (single-level data starts at year 500, press-level data starts at
         # year 700) so that assigning to existing dataset just sets all values to
         # nan. Tested output and 1000hPa temperature seems to correspond to surface
@@ -417,7 +417,7 @@ def _anomalies_from_files(  # test
             long_name = ' '.join(s if s == 'TOA' else s.lower() for s in parts)
         if variable in ('tapi', 'pspi', 'ta4x', 'ps4x'):
             prefix = 'response' if '4x' in variable else 'control'
-            long_name = f'{prefix} {long_name}'  # NOTE: keep standard name for ptop
+            long_name = f'{prefix} {long_name}'  # Note: keep standard name for ptop
         else:
             long_name = f'{long_name} anomaly'
             data.attrs.pop('standard_name', None)
@@ -466,7 +466,7 @@ def _fluxes_from_anomalies(
         The print function.
     """
     # Prepare kernel dataset before combining with anomaly dataset
-    # WARNING: Had unbelievably frustrating issue where pressure level coordinates
+    # Warning: Had unbelievably frustrating issue where pressure level coordinates
     # on kernels and anomalies would be identical (same type, value, etc.) but then
     # anoms.plev == kernels.plev returned empty array and assigning time-varying cell
     # heights to data before integration in Planck feedback block created array of
@@ -485,11 +485,11 @@ def _fluxes_from_anomalies(
     kernels = kernels.assign_coords(plev=plev)  # critical (see above)
 
     # Get cell height measures and standardize dataset
-    # NOTE: Heights will be derived from 'air_temperature and 'surface_pressure'
+    # Note: Heights will be derived from 'air_temperature and 'surface_pressure'
     # variables stored in dataset (see VARIABLE_DEPENDENCIES). If from pre-industrial
     # then these are time-average control data (dimension 'month') added onto dataset
     # otherwise containing time series. Keeps things much simpler generally.
-    # NOTE: Initially used response time series for tropopause consistent with Zelinka
+    # Note: Initially used response time series for tropopause consistent with Zelinka
     # stated methodology of 'time-varying tropopause' but got bizarre issue with Planck
     # feedback biased positive for certain models (seemingly due to higher surface
     # temperature associated with higher tropopause and more negative fluxes... so
@@ -497,7 +497,7 @@ def _fluxes_from_anomalies(
     # corrected for changing troposphere depth without correcting for reduced strength
     # of kernels under increased depth. Now try with control data average, and below
     # code works with both averages and response time series (see top of file).
-    # WARNING: Using assign_coords(cell_height=height) with height 'month' coordinate
+    # Warning: Using assign_coords(cell_height=height) with height 'month' coordinate
     # will cause 'month' to remain as a coordinate on the dataset, but not on other
     # relevant data arrays (tapi, pbot, ptop). Can only fix this by manually assigning
     # the 'month' coord *within the same assign_coords call*. Version: xarray 0.21.1.
@@ -509,7 +509,7 @@ def _fluxes_from_anomalies(
     array = anoms['ta' if 'ta' in anoms else 'hus' if 'hus' in anoms else 'ts']
     array = ureg.Pa * xr.zeros_like(array)  # for matching time coordinates
     base = array.groupby('time.month') if 'month' in height.dims else scalar
-    with xr.set_options(keep_attrs=True):  # WARNING: critical for 'base' to be second
+    with xr.set_options(keep_attrs=True):  # Warning: critical for 'base' to be second
         height = (const.g * height).climo.to_units('Pa') + base
     if 'plev' in array.dims:
         array = array.isel(plev=0, drop=True)
@@ -523,11 +523,11 @@ def _fluxes_from_anomalies(
     del height
 
     # Get Clausius-Clapeyron adjustments and pressure variables
-    # TODO: Increase efficiency of tropopause calculation now that it is merely
+    # Todo: Increase efficiency of tropopause calculation now that it is merely
     # control data repeated onto response data series. Possibly consider assigning
     # cell measures to kernels and use groupby, or build cell height from a sample
     # selection of 12 timesteps then assign repetition to anomaly data.
-    # WARNING: Currently cell_height() in physics.py automatically adds surface bounds,
+    # Warning: Currently cell_height() in physics.py automatically adds surface bounds,
     # tropopause bounds, and cell heights as *coordinates* (for consistency with xarray
     # objects). We must promote to variable before working with other arrays above
     # to avoid confusing conflicts during reassignment.
@@ -556,7 +556,7 @@ def _fluxes_from_anomalies(
     del ta, pbot, ptop
 
     # Iterate over flux components
-    # NOTE: Here cloud feedback comes about from change in cloud radiative forcing (i.e.
+    # Note: Here cloud feedback comes about from change in cloud radiative forcing (i.e.
     # R_cloud_abrupt - R_cloud_control where R_cloud = R_clear - R_all) then corrected
     # for masking of clear-sky effects (e.g. by adding dt * K_t_cloud where similarly
     # K_t_cloud = K_t_clear - K_t_all). Additional greenhouse forcing masking
@@ -565,9 +565,9 @@ def _fluxes_from_anomalies(
         ('TOA', 'surface'), ('longwave', 'shortwave'), FEEDBACK_DESCRIPTIONS.items()
     ):
         # Skip feedbacks without shortwave or longwave components.
-        # NOTE: Cloud and residual feedbacks also require the full model radiative
+        # Note: Cloud and residual feedbacks also require the full model radiative
         # flux to be estimated, so include those terms as dependencies.
-        # NOTE: This function uses kernel names standardized by _standardize_kernels
+        # Note: This function uses kernel names standardized by _standardize_kernels
         # in kernels.py (cmip variable name, underscore, 4-character flux name).
         rads = (rad,) = (f'r{wavelength[0]}n{boundary[0].lower()}',)
         variables = FEEDBACK_DEPENDENCIES[component][wavelength]  # empty for fluxes
@@ -603,7 +603,7 @@ def _fluxes_from_anomalies(
             continue
 
         # Component fluxes
-        # NOTE: Need to assign cell height coordinates for Planck feedback since
+        # Note: Need to assign cell height coordinates for Planck feedback since
         # they are not defined on the kernel data array prior to multiplication.
         anom = mask = kern = None  # ensure exists
         if component == '' or component == 'cs':  # net flux
@@ -659,7 +659,7 @@ def _fluxes_from_anomalies(
         gc.collect()
 
         # Update the input dataset with resulting component fluxes.
-        # NOTE: Calculate residual feedback by summing traditional component
+        # Note: Calculate residual feedback by summing traditional component
         # feedbacks from Soden and Held.
         name = rad if component in ('', 'cs') else f'{component}_{rad}'
         descrip = descrip and f'{descrip} flux' or 'flux'  # for lon gname
@@ -715,9 +715,9 @@ def _feedbacks_from_fluxes(
         Passed to `average_regions`.
     """
     # Load data and perform averages
-    # NOTE: Need to extract 'plev' top and bottom because for some reason they get
+    # Note: Need to extract 'plev' top and bottom because for some reason they get
     # dropped from 'input' since they are defined on the coordinate dictionary.
-    # NOTE: New idea is to retrieve global feedbacks from average of regressions
+    # Note: New idea is to retrieve global feedbacks from average of regressions
     # on global temperature and annual feedbacks from average of regressions on
     # annual temperature. So remove 'average_periods' and replace with simpler
     # function that gets annual temperature averages, e.g. from observed.py
@@ -746,9 +746,9 @@ def _feedbacks_from_fluxes(
     fluxes = fluxes.climo.quantify()
 
     # Iterate over flux components
-    # NOTE: Operating one region at a time was necessary on previous server with
+    # Note: Operating one region at a time was necessary on previous server with
     # smaller cache. On new server operate on every region at once (more efficient).
-    # NOTE: Since forcing is constant, the cloud masking adjustment has no effect on
+    # Note: Since forcing is constant, the cloud masking adjustment has no effect on
     # feedback estimates, but does affect the 'cl_erf' cloud adjustment forcing. Also
     # shortwave clear-sky effects are just albedo and small water vapor effect, so very
     # small, but longwave component is always very significant.
@@ -757,9 +757,9 @@ def _feedbacks_from_fluxes(
         ('TOA', 'surface'), ('longwave', 'shortwave'), FEEDBACK_DESCRIPTIONS.items(),
     ):
         # Get the flux components
-        # TODO: Update 'flux' files and remove code that translates e.g. 'alb_rfnt'
+        # Todo: Update 'flux' files and remove code that translates e.g. 'alb_rfnt'
         # arrays to 'alb_rsnt'. Should write variable renaming script.
-        # NOTE: Previously computed and stored 'full' components here with appropriate
+        # Note: Previously computed and stored 'full' components here with appropriate
         # renames but no longer do that. Instead process.py get_data() automatically
         # combines shortwave and longwave components as needed.
         rad = f'r{wavelength[0]}n{boundary[0].lower()}'  # this wavelength
@@ -789,9 +789,9 @@ def _feedbacks_from_fluxes(
             continue
 
         # Possibly adjust for forcing masking
-        # NOTE: Should have no effect if forcing is constant. Also this requires
+        # Note: Should have no effect if forcing is constant. Also this requires
         # calculating the net flux feedbacks before the cloud and residual components.
-        # NOTE: Soden et al. (2008) used standard horizontally uniform value of 15%
+        # Note: Soden et al. (2008) used standard horizontally uniform value of 15%
         # the full forcing but no rcason not to use regressed forcing estimates.
         erfs = tuple(f'{rad}{sky}_erf' for sky in ('', 'cs'))
         erfs = erfs if component in ('cl', 'resid') else ()
@@ -819,10 +819,10 @@ def _feedbacks_from_fluxes(
 
         # Perform the regression or division
         # See: https://en.wikipedia.org/wiki/Simple_linear_regression
-        # NOTE: When forcing is provided time-varying input will produce time-varying
+        # Note: When forcing is provided time-varying input will produce time-varying
         # feedbacks similar to Armour 2015 or just simple scalar values if data is
         # already time-averaged. When not provided time coordinate is required.
-        # NOTE: Previously did separate regressions with and without intercept...
+        # Note: Previously did separate regressions with and without intercept...
         # but piControl regressions are *always* centered on origin because they
         # are deviations from the average by *construction*. So unnecessary.
         if style == 'monthly':  # simple weighted monthly regressions
@@ -838,7 +838,7 @@ def _feedbacks_from_fluxes(
         gc.collect()
 
         # Standardize the results
-        # NOTE: Always keep non-net forcing estimates as these represent rapid
+        # Note: Always keep non-net forcing estimates as these represent rapid
         # adjustments. Also previously also recored equilibrium climate sensitivity
         # but this is always nonsense on local kernels, so now compute a posterior only.
         component = 'net' if component == '' else component
@@ -865,8 +865,8 @@ def _feedbacks_from_fluxes(
         gc.collect()
 
     # Add final pattern effect and pressure terms
-    # NOTE: For weighting see https://stats.stackexchange.com/a/489949/156605
-    # NOTE: Region coordinate is necessary for pattern effect so it can be shown
+    # Note: For weighting see https://stats.stackexchange.com/a/489949/156605
+    # Note: Region coordinate is necessary for pattern effect so it can be shown
     # for different feedback versions. Non-globe values get auto-filled with nan.
     print('Adding pattern and pressure terms.')
     output = xr.Dataset(output)
@@ -880,17 +880,17 @@ def _feedbacks_from_fluxes(
             data = data.mean(dim='time', keep_attrs=True)
         output[key] = data.climo.dequantify()
     if pattern:
-        denom = temp.sel(region='globe')  # annual-averaged data
-        numer = temp.sel(region='point')  # original monthly data
+        globe = temp.sel(region='globe')  # annual-averaged data
+        point = temp.sel(region='point')  # original monthly data
         if style == 'monthly':
-            slope, proj = _regress_monthly(denom, numer, proj=True)
+            slope, proj = _regress_monthly(globe, point, proj=True)
         elif style == 'annual':
-            slope, proj = _regress_annual(denom, numer, proj=True)
+            slope, proj = _regress_annual(globe, point, proj=True)
         else:  # ratio-feedback 'slope' is ratio of changes, 'proj' is absolute change
-            slope, proj = numer / denom, numer
+            slope, proj = point / globe, point
         proj = proj.climo.dequantify()
         proj = proj.assign_coords(region='globe').expand_dims('region')
-        proj.attrs.update(units='K', long_name='regional warming')
+        proj.attrs.update(units='K', long_name='temperature change')
         output['tstd'] = proj  # other regions auto-filled with np.nan
         slope = slope.climo.dequantify()
         slope = slope.assign_coords(region='globe').expand_dims('region')
@@ -1016,9 +1016,9 @@ def get_feedbacks(
     adjusted cloud radiative effect estimates to get the effective cloud forcing.
     """
     # Parse input arguments
-    # NOTE: Here 'ratio' should only ever be used with abrupt forcing experiments
+    # Note: Here 'ratio' should only ever be used with abrupt forcing experiments
     # where there is timescale separation of anomaly magnitudes.
-    # NOTE: The 'fluxes' files also need a regression/ratio indicator because former
+    # Note: The 'fluxes' files also need a regression/ratio indicator because former
     # is loaded as a time series while latter is loaded as climate averages.
     print = printer or builtins.print
     project = (project or 'cmip6').lower()
@@ -1052,12 +1052,12 @@ def get_feedbacks(
         raise TypeError(f'Unexpected kwargs {message}. Must be 2-tuple of paths.')
 
     # Load kernels and cimpute flux components and feedback estimates
-    # NOTE: Always overwrite if at least flux data is missing so that we never have
+    # Note: Always overwrite if at least flux data is missing so that we never have
     # feedback data inconsistent with the flux data on storage.
-    # NOTE: Try to load from same fluxes files for feedbacks estimated from subset
+    # Note: Try to load from same fluxes files for feedbacks estimated from subset
     # of full time series to avoid duplicating expensive calculations. Requires
     # writing full perturbed feedbacks before 'early' and 'late' feedbacks.
-    # NOTE: Even for kernel-derived flux responses, rapid adjustments and associated
+    # Note: Even for kernel-derived flux responses, rapid adjustments and associated
     # pattern effects may make the effective radiative forcing estimate non-zero (see
     # Andrews et al.) so we always save the regression intercept data.
     *fluxes, feedbacks, forcing = outputs
@@ -1176,10 +1176,10 @@ def process_feedbacks(
         Passed to `get_feedbacks`.
     """
     # Find files and restrict to unique constraints
-    # NOTE: This requires flagship translation or else models with different control
+    # Note: This requires flagship translation or else models with different control
     # and abrupt runs are not grouped together. Not sure how to handle e.g. non-flagship
     # abrupt runs from flagship control runs but cross that bridge when we come to it.
-    # NOTE: Paradigm is to use climate monthly mean surface pressure when interpolating
+    # Note: Paradigm is to use climate monthly mean surface pressure when interpolating
     # to model levels and keep surface pressure time series when getting feedback
     # kernel integrals. Helps improve accuracy since so much stuff depends on kernels.
     style = style or 'monthly'
@@ -1225,7 +1225,7 @@ def process_feedbacks(
         control_experiment, response_experiment = database.constraints['experiment']
 
     # Calculate clear and all-sky feedbacks surface and TOA files
-    # NOTE: Unlike the method that uses a fixed SST experiment to deduce forcing and
+    # Note: Unlike the method that uses a fixed SST experiment to deduce forcing and
     # takes the ratio of local radiative flux change to global temperature change as
     # the feedback, the average of a regression of radiative flux change against global
     # temperature change will not necessarily equal the regression of average radiative

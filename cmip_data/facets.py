@@ -15,13 +15,13 @@ __all__ = [
 ]
 
 # Regular expressions
-# NOTE: This is used to sort ensembles before loading into databases or datasets
+# Note: This is used to sort ensembles before loading into databases or datasets
 # so that we can rename them with consistent 'ensemble01' 'ensemble02' increments
 # under the same 'ensemble' coordinate across multiple projects and models.
 REGEX_ENSEMBLE = re.compile(r'\Ar(\d+)?i(\d+)p(\d+)(?:f(\d+))?\Z')
 
 # Facets used for folders and summarize logs
-# NOTE: To generate options shown below used SearchContext(project='CMIP5]') then
+# Note: To generate options shown below used SearchContext(project='CMIP5]') then
 # .get_facet_options(). See also 'DECODE_FACETS' below.
 # Experiments: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_experiment_id.html
 # Institutions: https://wcrp-cmip.github.io/CMIP6_CVs/docs/CMIP6_institution_id.html
@@ -46,10 +46,10 @@ KEYS_CMIP6 = [
 # Corrupt files that have to be manually ignored after bulk downloads. Can test using
 # e.g. for file in ta*nc; do echo $file && ncvardump ta $file 1>/dev/null; done
 # since can get HDF5 errors during processing but header can be read without error.
-# NOTE: At one point filtered out these files inside Database._init() to prevent even
+# Note: At one point filtered out these files inside Database._init() to prevent even
 # downloading them but this just triggers downloading the 150+ year files during the
 # script filtering step. Now permit downloads and only filter out in glob_files().
-# NOTE: As of 2022-07-20 cannot download CAS-ESM2-0 data (surface drag and integrated
+# Note: As of 2022-07-20 cannot download CAS-ESM2-0 data (surface drag and integrated
 # and model-level cloud data), skip downloading too-high-resolution CNRM-CM6-1-HR data,
 # and auto-correct specific humidity GISS missing values in repair_files().
 CORRUPT_FILES = [
@@ -104,7 +104,7 @@ CORRUPT_FILES = [
 ]
 
 # Decode facets across projects or to internal 'coupled' standard
-# NOTE: Includes mappings between 'aliases' (used with databases and other internal
+# Note: Includes mappings between 'aliases' (used with databases and other internal
 # utilities) and standard names (used when searching with pyesgf), between cmip5 and
 # cmip6 experiment names (so that the same string can be specified in function calls),
 # and between cmip5 model identifiers (may differ between dataset ids and file names).
@@ -145,7 +145,7 @@ DECODE_EXPERIMENTS = {
 # with the 'f3' forcing and the (parent) control experiment with 'f1' forcing, and
 # EC-Earth3 strangely only runs the abrupt experiment with the 'r8' realization
 # and the (parent) control experiment with the 'r1' control realiztion.
-# NOTE: See the download_process.py script for details on available models.
+# Note: See the download_process.py script for details on available models.
 ENSEMBLES_FLAGSHIP = {
     ('CMIP5', None, None): 'r1i1p1',
     ('CMIP6', None, None): 'r1i1p1f1',
@@ -170,13 +170,13 @@ ENSEMBLES_FLAGSHIP = {
 }
 
 # Model institutes (flagship models come last)
-# NOTE: This was copied from the INSTITUTES.txt file produced by manual_info.py, used
+# Note: This was copied from the INSTITUTES.txt file produced by manual_info.py, used
 # for grouping models before 'coupled' project analysis. Previously used model names but
 # this was unreliable (e.g. ACCESS/CSIRO are CSIRO, MPI/ICON are MPI, and CESM/CCSM are
 # NCAR). Some institutes also changed ids between cmip5 and cmip6 (e.g. dash instead
 # of space or new collaborators appended with dashes) -- fixed this so institues can be
 # identified across projects (original ids are in comments below).
-# NOTE: Preferred model variants from the same institute are last (see _parse_projects
+# Note: Preferred model variants from the same institute are last (see _parse_projects
 # in reduce.py). in general prefer earth system, high resolution, recent versions.
 # prefer access to csiro becase former is more complex.
 # # See: https://www.researchgate.net/publication/258763480_The_ACCESS_coupled_model_Description_control_climate_and_evaluation  # noqa: E501
@@ -306,8 +306,8 @@ MODELS_INSTITUTES = {  # translate model to institute with 'flagship' version la
     'IPSL-CM5A-LR': 'IPSL',
     'IPSL-CM5A-MR': 'IPSL',  # highest resolution
     'IPSL-CM6A-LR': 'IPSL',  # CMIP6
-    'IPSL-CM6A-LR-INCA': 'IPSL',  # NOTE: only found in zelika table
-    'IPSL-CM5A2': 'IPSL',  # NOTE: not yet found in anything
+    'IPSL-CM6A-LR-INCA': 'IPSL',  # Note: only found in zelika table
+    'IPSL-CM5A2': 'IPSL',  # Note: not yet found in anything
     'IPSL-CM5A2-INCA': 'IPSL',  # highest resolution
     'KACE-1-0-G': 'NIMS-KMA',  # CMIP6
     'KIOST-ESM': 'KIOST',  # CMIP6
@@ -339,7 +339,7 @@ MODELS_INSTITUTES = {  # translate model to institute with 'flagship' version la
 
 # Sorting facets in file and folder names, in database groups and sub-groups, and
 # in organizing wget script lines (see download.py _write_script() for details).
-# NOTE: Previously we removed bad or down nodes but this is unreliable and has to be
+# Note: Previously we removed bad or down nodes but this is unreliable and has to be
 # updated regularly. Instead now prioritize local nodes over distant nodes and then
 # wget script automatically skips duplicate files after successful download (see top).
 SORT_FACETS = [
@@ -466,11 +466,11 @@ URLS_NODES = [
 ]
 
 # Horizontal and vertical grid constants
-# NOTE: Level values for various tables are listed in this PDF (where CMIP6 Amon
+# Note: Level values for various tables are listed in this PDF (where CMIP6 Amon
 # uses the 19 level configuration and CMIP5 Amon uses the 17 level configuration):
 # https://cmip6dr.github.io/Data_Request_Home/Documents/CMIP6_pressure_levels.pdf
 # See process.py header for notes about vertical interpolation of model coordinates.
-# NOTE: Lowest resolution in CMIP5 models is 64 latitudes 128 longitudes (also still
+# Note: Lowest resolution in CMIP5 models is 64 latitudes 128 longitudes (also still
 # used by BCC-ESM1 in CMIP6) and grids are mix of regular lon-lat and guassian (assume
 # that former was interpolated). Select regular grid spacing with similar resolution but
 # not coarser than necessary. See Horizontal grids->Grid description->Predefined grids
@@ -497,10 +497,10 @@ STANDARD_LEVELS_CMIP6 = 100 * np.array(
 
 
 # Helper functions for parsing and naming based on facets
-# NOTE: Join function is used for log files, script files, and folder names (which
+# Note: Join function is used for log files, script files, and folder names (which
 # use simply <project_id>-<experiment_id>-<table_id>). Replace the dashes so that
 # e.g. models and experiments with dashes are not mistaken for field delimiters.
-# NOTE: Netcdf names are <variable_id>_<table_id>_<source_id>_<experiment_id>...
+# Note: Netcdf names are <variable_id>_<table_id>_<source_id>_<experiment_id>...
 # ..._<member_id>[_<grid_label>[_<start_date>-<end_date>[-<climate_indicator>]]].nc
 # where grid labels are only in cmip6 and climate indicator is used for e.g. pfull.
 # See: https://github.com/WCRP-CMIP/CMIP6_CVs/blob/master/CMIP6_grid_label.json
@@ -546,13 +546,13 @@ _item_label = lambda *options, modify=True: '_'.join(
 )
 
 # Helper function for sorting based on facets (see e.g. download.py _wget_script())
-# NOTE: Previously we detected and removed identical files available from multiple nodes
+# Note: Previously we detected and removed identical files available from multiple nodes
 # but this was terrible idea. The scripts will auto-skip files that both exist and are
 # recorded in the .wget cache file, so as they loop over files they ignore already
 # downloaded entries. This lets us maximize probability and speed of retrieving files
 # without having to explicitly filter bad nodes. Example indices for identical names:
 # ('00_ACCESS', ..., '02_esgf-data1.llnl.gov'), ('00_ACCESS', ..., '22_esgf.nci.org.au')
-# NOTE: Previously we sorted files alphabetically but this means when processing
+# Note: Previously we sorted files alphabetically but this means when processing
 # files for the first time we iterate over abrupt variables before the control
 # variables required for drift correction are available. The generalized priority
 # sorting ensures control data comes first and leaves room for additional restrictions.
@@ -590,7 +590,7 @@ def _parse_constraints(decode=True, restrict=True, **constraints):
     **constraints
         The constraints.
     """
-    # NOTE: This sets a default project when called by download_script, filter_script,
+    # Note: This sets a default project when called by download_script, filter_script,
     # or process_files, and enforces a standard order for file and folder naming. Also
     # enforced that control runs come before abrupt runs for consistency with database.
     for key in ('flagship_filter', 'flagship_translate'):
@@ -647,7 +647,7 @@ def _validate_ranges(variable, table='Amon'):
     table : str, optional
         The table to select.
     """
-    # NOTE: This uses the official cmip quality control ranges produced for modeling
+    # Note: This uses the official cmip quality control ranges produced for modeling
     # centers to use for validating simulations and published netcdf files. They
     # were copied into VALIDATE.txt from esgf website (see header for details).
     path = Path(__file__).parent.parent / 'VALIDATE.txt'
@@ -680,7 +680,7 @@ def glob_files(*paths, pattern='*', project=None):
     pattern : str, default: '*'
         The glob pattern preceding the file extension.
     """
-    # NOTE: Could amend this to not look for subfolders if 'project' was not passed
+    # Note: Could amend this to not look for subfolders if 'project' was not passed
     # but prefer consistency with Printer and Database of always using cmip6
     # as the default, and this is the only way to filter paths by 'project'.
     project = (project or 'cmip6').lower()
@@ -828,7 +828,7 @@ class Database(object):
             The constraints.
         """
         # Initial stuff
-        # NOTE: Since project is not included in script lines and file names we
+        # Note: Since project is not included in script lines and file names we
         # propagate it here. Also must always be scalar since not included in
         # native file names or script lines and would be difficult to track.
         flagship_translate = flagship_translate or flagship_filter
@@ -840,7 +840,7 @@ class Database(object):
         facets_key = tuple(facet for facet in _item_facets if facet not in facets)
 
         # Add lists to sub-dictionaries
-        # NOTE: Have special handling for feedback files -- only include when
+        # Note: Have special handling for feedback files -- only include when
         # users explicitly pass variable='feedbacks', exclude otherwise.
         ensembles = {}
         self.database = {}
@@ -868,7 +868,7 @@ class Database(object):
             values.add(value)
 
         # Sort the results and store attributes
-        # NOTE: This is important for e.g. databases of wget script lines
+        # Note: This is important for e.g. databases of wget script lines
         # since otherwise duplicates will appear. Not sure of other uses.
         self.group = facets_group
         self.key = facets_key
