@@ -36,7 +36,7 @@ def assign_dates(data, year=None):
     output : xarray.Dataset or xarray.DataArray
         The data with updated time coordinates.
     """
-    # Note: This is used when *loading* datasets and combining along models. Should
+    # NOTE: This is used when *loading* datasets and combining along models. Should
     # not put this into per-model climate and feedback processing code.
     if 'time' in data.sizes and 'month' not in data.sizes:
         ntime = len(data.time)
@@ -81,11 +81,11 @@ def average_periods(input, annual=True, seasonal=True, monthly=True):
     output : xarray.Dataset
         The standardized data.
     """
-    # Note: This is no longer used in feedacks.py. Instead regress monthly flux against
+    # NOTE: This is no longer used in feedacks.py. Instead regress monthly flux against
     # annual average temperature anomalies rebuild annual feedbacks when loading.
-    # Note: The new climopy cell duration calculation will auto-detect monthly and
+    # NOTE: The new climopy cell duration calculation will auto-detect monthly and
     # yearly data, but not yet done, so use explicit days-per-month weights for now.
-    # Note: Here resample(time='AS') and groupby('time.year') yield identical results,
+    # NOTE: Here resample(time='AS') and groupby('time.year') yield identical results,
     # except latter creates an integer 'year' axis while former resamples the existing
     # time axis and preserves the datetime64 format. Test with the following code:
     # t = np.arange('2000-01-01', '2003-01-01', dtype='datetime64[M]')
@@ -156,10 +156,10 @@ def average_regions(input, point=True, latitude=True, hemisphere=True, globe=Tru
     output : xarray.Dataset
         The standardized data.
     """
-    # Note: Previously stored separate 'numerator' and 'denominator' averaging
+    # NOTE: Previously stored separate 'numerator' and 'denominator' averaging
     # methods with numerator='globe' and denominator='globe' corresponding to global
     # feedbacks. Now just take global average of pointwise global feedback.
-    # Note: Previously used a 2D array for storing (rows) the global average, sh
+    # NOTE: Previously used a 2D array for storing (rows) the global average, sh
     # average, nh average, and fully-resolved latitude data, plus (cols) the global
     # average and fully-resolved longitude data. This was built as a nested 4x2 list
     # with longitude and latitude coordinates of NaN, ... and NaN, -Inf, Inf, ..., and
@@ -247,13 +247,13 @@ def load_file(
         The resulting data.
     """
     # Load the dataset
-    # Todo: Currently ensembles are made with xr.concat() which requires loading into
+    # TODO: Currently ensembles are made with xr.concat() which requires loading into
     # memory. In future should make open_files() function that uses open_mfdataset()
     # and refactor open_dataset() utility in coupled/results.py (remove averaging
     # utility, standardize after concatenating). For now since loading required anyway
     # below uses load_dataset() and demotes float64 to float32 by default to help
     # reduce memory usage. See: https://github.com/pydata/xarray/issues/4628
-    # Note: Use dataset[name].variable._data to check whether data is loaded (tried
+    # NOTE: Use dataset[name].variable._data to check whether data is loaded (tried
     # ic() on dataset[name] and reading the array output but this seems to sometimes
     # / inconsistently trigger loading itself). In future along with open_mfdataset()
     # may use dask for its lazy loading / lazy operations even if chunking not needed.
@@ -280,13 +280,13 @@ def load_file(
         data = data.astype(np.float32)
 
     # Validate pressure coordinates
-    # Warning: Merging files with ostensibly the same pressure levels can result in
+    # WARNING: Merging files with ostensibly the same pressure levels can result in
     # new staggered levels due to inexact float pressure coordinates. Fix this when
     # building multi-model datasets by using the standard level array for coordinates.
-    # Note: CMIP6 has two more levels than CMIP5. Have to drop them to avoid issues
+    # NOTE: CMIP6 has two more levels than CMIP5. Have to drop them to avoid issues
     # with concatenation issues or kernel integration e.g. due to improper weights or
     # NaN results from NaN data levels (see also _fluxes_from_anomalies() kernel data).
-    # Note: Some datasets have a pressure 'bounds' variable but appears calculated
+    # NOTE: Some datasets have a pressure 'bounds' variable but appears calculated
     # naively as halfway points between levels. Since inconsistent between files
     # just strip all bounds attribute and rely on climopy calculations.
     if project and 'plev' in data.coords and data.plev.size > 1:
@@ -306,17 +306,17 @@ def load_file(
         data = data.assign_coords(plev=levs)  # retain original attributes
         if message := ', '.join(format(p / 100, '.0f') for p in missing):
             print(
-                f'Warning: File {path.name!r} has {len(missing)} missing '
+                f'WARNING: File {path.name!r} has {len(missing)} missing '
                 f'pressure levels ({plev.size} out of {levels.size}): {message}.'
             )
 
     # Validate time coordinates
-    # Note: Some files will have duplicate times (i.e. due to using cdo mergetime on
+    # NOTE: Some files will have duplicate times (i.e. due to using cdo mergetime on
     # files with overlapping time coordinates) and drop_duplicates(time, keep='first')
     # does not work since it is only available on DataArrays, so use manual method.
     # See: https://github.com/pydata/xarray/issues/1072
     # See: https://github.com/pydata/xarray/discussions/6297
-    # Note: Testing reveals that calling 'cdo ymonmean' on files that extend from
+    # NOTE: Testing reveals that calling 'cdo ymonmean' on files that extend from
     # december-november instead of january-december will result in january-december
     # climate files with non-monotonic time steps. This will mess up the .groupby()
     # operations in average_periods, so we auto-convert time array to be monotonic
@@ -326,9 +326,9 @@ def load_file(
         time = data.time.values
         mask = data.get_index('time').duplicated(keep='first')
         if message := ', '.join(str(t) for t in time[mask]):
-            data = data.isel(time=~mask)  # Warning: drop_isel fails here
+            data = data.isel(time=~mask)  # WARNING: drop_isel fails here
             print(
-                f'Warning: File {path.name!r} has {mask.sum().item()} duplicate '
+                f'WARNING: File {path.name!r} has {mask.sum().item()} duplicate '
                 f'time values: {message}. Kept only the first values.'
             )
         years, months = data.time.dt.year, data.time.dt.month
@@ -340,11 +340,11 @@ def load_file(
             data = data.sortby('time')  # sort in case months are non-monotonic
 
     # Validate variable data
-    # Note: Here the model id recorded under 'source_id' or 'model_id' often differs
+    # NOTE: Here the model id recorded under 'source_id' or 'model_id' often differs
     # from the model id in the file name. Annoying but have to use the file version.
-    # Note: Found negative radiative flux values for rldscs in IITM-ESM model. For
+    # NOTE: Found negative radiative flux values for rldscs in IITM-ESM model. For
     # now just automatically invert these values but should contact developer.
-    # Note: Found negative specific humidity values in IITM-ESM model. Add constant
+    # NOTE: Found negative specific humidity values in IITM-ESM model. Add constant
     # offset to avoid insane humidity kernels (inspection of abrupt time series with
     # cdo -infon -timmin -selname,hus revealed pretty large anomalies up to -5e-4
     # at the surface so use dynamic adjustment with floor offset of 1e-6).
@@ -353,13 +353,13 @@ def load_file(
     ranges = {name: _validate_ranges(name, 'Amon') for name in datas}
     if 'pr' in datas and model == 'CIESM':  # kludge
         print(
-            'Warning: Adjusting CIESM precipitation flux with obviously '
+            'WARNING: Adjusting CIESM precipitation flux with obviously '
             'incorrect units by 1e3 (guess to recover correct units).'
         )
         datas['pr'].data *= 1e3
     if 'hus' in datas and np.any(datas['hus'].values <= 0.0):
         print(
-            'Warning: Adjusting negative specific humidity values by enforcing '
+            'WARNING: Adjusting negative specific humidity values by enforcing '
             'absolute minimum of 1e-6 (consistent with other model stratospheres).'
         )
         datas['hus'].data[datas['hus'].data < 1e-6] = 1e-6
@@ -367,7 +367,7 @@ def load_file(
         sample = array  # default
         if 'bnds' in array.sizes or 'bounds' in array.sizes:
             continue
-        if 'time' in array.sizes:  # Todo: ensure robust to individual timesteps
+        if 'time' in array.sizes:  # TODO: ensure robust to individual timesteps
             sample = array.isel(time=0)
         min_, max_ = sample.min().item(), sample.max().item()
         pmin, pmax, *_ = ranges[name]
@@ -376,7 +376,7 @@ def load_file(
         if not skip_identical and array.size > 1 and np.isclose(min_, max_):
             array.data[:] = np.nan
             print(
-                f'Warning: Variable {name!r} has the identical value {min_} '
+                f'WARNING: Variable {name!r} has the identical value {min_} '
                 'across entire domain. Set all data to NaN.'
             )
         elif not skip_range and pmin and pmax and (
@@ -384,7 +384,7 @@ def load_file(
         ):
             array.data[:] = -1 * array.data[:]
             print(
-                f'Warning: Variable {name!r} range ({min_}, {max_}) is inside '
+                f'WARNING: Variable {name!r} range ({min_}, {max_}) is inside '
                 f'negative of valid cmip range ({pmin}, {pmax}). Multiplied data by -1.'
             )
         elif not skip_range and (
@@ -392,7 +392,7 @@ def load_file(
         ):
             array.data[:] = np.nan
             print(
-                f'Warning: Variable {name!r} range ({min_}, {max_}) is outside '
+                f'WARNING: Variable {name!r} range ({min_}, {max_}) is outside '
                 f'valid cmip range ({pmin}, {pmax}). Set all data to NaN.'
             )
     return data

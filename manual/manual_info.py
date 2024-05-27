@@ -17,10 +17,10 @@ starts = False
 checksums = False
 
 # Summarize institution ids
-# Note: Hardcode and hand-sort these results in facets.py to group models by institutes
+# NOTE: Hardcode and hand-sort these results in facets.py to group models by institutes
 # and order from least to most complex, then run this again to re-print in nicer order.
 # This will also put any newly downloaded unrecognized models at the bottom.
-# Note: Can survey institutions with following code: { models=(); for f in ts_Amon_*;
+# NOTE: Can survey institutions with following code: { models=(); for f in ts_Amon_*;
 # do model=$(echo $f | cut -d_ -f3); [[ " ${models[*]} " =~ " $model " ]] && continue;
 # models+=("$model"); echo $f; ncinfo $f | grep -E 'institut(e|ion)_id'; done; } | less
 if institutes:
@@ -47,8 +47,8 @@ if institutes:
         debug.write(f'Institute: {institute_id}\n')
 
 # Summarize starting and ending dates of files
-# Todo: Fix this... currently giving wrong answers.
-# Note: This was written to try to figure out why Mark Zelinka omitted certain
+# TODO: Fix this... currently giving wrong answers.
+# NOTE: This was written to try to figure out why Mark Zelinka omitted certain
 # models and to ensure latest downloaded data represented the actual base time.
 if starts:
     seen = set()
@@ -108,12 +108,12 @@ if starts:
         branch_parent = cftime.num2date(offset_parent, units, calendar)
         branch_parent = branch_parent.strftime('%Y-%m-%d')
         if start_parent != branch_parent:
-            debug.write(f'Warning: Start date {start_parent} differs from branch date {branch_parent}.\n')  # noqa: E501
+            debug.write(f'WARNING: Start date {start_parent} differs from branch date {branch_parent}.\n')  # noqa: E501
             continue
 
 
 # Summarize E3SM-1-0 files with different versions
-# Note: This block is no longer valid, since we now automatically filter datasets
+# NOTE: This block is no longer valid, since we now automatically filter datasets
 # to their latest available versions inside download_script(). Was originally used
 # to help show which variables had multiple checksums available (turned out to be
 # just the pressure level data hus, ta, ua, va, and zg), and the older versions of

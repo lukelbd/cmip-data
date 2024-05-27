@@ -7,7 +7,7 @@ import itertools
 import cmip_data
 
 # Toggle various activities
-# Note: The analogy with dynamical core git packages is cmip_data:drycore for data
+# NOTE: The analogy with dynamical core git packages is cmip_data:drycore for data
 # generation, coupled:idealized for data processing and shared templates, and then
 # timescales:constraints/transport for storing specific figure code and figure and
 # manuscript output. This file is analogous to the 'post' files in 'drycore' for
@@ -16,7 +16,7 @@ climate = False
 feedbacks = True
 
 # Calculate the control and response climate and variance variables
-# Note: Here time-variance quantities will only be produced for control non-cloud
+# NOTE: Here time-variance quantities will only be produced for control non-cloud
 # variables since most abrupt 4xCO2 experiments are not fully equilibriated. Only
 # use them for year 120-150 climate estimates.
 if climate:
@@ -25,18 +25,18 @@ if climate:
     experiments = ('piControl', 'abrupt4xCO2')
     for nodrift, experiment in itertools.product(nodrifts, experiments):
         projects = ('CMIP6', 'CMIP5')
-        projects = ('CMIP6',)  # Todo: remove
+        projects = ('CMIP6',)  # TODO: remove
         # projects = ('CMIP5',)
         for project in projects:
             cmip_data.process_climate(
-                # '~/scratch/cmip-processed',  # Todo: move climate here
+                # '~/scratch/cmip-processed',  # TODO: move climate here
                 '~/data/cmip-climate',  # source climate location
                 climate='~/data/cmip-climate',  # output feedback location
                 source='eraint',
                 project=project,
                 experiment=experiment,
                 flagship_filter=True,
-                overwrite=False,  # Warning: monitor
+                overwrite=False,  # WARNING: monitor
                 logging=True,  # ignored if dryrun true
                 dryrun=False,
                 nowarn=False,
@@ -46,9 +46,9 @@ if climate:
 
 # Calculate the control, response, and anomaly feedbacks (note control anomaly
 # feedbacks are impossible because cannot select a period to use for anomalies).
-# Note: The start and stop years are python-style endpoint-exclusive
+# NOTE: The start and stop years are python-style endpoint-exclusive
 # and relative to native model years.
-# Note: The residual feedback will only be calculated if all kernels
+# NOTE: The residual feedback will only be calculated if all kernels
 # for the associated flux are requested. Otherwise this is bypassed.
 if feedbacks:
     nodrifts = (False,)
@@ -77,7 +77,7 @@ if feedbacks:
         for project in projects:
             cmip_data.process_feedbacks(
                 '~/data/cmip-climate',  # source climate location
-                # '~/scratch/cmip-processed',  # Todo: move climate data here
+                # '~/scratch/cmip-processed',  # TODO: move climate data here
                 '~/scratch/cmip-processed',  # source series location
                 fluxes='~/scratch/cmip-fluxes',  # intermediate flux location
                 kernels='~/data/cmip-kernels',  # dependency kernels location
@@ -88,8 +88,8 @@ if feedbacks:
                 project=project,
                 experiment=experiment,
                 flagship_filter=True,
-                recompute=False,  # Warning: monitor
-                overwrite=True,  # Warning: monitor
+                recompute=False,  # WARNING: monitor
+                overwrite=True,  # WARNING: monitor
                 logging=True,  # ignored if dryrun is True
                 dryrun=False,
                 nowarn=False,

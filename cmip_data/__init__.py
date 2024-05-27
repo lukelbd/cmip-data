@@ -3,7 +3,7 @@
 Shared package for working with CMIP experiments.
 """
 # Initialized cdo and nco bindings
-# Note: Use 'conda install cdo' and 'conda install nco' for the command-line
+# NOTE: Use 'conda install cdo' and 'conda install nco' for the command-line
 # tools. Use 'conda install python-cdo' and 'conda install pynco' (or 'pip
 # install cdo' and 'pip install pynco') for only the python bindings. Note for
 # some reason cdo returns lists while nco returns strings with newlines, and for
@@ -11,7 +11,7 @@ Shared package for working with CMIP experiments.
 # 'git+https://github.com/lukelbd/cdo-bindings@fix-signals#subdirectory=python'.
 # Also should use 'pip install git+https://github.com/nco/pynco.git' to fix Rename
 # issue (although currently use prn_option() for debugging help anyway).
-# Note: This requires cdo > 2.0.0 or cdo <= 1.9.1 (had trouble installing recent
+# NOTE: This requires cdo > 2.0.0 or cdo <= 1.9.1 (had trouble installing recent
 # cdo in base environments so try uninstalling libgfortran4, libgfortran5, and
 # libgfortran-ng then re-installing cdo and the other packages removed by that
 # action). In cdo 1.9.9 ran into weird bug where the delname line before ap2pl caused

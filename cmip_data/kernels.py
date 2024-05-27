@@ -38,7 +38,7 @@ def _standardize_kernels(
         Passed to `standardize_horizontal` and `standardize_vertical`.
     """
     # Standardize coordinates and variables
-    # Note: The CAM5 kernels are stored so that positive for longwave is always up and
+    # NOTE: The CAM5 kernels are stored so that positive for longwave is always up and
     # positive for shortwave is always down (see readme). However we want positive for
     # both shortwave and longwave, surface and toa to mean into the atmosphere. This
     # requires multiplication by -1 for toa longwave and surface shortwave kernels.
@@ -71,7 +71,7 @@ def _standardize_kernels(
                     ds[f'{var}{lev}ce'] = da
 
     # Standardize horizontal and vertical grid
-    # Todo: Consider supporting xarray dataset input to the standardize functions
+    # TODO: Consider supporting xarray dataset input to the standardize functions
     # and then passing them to `cdo`, but difficult due to chained operators.
     ds = ds.climo.dequantify()
     kw_std = {'prefix_levels': True, 'pressure_units': 'Pa', 'descending_levels': True}
@@ -94,7 +94,7 @@ def _standardize_kernels(
         temp.unlink(missing_ok=True)
 
     # Save the final data and add cell measures
-    # Warning: Never save cell measures to variables because can cause later issues
+    # WARNING: Never save cell measures to variables because can cause later issues
     # working with anomaly data. See feedbacks.py for details.
     path.unlink(missing_ok=True)
     ds.to_netcdf(path)
@@ -120,7 +120,7 @@ def combine_era_kernels(
         Passed to `_standardize_kernels`.
     """
     # Initialize dataset
-    # Todo: Currently right side of bnds must be larger than left.
+    # TODO: Currently right side of bnds must be larger than left.
     # Perhaps order should correspond to order of vertical coordinate.
     path = Path(path).expanduser()
     time = np.arange('2000-01', '2001-01', dtype='M')
@@ -137,7 +137,7 @@ def combine_era_kernels(
     files = sorted(path.glob('RRTM*.nc'))
     for file in files:
         # Standardize variable name
-        # Note: Only water vapor has longwave/shortwave indicator. Otherwise
+        # NOTE: Only water vapor has longwave/shortwave indicator. Otherwise
         # assumed longwave for temperature shortwave for albedo.
         parts = file.name.split('_')
         if len(parts) == 6:  # longwave or shortwave water vapor
@@ -152,7 +152,7 @@ def combine_era_kernels(
         name = f'{var}_r{wav}{lev}{sky}'
 
         # Standardize data
-        # Note: Unlike CAM5 there are no notes about which fluxes are positive upward
+        # NOTE: Unlike CAM5 there are no notes about which fluxes are positive upward
         # or downward. Instead tested manually by comparing with cam5 and seems all
         # kernels are positive down (also noted in Yi Huang paper that introduces
         # the kernels). So convert longwave to positive up. Try this code:
@@ -175,7 +175,7 @@ def combine_era_kernels(
             da.attrs['units'] = units.replace('0.01', '%')  # repair albedo units
 
         # Standardize vertical units
-        # Note: Unlike CAM5 data ERA-Interim data includes two 1000hPa feedbacks -- the
+        # NOTE: Unlike CAM5 data ERA-Interim data includes two 1000hPa feedbacks -- the
         # first one is intended to be multiplied by surface temperature kernel since
         # radiation across lower layer changes substantially (see Yi Haung ncl code).
         # For simplicity we add the two feedbacks together but in reality this will
@@ -186,7 +186,7 @@ def combine_era_kernels(
             lev = da.coords['lev']
             lev.attrs['bounds'] = 'lev_bnds'
             if lev[-1] == lev[-2]:  # duplicate 1000hPa level bug
-                print(f'Warning: Combining 1000hPa pressure feedbacks for {name!r}.')
+                print(f'WARNING: Combining 1000hPa pressure feedbacks for {name!r}.')
                 da[{'lev': -2}] += da[{'lev': -1}]
                 da = da.isel(lev=slice(None, -1))
         if var == 'alb':
@@ -256,7 +256,7 @@ def combine_cam_kernels(
             ds[name] = da
 
     # Normalize by pressure thickness and standardize units
-    # Note: Without this step variables interpolated to pressure are nonsense. Also
+    # NOTE: Without this step variables interpolated to pressure are nonsense. Also
     # tried to set 'coordinates' attribute to None on levels with variables or else
     # xarray will set it to 'a b' and cdo will emit annoying 'inconsistent variable
     # definition' and 'coordinates variable X cannot be assigned' warnings... but for
@@ -286,9 +286,9 @@ def combine_cam_kernels(
             da.attrs['units'] = 'W m^-2'
 
     # Normalize attributes and interpolate onto standard pressure using cdo ml2pl.
-    # Warning: Here _is_bounds will fail for a_bnds, b_bnds if a, b are not also
+    # WARNING: Here _is_bounds will fail for a_bnds, b_bnds if a, b are not also
     # stored as coordiantes, so ensure they are.
-    # Warning: Here 'lev' must come last due to reset_index line required
+    # WARNING: Here 'lev' must come last due to reset_index line required
     # for concatenating data array selections with conflicting level indices.
     print('Preparing attributes and levels...')
     ds = ds.rename(hyam='a', hybm='b', hyai='ia', hybi='ib')
