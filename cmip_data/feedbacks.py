@@ -54,6 +54,7 @@ FEEDBACK_DESCRIPTIONS = {
     'lr*': 'adjusted lapse rate',
     'hur': 'relative humidity',
     'cl': 'cloud',
+    'ncl': 'non-cloud',
     'resid': 'residual',
 }
 FEEDBACK_DEPENDENCIES = {  # (longwave, shortwave) tuples of dependencies
