@@ -133,7 +133,7 @@ def _file_pairs(data, *args, printer=None):
             names = ', '.join(file.name for file in files)
             print(f'  {suffix} {variable} files ({len(files)}):', names)
             if message := not files and 'Missing' or len(files) > 1 and 'Ambiguous':
-                print(f'Warning: {message} files (expected 1, found {len(files)}).')
+                print(f'WARNING: {message} files (expected 1, found {len(files)}).')
                 del paths[variable]
             else:
                 (file,) = files
@@ -142,7 +142,7 @@ def _file_pairs(data, *args, printer=None):
     if message := ', '.join(pairs[0].keys() - pairs[1].keys()):
         pass  # ignore common situation of more climate files than series files
     if message := ', '.join(pairs[1].keys() - pairs[0].keys()):
-        print(f'Warning: Missing climate files for series data {message}.')
+        print(f'WARNING: Missing climate files for series data {message}.')
     pairs = {
         variable: (pairs[0].get(variable, None), pairs[1].get(variable, None))
         for variable in sorted(pairs[0].keys() | pairs[1].keys())
@@ -613,7 +613,7 @@ def get_climate(output=None, project=None, **inputs):
     from coupled.climate import _add_energetics, _add_hydrology, _add_transport
     dataset = xr.Dataset(output)
     if 'ps' not in dataset:
-        print('Warning: Surface pressure is unavailable.', end=' ')
+        print('WARNING: Surface pressure is unavailable.', end=' ')
     dataset = dataset.climo.add_cell_measures(surface=('ps' in dataset))
     dataset = _add_energetics(dataset)  # must come before transport
     dataset = _add_transport(dataset)
@@ -744,5 +744,5 @@ def process_climate(
                 raise error
             else:
                 _print_error(error)
-            print('Warning: Failed to compute feedbacks.')
+            print('WARNING: Failed to compute feedbacks.')
             continue

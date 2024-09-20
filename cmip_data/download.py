@@ -105,18 +105,18 @@ def _write_script(
     replace = f'openId={openid!r}\n'
     prefix = re.sub(original, replace, ''.join(prefix))
     if openid and replace not in prefix:  # only check if input provided
-        print('Warning: Failed to substitute in user openid.')
+        print('WARNING: Failed to substitute in user openid.')
     original = '"$(get_mod_time_ $file)" == $(echo "$cached" | cut -d \' \' -f2)'
     replace = r'-r "$file"'  # do not skip checksum comparison for updated files
     suffix = re.sub(re.escape(original), replace, ''.join(suffix))
     if replace not in suffix:
-        print('Warning: Failed to repair modification time comparison line.')
+        print('WARNING: Failed to repair modification time comparison line.')
     original = '"$chksum" == "$(echo "$cached" | cut -d \' \' -f3)"'
     replace = original.replace('-d ', '-d')  # prevent replacing existing replacements
     replace += ' || "${#chksum}" -lt "$(echo "$cached" | cut -d\' \' -f3 | wc -c)"'
     suffix = re.sub(re.escape(original), replace, suffix)
     if replace not in suffix:
-        print('Warning: Failed to repair checksum comparison line.')
+        print('WARNING: Failed to repair checksum comparison line.')
     center = _sort_items(center, (*_item_facets, 'dates', 'node'))
     with open(path, 'w') as f:
         f.write(prefix + ''.join(center) + suffix)

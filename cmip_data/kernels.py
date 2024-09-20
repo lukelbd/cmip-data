@@ -186,7 +186,7 @@ def combine_era_kernels(
             lev = da.coords['lev']
             lev.attrs['bounds'] = 'lev_bnds'
             if lev[-1] == lev[-2]:  # duplicate 1000hPa level bug
-                print(f'Warning: Combining 1000hPa pressure feedbacks for {name!r}.')
+                print(f'WARNING: Combining 1000hPa pressure feedbacks for {name!r}.')
                 da[{'lev': -2}] += da[{'lev': -1}]
                 da = da.isel(lev=slice(None, -1))
         if var == 'alb':

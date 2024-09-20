@@ -694,7 +694,7 @@ def glob_files(*paths, pattern='*', project=None):
             and file.name.count('_') >= 4  # skip temporary files
             and (
                 file.stat().st_size > 0 or file.unlink()
-                or print(f'Warning: Removed empty download file {file.name!r}')
+                or print(f'WARNING: Removed empty download file {file.name!r}')
             )
         ), facets=(*_item_facets, 'dates'),
     )

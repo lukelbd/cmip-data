@@ -54,6 +54,7 @@ FEEDBACK_DESCRIPTIONS = {
     'lr*': 'adjusted lapse rate',
     'hur': 'relative humidity',
     'cl': 'cloud',
+    'ncl': 'non-cloud',
     'resid': 'residual',
 }
 FEEDBACK_DEPENDENCIES = {  # (longwave, shortwave) tuples of dependencies
@@ -90,13 +91,13 @@ VARIABLE_DEPENDENCIES = {
 }
 
 
-def _regress_monthly(denom, numer, proj=False):
+def _regress_monthly(data1, data2, proj=False):
     """
     Return a monthly-style weighted feedback regression.
 
     Parameters
     ----------
-    denom, numer : xarray.DataArray
+    data1, data2 : xarray.DataArray
         The denominator and numerator for the regression.
     proj : bool, optional
         Whether to return the slope scaled by standard deviation or the y-intercept.
@@ -104,29 +105,29 @@ def _regress_monthly(denom, numer, proj=False):
     # NOTE: Critical to use actual variance and covariance here (scaled by sum of
     # weights) instead of raw sums so that sqrt(var) represents the actual standard
     # deviation. Otherwise the 'projection' is scaled by erroneous sqrt(wgts) term.
-    days = denom.time.dt.days_in_month
+    days = data1.time.dt.days_in_month
     wgts = days / days.sum('time')
-    navg = (wgts * numer).sum('time', skipna=False)
-    davg = (wgts * denom).sum('time', skipna=False)
-    covar = wgts * (denom - davg) * (numer - navg)
-    dvar = wgts * (denom - davg) ** 2
+    avg2 = (wgts * data2).sum('time', skipna=False)
+    avg1 = (wgts * data1).sum('time', skipna=False)
+    covar = wgts * (data1 - avg1) * (data2 - avg2)
+    var1 = wgts * (data1 - avg1) ** 2
     covar = covar.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
-    dvar = dvar.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
-    slope = covar / dvar
+    var1 = var1.sum('time', skipna=False)  # sum scale is sum(wgts) == 1
+    slope = covar / var1
     if proj:  # scaled pattern
-        extra = covar / np.sqrt(dvar)
+        extra = covar / np.sqrt(var1)
     else:  # regression intercept
-        extra = navg - slope * davg  # still linear since 'davg' is annual averages
+        extra = avg2 - slope * avg1  # still linear since 'avg1' is annual averages
     return slope, extra
 
 
-def _regress_annual(denom, numer, proj=False):
+def _regress_annual(data1, data2, proj=False):
     """
     Return an annual average-style feedback regression.
 
     Parameters
     ----------
-    denom, numer : xarray.DataArray
+    data1, data2 : xarray.DataArray
         The denominator and numerator for the regression.
     proj : bool, optional
         Whether to return the slope scaled by standard deviation or the y-intercept.
@@ -140,17 +141,17 @@ def _regress_annual(denom, numer, proj=False):
     # Tested calendars in 'cmip-fluxes' and most are 'noleap' or 'standard'/'gregorian'
     # however HadGEM and UK-ESM are '360_day' so there may be slight errors there.
     # Try: for f in *.nc; do echo "$f: $(ncvarinfo time $f | grep calendar)"; done
-    navg = numer.groupby('time.month').mean('time', skipna=False)  # 'month' coordinates
-    davg = denom.groupby('time.month').mean('time', skipna=False)
-    danom = denom.groupby('time.month') - davg  # each 'month' coordinate
-    nanom = numer.groupby('time.month') - navg
-    covar = (danom * nanom).groupby('time.month').mean('time', skipna=False)
-    dvar = (danom ** 2).groupby('time.month').mean('time', skipna=False)
-    slope = covar / dvar
+    avg2 = data2.groupby('time.month').mean('time', skipna=False)  # 'month' coordinates
+    avg1 = data1.groupby('time.month').mean('time', skipna=False)
+    anom1 = data1.groupby('time.month') - avg1  # each 'month' coordinate
+    anom2 = data2.groupby('time.month') - avg2
+    covar = (anom1 * anom2).groupby('time.month').mean('time', skipna=False)
+    var1 = (anom1 ** 2).groupby('time.month').mean('time', skipna=False)
+    slope = covar / var1
     if proj:  # scaled pattern
-        extra = covar / np.sqrt(dvar)
+        extra = covar / np.sqrt(var1)
     else:  # regression intercept
-        extra = navg - slope * davg  # still linear since 'davg' is annual averages
+        extra = avg2 - slope * avg1  # still linear since 'avg1' is annual averages
     slope = assign_dates(slope, year=1800)
     extra = assign_dates(extra, year=1800)
     return slope, extra
@@ -183,16 +184,16 @@ def _get_file_pairs(data, *args, printer=None):
             names = ', '.join(file.name for file in files)
             print(f'  {experiment} {variable} files ({len(files)}):', names)
             if message := not files and 'Missing' or len(files) > 1 and 'Ambiguous':
-                print(f'Warning: {message} files (expected 1, found {len(files)}).')
+                print(f'WARNING: {message} files (expected 1, found {len(files)}).')
                 del paths[variable]
             else:
                 (file,) = files
                 paths[variable] = file
         pairs.append(paths)
     if message := ', '.join(pairs[0].keys() - pairs[1].keys()):
-        print(f'Warning: Missing response files for control data {message}.')
+        print(f'WARNING: Missing response files for control data {message}.')
     if message := ', '.join(pairs[1].keys() - pairs[0].keys()):
-        print(f'Warning: Missing control files for response data {message}.')
+        print(f'WARNING: Missing control files for response data {message}.')
     pairs = {
         variable: (pairs[0][variable], pairs[1][variable])
         for variable in sorted(pairs[0].keys() & pairs[1].keys())
@@ -334,7 +335,7 @@ def _anomalies_from_files(  # test
         # components by sorting dependency fluxes in the format (out,) or (out, in).
         if missing := tuple(name for name in dependencies if name not in inputs):
             print(
-                f'Warning: Anomaly variable {variable!r} is missing its '
+                f'WARNING: Anomaly variable {variable!r} is missing its '
                 f'dependenc(ies) {missing}. Skipping anomaly calculation.'
             )
             continue
@@ -428,7 +429,7 @@ def _anomalies_from_files(  # test
             and np.any(data.time.values != output.time.values)
         ):
             print(
-                f'Warning: Data times {data.time.values[0]} to {data.time.values[-1]} '
+                f'WARNING: Data times {data.time.values[0]} to {data.time.values[-1]} '
                 f'do not match existing times {output.time.values[0]} to {output.time.values[-1]}.'  # noqa: E501
             )
         data.attrs['long_name'] = long_name
@@ -592,13 +593,13 @@ def _fluxes_from_anomalies(
         names = list(f'{var}_{rad}' for var in variables for rad in rads)
         if message := ', '.join(repr(name) for name in dependencies if name not in anoms):  # noqa: E501
             print(
-                f'Warning: {wavelength.title()} flux {component=} is missing '
+                f'WARNING: {wavelength.title()} flux {component=} is missing '
                 f'variable dependencies {message}. Skipping {wavelength} flux estimate.'
             )
             continue
         if message := ', '.join(repr(name) for name in names if name not in kernels):
             print(
-                f'Warning: {wavelength.title()} flux {component=} is missing '
+                f'WARNING: {wavelength.title()} flux {component=} is missing '
                 f'kernel dependencies {message}. Skipping {wavelength} flux estimate.'
             )
             continue
@@ -784,7 +785,7 @@ def _feedbacks_from_fluxes(
             flux = fluxes[full]  # outdated flux data with 's' and 'l' renamed to 'f'
         else:
             print(
-                'Warning: Input dataset is missing the feedback '
+                'WARNING: Input dataset is missing the feedback '
                 f'dependency {name!r}. Skipping calculation.'
             )
             continue
@@ -798,7 +799,7 @@ def _feedbacks_from_fluxes(
         erfs = erfs if component in ('cl', 'resid') else ()
         if message := ', '.join(repr(erf) for erf in erfs if erf not in output):
             print(
-                'Warning: Output dataset is missing cloud-masking forcing '
+                'WARNING: Output dataset is missing cloud-masking forcing '
                 f'adjustment variable(s) {message}. Cannot make adjustment.'
             )
             continue
@@ -881,17 +882,17 @@ def _feedbacks_from_fluxes(
             data = data.mean(dim='time', keep_attrs=True)
         output[key] = data.climo.dequantify()
     if pattern:
-        denom = temp.sel(region='globe')  # annual-averaged data
-        numer = temp.sel(region='point')  # original monthly data
+        globe = temp.sel(region='globe')  # annual-averaged data
+        point = temp.sel(region='point')  # original monthly data
         if style == 'monthly':
-            slope, proj = _regress_monthly(denom, numer, proj=True)
+            slope, proj = _regress_monthly(globe, point, proj=True)
         elif style == 'annual':
-            slope, proj = _regress_annual(denom, numer, proj=True)
+            slope, proj = _regress_annual(globe, point, proj=True)
         else:  # ratio-feedback 'slope' is ratio of changes, 'proj' is absolute change
-            slope, proj = numer / denom, numer
+            slope, proj = point / globe, point
         proj = proj.climo.dequantify()
         proj = proj.assign_coords(region='globe').expand_dims('region')
-        proj.attrs.update(units='K', long_name='regional warming')
+        proj.attrs.update(units='K', long_name='temperature change')
         output['tstd'] = proj  # other regions auto-filled with np.nan
         slope = slope.climo.dequantify()
         slope = slope.assign_coords(region='globe').expand_dims('region')
@@ -1278,5 +1279,5 @@ def process_feedbacks(
                 raise error
             else:
                 _print_error(error)
-            print('Warning: Failed to compute feedbacks.')
+            print('WARNING: Failed to compute feedbacks.')
             continue

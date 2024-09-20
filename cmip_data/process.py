@@ -337,7 +337,7 @@ def process_files(
                 raise error
             else:
                 _print_error(error)
-            print('Warning: Failed to standardize attributes.\n')
+            print('WARNING: Failed to standardize attributes.\n')
             continue
         updated = not overwrite and out.is_file() and (
             all(file.stat().st_mtime <= out.stat().st_mtime for file in files)
@@ -349,7 +349,7 @@ def process_files(
                 raise error
             else:
                 _print_error(error)
-            print('Warning: Failed to standardize temporally.\n')
+            print('WARNING: Failed to standardize temporally.\n')
             continue
         if updated:
             print('Skipping (up to date)...\n')
@@ -371,7 +371,7 @@ def process_files(
                     raise error
                 else:
                     _print_error(error)
-                print('Warning: Failed to standardize vertically.\n')
+                print('WARNING: Failed to standardize vertically.\n')
                 continue
         if not horizontal:
             vert.replace(hori)
@@ -383,7 +383,7 @@ def process_files(
                     raise error
                 else:
                     _print_error(error)
-                print('Warning: Failed to standardize horizontally.\n')
+                print('WARNING: Failed to standardize horizontally.\n')
                 continue
         hori.replace(out)
         _remove_temps()
@@ -480,7 +480,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         var_extra = ('average_T1', 'average_T2', 'average_DT')
         if any(s in attrs for s in var_extra):
             print(
-                'Warning: Repairing GFDL-like inclusion of unnecessary '
+                'WARNING: Repairing GFDL-like inclusion of unnecessary '
                 f'variable(s) for {path.name!r}:', *var_extra
             )
             if not dryrun:
@@ -489,7 +489,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         if any('formula_term' in kw for kw in attrs.values()):
             rename = [as_str(Rename('a', {'.formula_term': 'formula_terms'}))]
             print(
-                'Warning: Repairing GFDL-like misspelling of formula_terms '
+                'WARNING: Repairing GFDL-like misspelling of formula_terms '
                 + f'attribute(s) for {path.name!r}:', *rename
             )
             if not dryrun:
@@ -500,7 +500,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 for c, src in (('d', sizes), ('v', attrs)) if 'presnivs' in src
             ]
             print(
-                'Warning: Repairing IPSL-like non-standard vertical axis name '
+                'WARNING: Repairing IPSL-like non-standard vertical axis name '
                 + f'presnivs for {path.name!r}:', *rename
             )
             for dict_ in (sizes, names, attrs):
@@ -510,7 +510,7 @@ def repair_files(*paths, dryrun=False, printer=None):
         if 'lev' in attrs and attrs['lev'].get('axis', '') != 'Z':
             atted = [as_str(Atted('overwrite', 'axis', 'lev', 'Z'))]
             print(
-                'Warning: Repairing IPSL-like missing level variable axis '
+                'WARNING: Repairing IPSL-like missing level variable axis '
                 + f'attribute for {path.name!r}:', *atted
             )
             if not dryrun:
@@ -539,7 +539,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 'lev_bnds = make_bounds(lev, $bnds, "lev_bnds"); '
             )
             print(
-                'Warning: Repairing IPSL-like hybrid coordinates with unusual missing '
+                'WARNING: Repairing IPSL-like hybrid coordinates with unusual missing '
                 + f'attributes for {path.name!r}:', math, ' '.join(atted)
             )
             if not dryrun:
@@ -559,7 +559,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 'ap_bnds[$lev, $bnds] = (1 - lev_bnds) * ptop; '
             )
             print(
-                'Warning: Converting FGOALS-like sigma coordinates to hybrid sigma '
+                'WARNING: Converting FGOALS-like sigma coordinates to hybrid sigma '
                 f'pressure coordinates for {path.name!r}:', math, ',', ' '.join(atted)
             )
             if not dryrun:
@@ -584,7 +584,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 'a_bnds@normalize_status = "repaired"; '
             )
             print(
-                'Warning: Repairing FGOALS-like hybrid coordinate pressure component '
+                'WARNING: Repairing FGOALS-like hybrid coordinate pressure component '
                 f'with unnormalized values for {path.name!r}:', math,
             )
             if not dryrun:
@@ -607,7 +607,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 'b@bounds_status = "repaired"; '
             )
             print(
-                'Warning: Repairing FGOALS-like hybrid coordinate bounds with '
+                'WARNING: Repairing FGOALS-like hybrid coordinate bounds with '
                 f'messed up values for {path.name!r}:', math,
             )
             if not dryrun:
@@ -627,7 +627,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 f'{lev_bnds_key}@formula_terms = "ap: ap_bnds b: b_bnds ps: ps"; '
             )
             print(
-                'Warning: Repairing CNRM-like incorrect formula terms attribute '
+                'WARNING: Repairing CNRM-like incorrect formula terms attribute '
                 f'for {path.name!r}: ', math,
             )
             if not dryrun:
@@ -644,7 +644,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 if (new := old.replace(' bounds', '').replace('_bnds', ''))
             ]
             print(
-                'Warning: Repairing CESM-like hybrid coordinates with missing level '
+                'WARNING: Repairing CESM-like hybrid coordinates with missing level '
                 + f'center attributes for {path.name!r}:', ' '.join(atted)
             )
             if not dryrun:
@@ -700,7 +700,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                     if 'lev' in dims and bnds in dims
                 )
             print(
-                'Warning: Repairing CESM-like negative level axis coordinates and/or '
+                'WARNING: Repairing CESM-like negative level axis coordinates and/or '
                 'incorrectly ordered bounds:', math := repr('; '.join(maths))
             )
             if not dryrun:
@@ -716,7 +716,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             atted = hybrid_height_atted
             atted += hybrid_height_atted_extra if 'pfull' in attrs else []
             print(
-                'Warning: Converting ACCESS-like hybrid height coordinates to '
+                'WARNING: Converting ACCESS-like hybrid height coordinates to '
                 f'generalized height coordinates for {path.name!r}:', ' '.join(atted)
             )
             if not dryrun:
@@ -749,7 +749,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 for key in (lon, lat)
             ]
             print(
-                'Warning: Converting MCM-UA-like issue with non-global longitude and '
+                'WARNING: Converting MCM-UA-like issue with non-global longitude and '
                 f'latitude bounds for {path.name!r}:', ' '.join(atted)
             )
             if not dryrun:  # first flag required because is member of cell_measures
@@ -774,7 +774,7 @@ def repair_files(*paths, dryrun=False, printer=None):
                 'time += offsets_per_month; '
             )
             print(
-                'Warning: Repairing ACCESS-like 12 timesteps with identical months by '
+                'WARNING: Repairing ACCESS-like 12 timesteps with identical months by '
                 'adding one month to each step:', math
             )
             if not dryrun:
@@ -794,7 +794,7 @@ def repair_files(*paths, dryrun=False, printer=None):
             atted = 'hus@missing_status="repaired"'
             input = f'-setctomiss,-1.000000062271131e+27 {path}'
             print(
-                'Warning: Repairing GISS-like issue where impossible float value '
+                'WARNING: Repairing GISS-like issue where impossible float value '
                 'is not correctly detected as a missing value:', atted, input
             )
             if not dryrun:
@@ -889,7 +889,7 @@ def standardize_time(
     if not inputs:
         message = f'No files found within requested range: {ymin}-{ymax}'
         if dryrun:
-            print(f'Warning: {message}')
+            print(f'WARNING: {message}')
         else:
             raise RuntimeError(message)
 
@@ -906,10 +906,10 @@ def standardize_time(
                 continue  # e.g. already deleted
             message = f'Skipping file years {y0}-{y1} in presence of %s file years {z0}-{z1}.'  # noqa: E501
             if z0 <= y0 <= y1 <= z1:
-                print('Warning: ' + message % 'superset')
+                print('WARNING: ' + message % 'superset')
                 del inputs[input]
             if y1 - y0 > 1 and y0 == z0 + 1 and y1 == z1 + 1:
-                print('Warning: ' + message % 'offset-by-one')
+                print('WARNING: ' + message % 'offset-by-one')
                 del inputs[input]
     for y0, y1 in inputs.values():
         for range_ in ranges:
@@ -925,7 +925,7 @@ def standardize_time(
         ranges = ', '.join('-'.join(map(str, range_)) for range_ in ranges)
         message = f'Full year range not available from file years: {ranges}'
         if dryrun or allow_incomplete:
-            print(f'Warning: {message}')
+            print(f'WARNING: {message}')
         else:
             raise RuntimeError(message)
     if dryrun:
@@ -1346,7 +1346,7 @@ def summarize_descrips(*paths, facets=None, **constraints):
         try:
             grid, zaxis = cdo.griddes(input=str(file)), cdo.zaxisdes(input=str(file))  # noqa: E501
         except CDOException:
-            print(f'Warning: Failed to read file {file}.')  # message printed
+            print(f'WARNING: Failed to read file {file}.')  # message printed
             continue
         grid, zaxis = map(_parse_descrips, (grid, zaxis))
         grids[key], zaxes[key] = grid, zaxis
@@ -1459,7 +1459,7 @@ def summarize_ranges(*paths, facets=None, **constraints):
         data = xr.open_dataset(path, use_cftime=True)
         data = data.get(variable, None)
         if data is None:
-            print(f'Warning: Variable {variable!r} is missing from file.')
+            print(f'WARNING: Variable {variable!r} is missing from file.')
             print('Identical check: MISSING')
             print('Pointwise check: MISSING')
             print('Average check: MISSING')
@@ -1476,7 +1476,7 @@ def summarize_ranges(*paths, facets=None, **constraints):
         if not skip_identical:
             if b := test.size > 1 and np.isclose(min_, max_) and variable != 'rsdt':
                 print(
-                    f'Warning: Variable {variable!r} has the identical value {min_} '
+                    f'WARNING: Variable {variable!r} has the identical value {min_} '
                     'across entire domain.'
                 )
             invalids['identical'] = b
@@ -1484,12 +1484,12 @@ def summarize_ranges(*paths, facets=None, **constraints):
             b = False  # declare PASSED for negative values (we simply multiply by -1)
             if pmin and pmax and np.sign(pmin) == np.sign(pmax) and min_ >= -pmax and max_ <= -pmin:  # noqa: E501
                 print(
-                    f'Warning: Pointwise {variable!r} range ({min_}, {max_}) '
+                    f'WARNING: Pointwise {variable!r} range ({min_}, {max_}) '
                     f'is inside negative of valid cmip range ({pmin}, {pmax}).'
                 )
             elif b := pmin is not None and min_ < pmin or pmax is not None and max_ > pmax:  # noqa: E501
                 print(
-                    f'Warning: Pointwise {variable!r} range ({min_}, {max_}) '
+                    f'WARNING: Pointwise {variable!r} range ({min_}, {max_}) '
                     f'is outside valid cmip range ({pmin}, {pmax}).'
                 )
             invalids['pointwise'] = b
@@ -1506,12 +1506,12 @@ def summarize_ranges(*paths, facets=None, **constraints):
             b = False  # declare PASSED for negative values (we simply multiply by -1)
             if amin and amax and np.sign(amin) == np.sign(amax) and min_ >= -amax and max_ <= -amin:  # noqa: E501
                 print(
-                    f'Warning: Global average {variable!r} range ({min_}, {max_}) '
+                    f'WARNING: Global average {variable!r} range ({min_}, {max_}) '
                     f'is inside negative of valid cmip range ({pmin}, {pmax}).'
                 )
             elif b := amin is not None and min_ < amin or amax is not None and max_ > amax:  # noqa: E501
                 print(
-                    f'Warning: Global average {variable!r} range ({min_}, {max_}) '
+                    f'WARNING: Global average {variable!r} range ({min_}, {max_}) '
                     f'is outside valid cmip range ({amin}, {amax}).'
                 )
             invalids['averages'] = b

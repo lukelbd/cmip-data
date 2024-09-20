@@ -306,7 +306,7 @@ def load_file(
         data = data.assign_coords(plev=levs)  # retain original attributes
         if message := ', '.join(format(p / 100, '.0f') for p in missing):
             print(
-                f'Warning: File {path.name!r} has {len(missing)} missing '
+                f'WARNING: File {path.name!r} has {len(missing)} missing '
                 f'pressure levels ({plev.size} out of {levels.size}): {message}.'
             )
 
@@ -328,7 +328,7 @@ def load_file(
         if message := ', '.join(str(t) for t in time[mask]):
             data = data.isel(time=~mask)  # WARNING: drop_isel fails here
             print(
-                f'Warning: File {path.name!r} has {mask.sum().item()} duplicate '
+                f'WARNING: File {path.name!r} has {mask.sum().item()} duplicate '
                 f'time values: {message}. Kept only the first values.'
             )
         years, months = data.time.dt.year, data.time.dt.month
@@ -353,13 +353,13 @@ def load_file(
     ranges = {name: _validate_ranges(name, 'Amon') for name in datas}
     if 'pr' in datas and model == 'CIESM':  # kludge
         print(
-            'Warning: Adjusting CIESM precipitation flux with obviously '
+            'WARNING: Adjusting CIESM precipitation flux with obviously '
             'incorrect units by 1e3 (guess to recover correct units).'
         )
         datas['pr'].data *= 1e3
     if 'hus' in datas and np.any(datas['hus'].values <= 0.0):
         print(
-            'Warning: Adjusting negative specific humidity values by enforcing '
+            'WARNING: Adjusting negative specific humidity values by enforcing '
             'absolute minimum of 1e-6 (consistent with other model stratospheres).'
         )
         datas['hus'].data[datas['hus'].data < 1e-6] = 1e-6
@@ -376,7 +376,7 @@ def load_file(
         if not skip_identical and array.size > 1 and np.isclose(min_, max_):
             array.data[:] = np.nan
             print(
-                f'Warning: Variable {name!r} has the identical value {min_} '
+                f'WARNING: Variable {name!r} has the identical value {min_} '
                 'across entire domain. Set all data to NaN.'
             )
         elif not skip_range and pmin and pmax and (
@@ -384,7 +384,7 @@ def load_file(
         ):
             array.data[:] = -1 * array.data[:]
             print(
-                f'Warning: Variable {name!r} range ({min_}, {max_}) is inside '
+                f'WARNING: Variable {name!r} range ({min_}, {max_}) is inside '
                 f'negative of valid cmip range ({pmin}, {pmax}). Multiplied data by -1.'
             )
         elif not skip_range and (
@@ -392,7 +392,7 @@ def load_file(
         ):
             array.data[:] = np.nan
             print(
-                f'Warning: Variable {name!r} range ({min_}, {max_}) is outside '
+                f'WARNING: Variable {name!r} range ({min_}, {max_}) is outside '
                 f'valid cmip range ({pmin}, {pmax}). Set all data to NaN.'
             )
     return data
