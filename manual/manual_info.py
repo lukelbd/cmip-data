@@ -79,7 +79,7 @@ if starts:
         info, time = attrs[''], attrs['time']
         start = file.name.split('_')[-1].split('-')[0][:6]
         start = f'{start[:4]}-{start[4:]}-01'
-        debug.write(f'Start date: {start}\n')
+        debug.write(f'Base file: {start}\n')
         units_parent = info.get('parent_time_units', units_child)  # infer
         calendar_parent = info.get('parent_time_calendar', calendar_child)
         units_child = time.get('units', None)
@@ -93,13 +93,13 @@ if starts:
             if any(_ is None for _ in (units, calendar, offset)):
                 continue
             offset = int(float(str(offset).rstrip('SLDF')))
-            prefix = f'{title} b' if title else 'B'
+            prefix = f'{title} t' if title else 'T'
             date = cftime.num2date(0, units, calendar)
             date = date.strftime('%Y-%m-%d')
-            debug.write(f'{prefix}ase date: {date}\n')
+            debug.write(f'{prefix}ase time: {date}\n')
             date = cftime.num2date(offset, units, calendar)
             date = date.strftime('%Y-%m-%d')
-            debug.write(f'{prefix}ranch date: {date} ')
+            debug.write(f'{prefix}ranch time: {date} ')
             debug.write(f'(offset {offset} calendar {calendar})\n')
         if start_parent is None or offset_parent is None:
             start_parent = start
@@ -108,9 +108,8 @@ if starts:
         branch_parent = cftime.num2date(offset_parent, units, calendar)
         branch_parent = branch_parent.strftime('%Y-%m-%d')
         if start_parent != branch_parent:
-            debug.write(f'WARNING: Start date {start_parent} differs from branch date {branch_parent}.\n')  # noqa: E501
+            debug.write(f'WARNING: Base file {start_parent} differs from branch date {branch_parent}.\n')  # noqa: E501
             continue
-
 
 # Summarize E3SM-1-0 files with different versions
 # NOTE: This block is no longer valid, since we now automatically filter datasets

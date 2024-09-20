@@ -58,6 +58,7 @@ FEEDBACK_DESCRIPTIONS = {
 }
 FEEDBACK_DEPENDENCIES = {  # (longwave, shortwave) tuples of dependencies
     '': {'longwave': (), 'shortwave': ()},
+    'ce': {'longwave': (), 'shortwave': ()},
     'cs': {'longwave': (), 'shortwave': ()},
     'alb': {'longwave': (), 'shortwave': ('alb',)},
     'pl': {'longwave': ('ts', 'ta'), 'shortwave': ()},
