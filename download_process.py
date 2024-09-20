@@ -469,11 +469,11 @@ if process:
 #   rlds: MCM-UA-1-0
 #   rldscs: CCSM4, CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0, NorESM2-LM, NorESM2-MM, TaiESM1, UKESM-1-1-LL  # noqa: E501
 #   rlus: MCM-UA-1-0
-#   rlutcs: MCM-UA-1-0
 #   rsds: MCM-UA-1-0
 #   rsdscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
 #   rsus: MCM-UA-1-0
 #   rsuscs: CAMS-CSM1-0, GFDL-ESM4, MCM-UA-1-0
+#   rlutcs: MCM-UA-1-0
 #   rsutcs: MCM-UA-1-0, FIO-ESM-2-0
 if summarize:
     for project in ('cmip6', 'cmip5'):

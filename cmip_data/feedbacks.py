@@ -29,7 +29,6 @@ __all__ = [
     'process_feedbacks',
 ]
 
-
 # Feedback constants
 # WARNING: Previously skipped rsdt since it is 'constant' but found with CERES data
 # that since seasonal cycle so much larger than global trends (plus possibly due to
@@ -44,7 +43,7 @@ __all__ = [
 # reason Yi uses "all-sky" vs. "clear-sky" albedo with all-sky vs. clear-sky kernels).
 FEEDBACK_DESCRIPTIONS = {
     '': '',  # net all-sky feedback
-    'ce': 'cloud',  # all-sky minus clear-sky
+    'ce': 'cloud effect',  # all-sky minus clear-sky
     'cs': 'clear-sky',  # net clear-sky feedback
     'alb': 'albedo',
     'pl': 'Planck',
