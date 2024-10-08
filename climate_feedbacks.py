@@ -5,6 +5,7 @@ File for downloading and merging relevant data.
 import itertools
 
 import cmip_data
+import coupled
 
 # Toggle various activities
 # NOTE: The analogy with dynamical core git packages is cmip_data:drycore for data
@@ -105,12 +106,11 @@ if feedbacks:
 # 'restrict=True' restricts to selected options used in publication.
 # NOTE: Use 'xy' to detrend temperature and radiation components and 'ij' to regress
 # against the temperature and radiation trends.
-from coupled import feedbacks
 if scalar:
     for kernels in (False, True):
         projects = ('CMIP6', 'CMIP5')
         for project in projects:
-            result = feedbacks.process_scalar(
+            result = coupled.process_scalar(
                 annual=None,
                 project=project,
                 kernels=kernels,
